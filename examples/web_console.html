@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buildroot Agent 控制台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #00d4ff;
+        }
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .status-connected {
+            background: #00c853;
+            color: #000;
+        }
+        .status-disconnected {
+            background: #ff5252;
+            color: #fff;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        .sidebar {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .card h3 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .device-list {
+            list-style: none;
+        }
+        .device-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #0f3460;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .device-item:hover {
+            background: #1a4a7a;
+        }
+        .device-item.active {
+            border-left: 4px solid #00d4ff;
+        }
+        .device-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .device-info {
+            font-size: 12px;
+            color: #888;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .stat-item {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .terminal {
+            background: #000;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            height: 400px;
+            overflow-y: auto;
+        }
+        .terminal-output {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .terminal-input-line {
+            display: flex;
+            margin-top: 10px;
+        }
+        .terminal-prompt {
+            color: #00d4ff;
+            margin-right: 10px;
+        }
+        .terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #0f0;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #00d4ff;
+            color: #000;
+        }
+        .btn-primary:hover {
+            background: #00a8cc;
+        }
+        .btn-danger {
+            background: #ff5252;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #ff1744;
+        }
+        .btn-secondary {
+            background: #555;
+            color: #fff;
+        }
+        .btn-secondary:hover {
+            background: #666;
+        }
+        .log-viewer {
+            background: #000;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 13px;
+            height: 200px;
+            overflow-y: auto;
+        }
+        .log-line {
+            padding: 2px 0;
+        }
+        .log-info { color: #00d4ff; }
+        .log-warn { color: #ffc107; }
+        .log-error { color: #ff5252; }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 5px;
+            background: #0f3460;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal.show {
+            display: flex;
+        }
+        .modal-content {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 600px;
+            width: 90%;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🖥️ Buildroot Agent 控制台</h1>
+            <span id="wsStatus" class="status-badge status-disconnected">未连接</span>
+        </header>
+        
+        <div class="grid">
+            <aside class="sidebar">
+                <h3>📱 已连接设备</h3>
+                <ul id="deviceList" class="device-list">
+                    <li class="device-item" style="color: #888; text-align: center;">
+                        等待设备连接...
+                    </li>
+                </ul>
+            </aside>
+            
+            <main class="main-content">
+                <div class="card">
+                    <h3>📊 系统状态</h3>
+                    <div id="statsGrid" class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="cpuUsage">--</div>
+                            <div class="stat-label">CPU 使用率</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="memUsage">--</div>
+                            <div class="stat-label">内存使用</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="diskUsage">--</div>
+                            <div class="stat-label">磁盘使用</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="loadAvg">--</div>
+                            <div class="stat-label">系统负载</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="uptime">--</div>
+                            <div class="stat-label">运行时间</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="ipAddr">--</div>
+                            <div class="stat-label">IP 地址</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🎛️ 操作</h3>
+                    <div class="actions">
+                        <button class="btn btn-primary" onclick="refreshStatus()">刷新状态</button>
+                        <button class="btn btn-primary" onclick="openTerminal()">打开终端</button>
+                        <button class="btn btn-secondary" onclick="showScriptModal()">执行脚本</button>
+                        <button class="btn btn-secondary" onclick="viewLogs()">查看日志</button>
+                        <button class="btn btn-danger" onclick="rebootDevice()">重启设备</button>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>💻 终端</h3>
+                    <div id="terminal" class="terminal">
+                        <div id="terminalOutput" class="terminal-output"></div>
+                        <div class="terminal-input-line">
+                            <span class="terminal-prompt">$</span>
+                            <input type="text" id="terminalInput" class="terminal-input" 
+                                   placeholder="输入命令..." onkeypress="handleTerminalInput(event)">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>📋 日志</h3>
+                    <div id="logViewer" class="log-viewer"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <!-- 脚本执行模态框 -->
+    <div id="scriptModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>执行脚本</h3>
+                <button class="modal-close" onclick="closeScriptModal()">&times;</button>
+            </div>
+            <textarea id="scriptContent" placeholder="#!/bin/sh&#10;echo 'Hello World'"></textarea>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="executeScript()">执行</button>
+                <button class="btn btn-secondary" onclick="closeScriptModal()">取消</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // WebSocket连接
+        let ws = null;
+        let currentDevice = null;
+        let devices = {};
+        let ptySessionId = null;
+        
+        // 消息类型
+        const MSG_TYPES = {
+            HEARTBEAT: 0x01,
+            SYSTEM_STATUS: 0x02,
+            LOG_UPLOAD: 0x03,
+            SCRIPT_RECV: 0x04,
+            SCRIPT_RESULT: 0x05,
+            PTY_CREATE: 0x10,
+            PTY_DATA: 0x11,
+            PTY_RESIZE: 0x12,
+            PTY_CLOSE: 0x13,
+            FILE_REQUEST: 0x20,
+            CMD_REQUEST: 0x30,
+            AUTH: 0xF0,
+            AUTH_RESULT: 0xF1
+        };
+        
+        // 连接WebSocket
+        function connect() {
+            const wsUrl = `ws://${window.location.hostname}:8765/agent`;
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                log('info', 'WebSocket已连接');
+                document.getElementById('wsStatus').className = 'status-badge status-connected';
+                document.getElementById('wsStatus').textContent = '已连接';
+            };
+            
+            ws.onclose = () => {
+                log('warn', 'WebSocket已断开');
+                document.getElementById('wsStatus').className = 'status-badge status-disconnected';
+                document.getElementById('wsStatus').textContent = '未连接';
+                setTimeout(connect, 5000);
+            };
+            
+            ws.onerror = (err) => {
+                log('error', 'WebSocket错误');
+            };
+            
+            ws.onmessage = (event) => {
+                handleMessage(event.data);
+            };
+        }
+        
+        // 处理消息
+        async function handleMessage(data) {
+            const arrayBuffer = await data.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            const msgType = bytes[0];
+            const jsonStr = new TextDecoder().decode(bytes.slice(1));
+            
+            try {
+                const jsonData = JSON.parse(jsonStr);
+                
+                switch(msgType) {
+                    case MSG_TYPES.SYSTEM_STATUS:
+                        updateStatus(jsonData);
+                        break;
+                    case MSG_TYPES.LOG_UPLOAD:
+                        handleLogData(jsonData);
+                        break;
+                    case MSG_TYPES.SCRIPT_RESULT:
+                        handleScriptResult(jsonData);
+                        break;
+                    case MSG_TYPES.PTY_DATA:
+                        handlePtyData(jsonData);
+                        break;
+                    case MSG_TYPES.PTY_CLOSE:
+                        handlePtyClose(jsonData);
+                        break;
+                }
+            } catch(e) {
+                console.error('解析消息失败:', e);
+            }
+        }
+        
+        // 更新状态显示
+        function updateStatus(data) {
+            document.getElementById('cpuUsage').textContent = data.cpu_usage?.toFixed(1) + '%';
+            document.getElementById('memUsage').textContent = 
+                `${data.mem_used?.toFixed(0)}/${data.mem_total?.toFixed(0)}MB`;
+            document.getElementById('diskUsage').textContent = 
+                `${data.disk_used?.toFixed(0)}/${data.disk_total?.toFixed(0)}MB`;
+            document.getElementById('loadAvg').textContent = data.load_1min?.toFixed(2);
+            document.getElementById('uptime').textContent = formatUptime(data.uptime);
+            document.getElementById('ipAddr').textContent = data.ip_addr || '--';
+        }
+        
+        // 格式化运行时间
+        function formatUptime(seconds) {
+            if (!seconds) return '--';
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${mins}m`;
+            return `${mins}m`;
+        }
+        
+        // 发送消息
+        function sendMessage(msgType, data) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('error', '未连接到服务器');
+                return;
+            }
+            
+            const jsonStr = JSON.stringify(data);
+            const jsonBytes = new TextEncoder().encode(jsonStr);
+            const message = new Uint8Array(1 + jsonBytes.length);
+            message[0] = msgType;
+            message.set(jsonBytes, 1);
+            ws.send(message);
+        }
+        
+        // 刷新状态
+        function refreshStatus() {
+            sendMessage(MSG_TYPES.CMD_REQUEST, {
+                cmd: 'status',
+                request_id: 'status-' + Date.now()
+            });
+            log('info', '已请求刷新状态');
+        }
+        
+        // 打开终端
+        function openTerminal() {
+            ptySessionId = Date.now();
+            sendMessage(MSG_TYPES.PTY_CREATE, {
+                session_id: ptySessionId,
+                rows: 24,
+                cols: 80
+            });
+            log('info', '正在创建终端会话...');
+            document.getElementById('terminalInput').focus();
+        }
+        
+        // 处理终端输入
+        function handleTerminalInput(event) {
+            if (event.key === 'Enter') {
+                const input = document.getElementById('terminalInput');
+                const cmd = input.value;
+                input.value = '';
+                
+                if (ptySessionId) {
+                    // 发送到PTY
+                    const encoded = btoa(cmd + '\n');
+                    sendMessage(MSG_TYPES.PTY_DATA, {
+                        session_id: ptySessionId,
+                        data: encoded
+                    });
+                } else {
+                    // 直接执行命令
+                    sendMessage(MSG_TYPES.CMD_REQUEST, {
+                        cmd: cmd,
+                        request_id: 'cmd-' + Date.now()
+                    });
+                }
+                
+                appendTerminal('$ ' + cmd + '\n');
+            }
+        }
+        
+        // 追加终端输出
+        function appendTerminal(text) {
+            const output = document.getElementById('terminalOutput');
+            output.textContent += text;
+            const terminal = document.getElementById('terminal');
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+        
+        // 处理PTY数据
+        function handlePtyData(data) {
+            if (data.data) {
+                try {
+                    const decoded = atob(data.data);
+                    appendTerminal(decoded);
+                } catch(e) {}
+            }
+        }
+        
+        // 处理PTY关闭
+        function handlePtyClose(data) {
+            log('info', '终端会话已关闭');
+            ptySessionId = null;
+        }
+        
+        // 显示脚本模态框
+        function showScriptModal() {
+            document.getElementById('scriptModal').classList.add('show');
+            document.getElementById('scriptContent').value = 
+                '#!/bin/sh\necho "Hello from cloud!"\ndate\nuname -a\n';
+        }
+        
+        // 关闭脚本模态框
+        function closeScriptModal() {
+            document.getElementById('scriptModal').classList.remove('show');
+        }
+        
+        // 执行脚本
+        function executeScript() {
+            const content = document.getElementById('scriptContent').value;
+            sendMessage(MSG_TYPES.SCRIPT_RECV, {
+                script_id: 'web-script-' + Date.now(),
+                content: content,
+                execute: true
+            });
+            closeScriptModal();
+            log('info', '已发送脚本');
+        }
+        
+        // 处理脚本结果
+        function handleScriptResult(data) {
+            const status = data.success ? '成功' : '失败';
+            log(data.success ? 'info' : 'error', 
+                `脚本执行${status} (退出码: ${data.exit_code})`);
+            if (data.output) {
+                appendTerminal('--- 脚本输出 ---\n' + data.output + '\n--- 结束 ---\n');
+            }
+        }
+        
+        // 查看日志
+        function viewLogs() {
+            sendMessage(MSG_TYPES.FILE_REQUEST, {
+                action: 'tail',
+                filepath: '/var/log/messages',
+                lines: 50
+            });
+            log('info', '请求日志...');
+        }
+        
+        // 处理日志数据
+        function handleLogData(data) {
+            const viewer = document.getElementById('logViewer');
+            if (data.content) {
+                data.content.forEach(line => {
+                    const div = document.createElement('div');
+                    div.className = 'log-line log-info';
+                    div.textContent = line;
+                    viewer.appendChild(div);
+                });
+            } else if (data.line) {
+                const div = document.createElement('div');
+                div.className = 'log-line log-info';
+                div.textContent = data.line;
+                viewer.appendChild(div);
+            }
+            viewer.scrollTop = viewer.scrollHeight;
+        }
+        
+        // 重启设备
+        function rebootDevice() {
+            if (confirm('确定要重启设备吗？')) {
+                sendMessage(MSG_TYPES.CMD_REQUEST, {
+                    cmd: 'reboot',
+                    request_id: 'reboot-' + Date.now()
+                });
+                log('warn', '已发送重启命令');
+            }
+        }
+        
+        // 记录日志
+        function log(level, message) {
+            const viewer = document.getElementById('logViewer');
+            const div = document.createElement('div');
+            div.className = `log-line log-${level}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            viewer.appendChild(div);
+            viewer.scrollTop = viewer.scrollHeight;
+        }
+        
+        // 页面加载完成后连接
+        document.addEventListener('DOMContentLoaded', () => {
+            log('info', '正在连接服务器...');
+            connect();
+        });
+    </script>
+</body>
+</html>
