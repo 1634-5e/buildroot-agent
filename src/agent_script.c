@@ -11,6 +11,9 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <dirent.h>
+#include <time.h>
+#include <signal.h>
 #include <pthread.h>
 #include "agent.h"
 
@@ -36,8 +39,8 @@ static int ensure_script_dir(const char *path)
     
     /* 递归创建目录 */
     char tmp[256];
-    strncpy(tmp, path, sizeof(tmp) - 1);
-    
+    snprintf(tmp, sizeof(tmp), "%s", path);
+
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
@@ -56,7 +59,7 @@ int script_save(const char *script_id, const char *content, const char *path)
     
     /* 确保目录存在 */
     char dir[256];
-    strncpy(dir, path, sizeof(dir) - 1);
+    snprintf(dir, sizeof(dir), "%s", path);
     char *last_slash = strrchr(dir, '/');
     if (last_slash) {
         *last_slash = '\0';
@@ -316,8 +319,8 @@ int script_execute(agent_context_t *ctx, const char *script_id, const char *scri
     if (!task) return -1;
     
     task->ctx = ctx;
-    strncpy(task->script_id, script_id, sizeof(task->script_id) - 1);
-    strncpy(task->script_path, script_path, sizeof(task->script_path) - 1);
+    snprintf(task->script_id, sizeof(task->script_id), "%s", script_id);
+    snprintf(task->script_path, sizeof(task->script_path), "%s", script_path);
     task->inline_script = false;
     
     /* 创建执行线程 */
@@ -347,8 +350,8 @@ int script_execute_inline(agent_context_t *ctx, const char *script_id, const cha
     if (!task) return -1;
     
     task->ctx = ctx;
-    strncpy(task->script_id, script_id, sizeof(task->script_id) - 1);
-    strncpy(task->content, content, sizeof(task->content) - 1);
+    snprintf(task->script_id, sizeof(task->script_id), "%s", script_id);
+    snprintf(task->content, sizeof(task->content), "%s", content);
     task->inline_script = true;
     
     /* 创建执行线程 */

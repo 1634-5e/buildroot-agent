@@ -21,7 +21,7 @@
 #define AGENT_NAME          "buildroot-agent"
 
 /* 默认配置 */
-#define DEFAULT_SERVER_URL      "wss://your-server.com/agent"
+#define DEFAULT_SERVER_URL      "ws://127.0.0.1:8765/agent"
 #define DEFAULT_HEARTBEAT_SEC   30
 #define DEFAULT_RECONNECT_SEC   5
 #define DEFAULT_LOG_PATH        "/var/log"

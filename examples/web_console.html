@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buildroot Agent 控制台</title>
@@ -17,9 +17,38 @@
             min-height: 100vh;
         }
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             padding: 20px;
+        }
+        
+        @media (max-width: 1200px) {
+            .container {
+                max-width: 1200px;
+                padding: 15px;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 10px;
+            }
+            .stat-value {
+                font-size: 18px;
+            }
+            .stat-label {
+                font-size: 10px;
+            }
         }
         header {
             display: flex;
@@ -98,24 +127,42 @@
         }
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 15px;
         }
         .stat-item {
             background: #0f3460;
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
             text-align: center;
+            min-height: 75px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .stat-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.1);
         }
         .stat-value {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: bold;
             color: #00d4ff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            line-height: 1.2;
+            max-width: 100%;
         }
         .stat-label {
-            font-size: 12px;
+            font-size: 11px;
             color: #888;
             margin-top: 5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
         }
         .terminal {
             background: #000;
@@ -196,6 +243,88 @@
         .log-info { color: #00d4ff; }
         .log-warn { color: #ffc107; }
         .log-error { color: #ff5252; }
+        .color-red { color: #ff5252; font-weight: bold; }
+        .color-yellow { color: #ffc107; font-weight: bold; }
+        .color-green { color: #00c853; font-weight: bold; }
+        .color-high { color: #ff5252; font-weight: bold; }
+        .color-medium { color: #ffc107; font-weight: bold; }
+        .color-low { color: #00d4ff; font-weight: bold; }
+        .color-very-low { color: #888; }
+        small { 
+            font-size: 0.8em; 
+            color: #888; 
+            margin-left: 5px;
+        }
+        
+        /* 工具提示样式 */
+        .tooltip {
+            position: relative;
+            cursor: help;
+        }
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            max-width: 300px;
+            white-space: normal;
+            word-wrap: break-word;
+            margin-bottom: 5px;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+        .tooltip:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid rgba(0, 0, 0, 0.9);
+            margin-bottom: -1px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(51, 51, 51, 0.5);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .progress-low { background: #00c853; }
+        .progress-medium { background: #ffc107; }
+        .progress-high { background: #ff5252; }
+        .stat-item-with-progress {
+            background: #0f3460;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            min-height: 95px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .stat-item-with-progress:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.1);
+        }
         input[type="text"], textarea {
             width: 100%;
             padding: 10px;
@@ -249,6 +378,7 @@
 </head>
 <body>
     <div class="container">
+
         <header>
             <h1>🖥️ Buildroot Agent 控制台</h1>
             <span id="wsStatus" class="status-badge status-disconnected">未连接</span>
@@ -268,17 +398,26 @@
                 <div class="card">
                     <h3>📊 系统状态</h3>
                     <div id="statsGrid" class="stats-grid">
-                        <div class="stat-item">
+                        <div class="stat-item-with-progress">
                             <div class="stat-value" id="cpuUsage">--</div>
                             <div class="stat-label">CPU 使用率</div>
+                            <div class="progress-bar">
+                                <div id="cpuProgress" class="progress-fill" style="width: 0%"></div>
+                            </div>
                         </div>
-                        <div class="stat-item">
+                        <div class="stat-item-with-progress">
                             <div class="stat-value" id="memUsage">--</div>
                             <div class="stat-label">内存使用</div>
+                            <div class="progress-bar">
+                                <div id="memProgress" class="progress-fill" style="width: 0%"></div>
+                            </div>
                         </div>
-                        <div class="stat-item">
+                        <div class="stat-item-with-progress">
                             <div class="stat-value" id="diskUsage">--</div>
                             <div class="stat-label">磁盘使用</div>
+                            <div class="progress-bar">
+                                <div id="diskProgress" class="progress-fill" style="width: 0%"></div>
+                            </div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-value" id="loadAvg">--</div>
@@ -292,17 +431,45 @@
                             <div class="stat-value" id="ipAddr">--</div>
                             <div class="stat-label">IP 地址</div>
                         </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="hostname">--</div>
+                            <div class="stat-label">主机名</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="kernelVersion">--</div>
+                            <div class="stat-label">内核版本</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="networkRx">--</div>
+                            <div class="stat-label">网络接收</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="networkTx">--</div>
+                            <div class="stat-label">网络发送</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="macAddr">--</div>
+                            <div class="stat-label">MAC 地址</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="lastUpdate">--</div>
+                            <div class="stat-label">最后更新</div>
+                        </div>
                     </div>
                 </div>
                 
                 <div class="card">
                     <h3>🎛️ 操作</h3>
                     <div class="actions">
-                        <button class="btn btn-primary" onclick="refreshStatus()">刷新状态</button>
-                        <button class="btn btn-primary" onclick="openTerminal()">打开终端</button>
+                        <button class="btn btn-primary" id="refreshBtn" onclick="refreshStatus()">刷新状态</button>
+                        <button class="btn btn-primary" id="terminalBtn" onclick="openTerminal()">打开终端</button>
                         <button class="btn btn-secondary" onclick="showScriptModal()">执行脚本</button>
                         <button class="btn btn-secondary" onclick="viewLogs()">查看日志</button>
                         <button class="btn btn-danger" onclick="rebootDevice()">重启设备</button>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 12px; color: #888;">
+                        <span id="refreshStatus">自动刷新: 未启动</span> | 
+                        <span id="selectedDevice">未选择设备</span>
                     </div>
                 </div>
                 
@@ -347,6 +514,7 @@
         let currentDevice = null;
         let devices = {};
         let ptySessionId = null;
+        let autoRefreshInterval = null;
         
         // 消息类型
         const MSG_TYPES = {
@@ -362,12 +530,13 @@
             FILE_REQUEST: 0x20,
             CMD_REQUEST: 0x30,
             AUTH: 0xF0,
-            AUTH_RESULT: 0xF1
+            AUTH_RESULT: 0xF1,
+            DEVICE_LIST: 0x50  // 设备列表更新
         };
         
         // 连接WebSocket
         function connect() {
-            const wsUrl = `ws://${window.location.hostname}:8765/agent`;
+            const wsUrl = `ws://${window.location.hostname}:8765/console`;
             ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
@@ -380,6 +549,8 @@
                 log('warn', 'WebSocket已断开');
                 document.getElementById('wsStatus').className = 'status-badge status-disconnected';
                 document.getElementById('wsStatus').textContent = '未连接';
+                document.getElementById('refreshStatus').textContent = '自动刷新: 连接断开';
+                stopAutoRefresh();
                 setTimeout(connect, 5000);
             };
             
@@ -418,33 +589,203 @@
                     case MSG_TYPES.PTY_CLOSE:
                         handlePtyClose(jsonData);
                         break;
+                    case MSG_TYPES.DEVICE_LIST:
+                        updateDeviceList(jsonData);
+                        break;
+                    case MSG_TYPES.CMD_RESPONSE:
+                        handleCommandResponse(jsonData);
+                        break;
                 }
             } catch(e) {
                 console.error('解析消息失败:', e);
             }
         }
         
-        // 更新状态显示
-        function updateStatus(data) {
-            document.getElementById('cpuUsage').textContent = data.cpu_usage?.toFixed(1) + '%';
-            document.getElementById('memUsage').textContent = 
-                `${data.mem_used?.toFixed(0)}/${data.mem_total?.toFixed(0)}MB`;
-            document.getElementById('diskUsage').textContent = 
-                `${data.disk_used?.toFixed(0)}/${data.disk_total?.toFixed(0)}MB`;
-            document.getElementById('loadAvg').textContent = data.load_1min?.toFixed(2);
-            document.getElementById('uptime').textContent = formatUptime(data.uptime);
-            document.getElementById('ipAddr').textContent = data.ip_addr || '--';
+        // 更新设备列表
+        function updateDeviceList(data) {
+            const deviceList = document.getElementById('deviceList');
+            deviceList.innerHTML = '';
+            
+            if (!data.devices || data.devices.length === 0) {
+                deviceList.innerHTML = '<li class="device-item" style="color: #888; text-align: center;">等待设备连接...</li>';
+                return;
+            }
+            
+            data.devices.forEach(device => {
+                const li = document.createElement('li');
+                li.className = 'device-item';
+                if (device.device_id === currentDevice) {
+                    li.classList.add('active');
+                }
+                
+                li.innerHTML = `
+                    <div class="device-name">${device.device_id}</div>
+                    <div class="device-info">
+                        状态: <span style="color: #00c853;">在线</span> | 
+                        连接时间: ${new Date(device.connected_time).toLocaleTimeString()}
+                    </div>
+                `;
+                
+                li.onclick = () => selectDevice(device.device_id);
+                deviceList.appendChild(li);
+            });
+            
+            // 如果没有选中设备，自动选择第一个
+            if (!currentDevice && data.devices.length > 0) {
+                selectDevice(data.devices[0].device_id);
+            }
         }
         
-        // 格式化运行时间
+        // 选择设备
+        function selectDevice(deviceId) {
+            currentDevice = deviceId;
+            
+            // 更新设备列表UI
+            document.querySelectorAll('.device-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.textContent.includes(deviceId)) {
+                    item.classList.add('active');
+                }
+            });
+            
+            // 更新选中设备显示
+            document.getElementById('selectedDevice').textContent = `当前设备: ${deviceId}`;
+            
+            log('info', `已选择设备: ${deviceId}`);
+            
+            // 清空之前的状态显示
+            clearStatusDisplay();
+            
+            // 立即请求设备状态
+            refreshStatus();
+            
+            // 启动自动刷新
+            startAutoRefresh();
+        }
+        
+// 更新状态显示
+        function updateStatus(data) {
+            // 只更新当前选中设备的状态
+            if (data.device_id && data.device_id !== currentDevice) {
+                return;
+            }
+            
+            const statusData = data.device_id ? data : data;
+            
+            // CPU使用率
+            const cpuUsage = statusData.cpu_usage || 0;
+            document.getElementById('cpuUsage').textContent = cpuUsage.toFixed(1) + '%';
+            updateProgressBar('cpuProgress', cpuUsage);
+            
+            // 内存使用（智能单位转换和颜色指示）
+            const memElement = document.getElementById('memUsage');
+            const memHTML = formatMemory(statusData.mem_used, statusData.mem_total);
+            memElement.innerHTML = memHTML;
+            const memUsagePercent = statusData.mem_total > 0 ? 
+                (statusData.mem_used / statusData.mem_total) * 100 : 0;
+            updateProgressBar('memProgress', memUsagePercent);
+            
+            // 磁盘使用（智能单位转换和颜色指示）
+            const diskElement = document.getElementById('diskUsage');
+            const diskHTML = formatDisk(statusData.disk_used, statusData.disk_total);
+            diskElement.innerHTML = diskHTML;
+            const diskUsagePercent = statusData.disk_total > 0 ? 
+                (statusData.disk_used / statusData.disk_total) * 100 : 0;
+            updateProgressBar('diskProgress', diskUsagePercent);
+            
+            // 系统负载（添加颜色指示）
+            const loadAvg = statusData.load_1min || 0;
+            const loadElement = document.getElementById('loadAvg');
+            let loadColorClass = '';
+            if (loadAvg >= 5.0) {
+                loadColorClass = 'color-red';
+            } else if (loadAvg >= 2.0) {
+                loadColorClass = 'color-yellow';
+            } else if (loadAvg >= 1.0) {
+                loadColorClass = 'color-green';
+            }
+            loadElement.innerHTML = `<span class="${loadColorClass}">${loadAvg.toFixed(2)}</span>`;
+            
+            // 运行时间
+            const uptimeElement = document.getElementById('uptime');
+            const uptimeHTML = formatUptime(statusData.uptime);
+            uptimeElement.innerHTML = uptimeHTML;
+            
+            // 网络速率（智能单位转换和颜色指示）
+            const networkRxElement = document.getElementById('networkRx');
+            const networkRxHTML = formatNetworkSpeed(statusData.net_rx_bytes);
+            networkRxElement.innerHTML = networkRxHTML;
+            
+            const networkTxElement = document.getElementById('networkTx');
+            const networkTxHTML = formatNetworkSpeed(statusData.net_tx_bytes);
+            networkTxElement.innerHTML = networkTxHTML;
+            
+            // 其他信息
+            setFieldWithTooltip('ipAddr', formatIPAddress(statusData.ip_addr), statusData.ip_addr);
+            setFieldWithTooltip('hostname', truncateText(statusData.hostname, 15), statusData.hostname);
+            setFieldWithTooltip('kernelVersion', truncateText(statusData.kernel_version, 18), statusData.kernel_version);
+            setFieldWithTooltip('macAddr', formatMacAddress(statusData.mac_addr), statusData.mac_addr);
+            
+            // 记录状态更新时间
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+            log('info', `状态已更新: ${now.toLocaleTimeString()}`);
+        }
+        
+        // 设置字段并添加工具提示
+        function setFieldWithTooltip(elementId, displayText, fullText) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = displayText;
+                element.className = 'stat-value tooltip';
+                if (fullText && fullText !== displayText) {
+                    element.setAttribute('data-tooltip', fullText);
+                } else {
+                    element.removeAttribute('data-tooltip');
+                }
+            }
+        }
+        
+        // 更新进度条
+        function updateProgressBar(elementId, percentage) {
+            const progressBar = document.getElementById(elementId);
+            if (progressBar) {
+                progressBar.style.width = Math.min(100, Math.max(0, percentage)) + '%';
+                
+                // 根据使用率设置颜色
+                progressBar.className = 'progress-fill';
+                if (percentage < 50) {
+                    progressBar.classList.add('progress-low');
+                } else if (percentage < 80) {
+                    progressBar.classList.add('progress-medium');
+                } else {
+                    progressBar.classList.add('progress-high');
+                }
+            }
+        }
+        
+        // 格式化运行时间（添加颜色指示）
         function formatUptime(seconds) {
             if (!seconds) return '--';
+            
             const days = Math.floor(seconds / 86400);
             const hours = Math.floor((seconds % 86400) / 3600);
             const mins = Math.floor((seconds % 3600) / 60);
-            if (days > 0) return `${days}d ${hours}h`;
-            if (hours > 0) return `${hours}h ${mins}m`;
-            return `${mins}m`;
+            
+            let uptimeStr, colorClass;
+            
+            if (days > 0) {
+                uptimeStr = `${days}d ${hours}h`;
+                colorClass = 'color-green'; // 长时间运行是好事
+            } else if (hours > 0) {
+                uptimeStr = `${hours}h ${mins}m`;
+                colorClass = 'color-yellow';
+            } else {
+                uptimeStr = `${mins}m`;
+                colorClass = 'color-red'; // 短时间可能表示重启过
+            }
+            
+            return `<span class="${colorClass}">${uptimeStr}</span>`;
         }
         
         // 发送消息
@@ -452,6 +793,10 @@
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 log('error', '未连接到服务器');
                 return;
+            }
+            
+            if (currentDevice) {
+                data.device_id = currentDevice;
             }
             
             const jsonStr = JSON.stringify(data);
@@ -462,13 +807,219 @@
             ws.send(message);
         }
         
+        // 格式化字节数（智能单位转换）
+        function formatBytes(bytes, decimals = 1) {
+            if (!bytes || bytes === 0) return '0 B';
+            
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        
+        // 格式化内存使用（修正单位换算）
+        function formatMemory(value, total = null) {
+            if (value === undefined || value === null) return '--';
+            
+            // 如果有总量，显示使用率和进度
+            if (total && total > 0) {
+                const percent = ((value / total) * 100).toFixed(1);
+                
+                // 根据总量选择合适的单位 (agent返回的是MB)
+                let unitValue, unit;
+                if (total >= 1024) { // GB级别 (1024 MB = 1 GB)
+                    unitValue = (value / 1024).toFixed(2);
+                    unit = 'GB';
+                } else { // MB级别
+                    unitValue = value.toFixed(1);
+                    unit = 'MB';
+                }
+                
+                // 根据使用率添加颜色指示
+                let colorClass = '';
+                if (parseFloat(percent) >= 90) {
+                    colorClass = 'color-red';
+                } else if (parseFloat(percent) >= 75) {
+                    colorClass = 'color-yellow';
+                } else if (parseFloat(percent) >= 50) {
+                    colorClass = 'color-green';
+                }
+                
+                return `<span class="${colorClass}">${unitValue}${unit}</span> <small>(${percent}%)</small>`;
+            }
+            
+            // 没有总量，只显示值 (假设是MB)
+            if (value >= 1024) {
+                return `<span>${(value / 1024).toFixed(2)}GB</span>`;
+            } else {
+                return `<span>${value.toFixed(1)}MB</span>`;
+            }
+        }
+        
+        // 格式化磁盘使用（修正单位换算）
+        function formatDisk(value, total = null) {
+            if (value === undefined || value === null) return '--';
+            
+            // 如果有总量，显示使用率和进度
+            if (total && total > 0) {
+                const percent = ((value / total) * 100).toFixed(1);
+                
+                // 根据总量选择合适的单位 (agent返回的是MB)
+                let unitValue, unit;
+                if (total >= 1024 * 1024) { // TB级别 (1024*1024 MB = 1 TB)
+                    unitValue = (value / (1024 * 1024)).toFixed(2);
+                    unit = 'TB';
+                } else if (total >= 1024) { // GB级别 (1024 MB = 1 GB)
+                    unitValue = (value / 1024).toFixed(2);
+                    unit = 'GB';
+                } else { // MB级别
+                    unitValue = value.toFixed(1);
+                    unit = 'MB';
+                }
+                
+                // 根据使用率添加颜色指示
+                let colorClass = '';
+                if (parseFloat(percent) >= 90) {
+                    colorClass = 'color-red';
+                } else if (parseFloat(percent) >= 75) {
+                    colorClass = 'color-yellow';
+                } else if (parseFloat(percent) >= 50) {
+                    colorClass = 'color-green';
+                }
+                
+                return `<span class="${colorClass}">${unitValue}${unit}</span> <small>(${percent}%)</small>`;
+            }
+            
+            // 没有总量，只显示值 (假设是MB)
+            if (value >= 1024 * 1024) {
+                return `<span>${(value / (1024 * 1024)).toFixed(2)}TB</span>`;
+            } else if (value >= 1024) {
+                return `<span>${(value / 1024).toFixed(2)}GB</span>`;
+            } else {
+                return `<span>${value.toFixed(1)}MB</span>`;
+            }
+        }
+        
+        // 格式化网络速率（智能单位转换和颜色指示）
+        function formatNetworkSpeed(bytesPerSecond) {
+            if (!bytesPerSecond || bytesPerSecond === 0) return '0 B/s';
+            
+            const k = 1024;
+            let value, unit, colorClass;
+            
+            // 根据速度选择合适的单位
+            if (bytesPerSecond >= k * k * k) { // GB/s
+                value = (bytesPerSecond / (k * k * k)).toFixed(2);
+                unit = 'GB/s';
+                colorClass = 'color-high';
+            } else if (bytesPerSecond >= k * k) { // MB/s
+                value = (bytesPerSecond / (k * k)).toFixed(2);
+                unit = 'MB/s';
+                colorClass = 'color-medium';
+            } else if (bytesPerSecond >= k) { // KB/s
+                value = (bytesPerSecond / k).toFixed(1);
+                unit = 'KB/s';
+                colorClass = 'color-low';
+            } else { // B/s
+                value = Math.round(bytesPerSecond);
+                unit = 'B/s';
+                colorClass = 'color-very-low';
+            }
+            
+            return `<span class="${colorClass}">${value}${unit}</span>`;
+        }
+        
+        // 截断长文本
+        function truncateText(text, maxLength = 20) {
+            if (!text) return '--';
+            if (text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        }
+        
+        // 格式化IP地址（确保不会太长）
+        function formatIPAddress(ip) {
+            if (!ip) return '--';
+            return ip.length > 15 ? truncateText(ip, 12) : ip;
+        }
+        
+        // 格式化MAC地址
+        function formatMacAddress(mac) {
+            if (!mac) return '--';
+            return mac.length > 17 ? truncateText(mac, 14) : mac;
+        }
+        
+        // 清空状态显示
+        function clearStatusDisplay() {
+            document.getElementById('cpuUsage').textContent = '--';
+            document.getElementById('memUsage').textContent = '--';
+            document.getElementById('diskUsage').textContent = '--';
+            document.getElementById('loadAvg').textContent = '--';
+            document.getElementById('uptime').textContent = '--';
+            document.getElementById('ipAddr').textContent = '--';
+            document.getElementById('hostname').textContent = '--';
+            document.getElementById('kernelVersion').textContent = '--';
+            document.getElementById('networkRx').textContent = '--';
+            document.getElementById('networkTx').textContent = '--';
+            document.getElementById('macAddr').textContent = '--';
+            document.getElementById('lastUpdate').textContent = '--';
+            
+            // 重置进度条
+            updateProgressBar('cpuProgress', 0);
+            updateProgressBar('memProgress', 0);
+            updateProgressBar('diskProgress', 0);
+        }
+        
         // 刷新状态
         function refreshStatus() {
+            if (!currentDevice) {
+                log('warn', '请先选择设备');
+                return;
+            }
+            
+            // 更新按钮状态
+            const btn = document.getElementById('refreshBtn');
+            btn.textContent = '刷新中...';
+            btn.disabled = true;
+            
             sendMessage(MSG_TYPES.CMD_REQUEST, {
                 cmd: 'status',
                 request_id: 'status-' + Date.now()
             });
             log('info', '已请求刷新状态');
+            
+            // 3秒后恢复按钮状态
+            setTimeout(() => {
+                btn.textContent = '刷新状态';
+                btn.disabled = false;
+            }, 3000);
+        }
+        
+        // 启动自动刷新
+        function startAutoRefresh() {
+            // 停止之前的自动刷新
+            stopAutoRefresh();
+            
+            // 每30秒自动刷新一次
+            autoRefreshInterval = setInterval(() => {
+                if (currentDevice && ws && ws.readyState === WebSocket.OPEN) {
+                    refreshStatus();
+                }
+            }, 30000);
+            
+            document.getElementById('refreshStatus').textContent = '自动刷新: 已启动 (30秒)';
+            log('info', '已启动自动刷新 (30秒间隔)');
+        }
+        
+        // 停止自动刷新
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                document.getElementById('refreshStatus').textContent = '自动刷新: 已停止';
+            }
         }
         
         // 打开终端
@@ -605,6 +1156,24 @@
                 });
                 log('warn', '已发送重启命令');
             }
+        }
+        
+        // 处理命令响应
+        function handleCommandResponse(data) {
+            // 只处理当前选中设备的响应
+            if (data.device_id && data.device_id !== currentDevice) {
+                return;
+            }
+            
+            const responseData = data.device_id ? data : data;
+            
+            if (responseData.cmd === 'status' && responseData.status) {
+                updateStatus(responseData.status);
+            } else if (responseData.output) {
+                appendTerminal(responseData.output + '\n');
+            }
+            
+            log('info', `命令响应: ${responseData.cmd || 'unknown'}`);
         }
         
         // 记录日志

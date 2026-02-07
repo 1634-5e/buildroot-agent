@@ -12,6 +12,13 @@
 #include <libwebsockets.h>
 #include "agent.h"
 
+/* 兼容不同版本的 libwebsockets: older versions used lws_context_create, newer use lws_create_context */
+#if defined(LWS_LIBRARY_VERSION_MAJOR) && (LWS_LIBRARY_VERSION_MAJOR >= 3)
+#define LWS_CREATE_CONTEXT lws_create_context
+#else
+#define LWS_CREATE_CONTEXT lws_context_create
+#endif
+
 /* WebSocket客户端结构 */
 typedef struct {
     struct lws_context *context;
@@ -49,6 +56,8 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
     
     if (!client) return 0;
     
+    LOG_DEBUG("ws_callback: reason=%d, wsi=%p, len=%zu", reason, wsi, len);
+    
     switch (reason) {
     case LWS_CALLBACK_CLIENT_ESTABLISHED:
         LOG_INFO("WebSocket连接已建立");
@@ -61,8 +70,26 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
             /* 发送认证消息 */
             char *auth_msg = protocol_create_auth_msg(client->agent_ctx);
             if (auth_msg) {
-                ws_send_json(client->agent_ctx, MSG_TYPE_AUTH, auth_msg);
+                LOG_DEBUG("发送认证消息: %s", auth_msg);
+                /* 直接将消息放入缓冲区，不通过ws_send_json */
+                size_t msg_len = strlen(auth_msg);
+                if (msg_len + 1 > 65535) {
+                    LOG_ERROR("认证消息太大: %zu > 65535", msg_len);
+                    free(auth_msg);
+                    break;
+                }
+                pthread_mutex_lock(&client->send_lock);
+                client->send_buffer[LWS_PRE] = (unsigned char)MSG_TYPE_AUTH;
+                memcpy(client->send_buffer + LWS_PRE + 1, auth_msg, msg_len);
+                client->send_len = msg_len + 1;
+                client->has_pending_send = true;
+                pthread_mutex_unlock(&client->send_lock);
+                LOG_DEBUG("认证消息已入队，长度: %zu bytes", client->send_len);
+                lws_callback_on_writable(wsi);
+                LOG_DEBUG("已调用 lws_callback_on_writable");
                 free(auth_msg);
+            } else {
+                LOG_ERROR("创建认证消息失败");
             }
         }
         break;
@@ -79,22 +106,26 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         pthread_mutex_lock(&client->send_lock);
         if (client->has_pending_send && client->send_buffer && client->send_len > 0) {
+            LOG_DEBUG("LWS_CALLBACK_CLIENT_WRITEABLE: 准备发送 %zu 字节", client->send_len);
             /* 发送数据 */
             int written = lws_write(wsi, client->send_buffer + LWS_PRE,
-                                    client->send_len, LWS_WRITE_TEXT);
+                                    client->send_len, LWS_WRITE_BINARY);
             if (written < 0) {
-                LOG_ERROR("WebSocket发送失败");
+                LOG_ERROR("WebSocket发送失败: %d", written);
             } else {
-                LOG_DEBUG("发送数据: %d bytes", written);
+                LOG_INFO("WebSocket消息已发送: %d bytes", written);
             }
             client->has_pending_send = false;
             pthread_cond_signal(&client->send_cond);
+        } else {
+            LOG_DEBUG("LWS_CALLBACK_CLIENT_WRITEABLE: 但没有待发送数据");
         }
         pthread_mutex_unlock(&client->send_lock);
         break;
         
     case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
         LOG_ERROR("WebSocket连接错误: %s", in ? (char *)in : "unknown");
+        LOG_ERROR("未能建立连接，30秒后重连");
         client->connected = false;
         client->connecting = false;
         if (client->agent_ctx) {
@@ -104,7 +135,10 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
         break;
         
     case LWS_CALLBACK_CLIENT_CLOSED:
-        LOG_INFO("WebSocket连接已关闭");
+        LOG_WARN("WebSocket连接已关闭 (原因: %s)", in ? (char *)in : "未知");
+        LOG_WARN("已认证状态: %d, 已连接状态: %d", 
+                 client->agent_ctx ? client->agent_ctx->authenticated : -1,
+                 client->agent_ctx ? client->agent_ctx->connected : -1);
         client->connected = false;
         client->wsi = NULL;
         if (client->agent_ctx) {
@@ -288,7 +322,7 @@ int ws_connect(agent_context_t *ctx)
         lws_context_destroy(client->context);
     }
     
-    client->context = lws_context_create(&ctx_info);
+    client->context = LWS_CREATE_CONTEXT(&ctx_info);
     if (!client->context) {
         LOG_ERROR("创建WebSocket上下文失败");
         return -1;

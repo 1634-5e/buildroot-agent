@@ -246,10 +246,10 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     if (!ctx || !data || len < 1) return -1;
     
     /* 消息格式: 类型(1字节) + JSON数据 */
-    msg_type_t type = (msg_type_t)data[0];
+    msg_type_t type = (msg_type_t)(unsigned char)data[0];
     const char *json_data = data + 1;
     
-    LOG_DEBUG("收到消息: type=0x%02X, len=%zu", type, len);
+    LOG_DEBUG("收到消息: type=0x%02X, len=%zu", (unsigned char)type, len);
     
     switch (type) {
     case MSG_TYPE_AUTH_RESULT:
