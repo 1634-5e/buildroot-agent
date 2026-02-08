@@ -148,7 +148,7 @@ static void handle_pty_data(agent_context_t *ctx, const char *data)
         if (pty_data) free(pty_data);
         return;
     }
-    
+    LOG_INFO("收到 PTY_DATA 要写入: session_id=%d, data_len=%zu", session_id, strlen(pty_data));
     pty_write_data(ctx, session_id, pty_data, strlen(pty_data));
     free(pty_data);
 }
@@ -287,6 +287,11 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     case MSG_TYPE_HEARTBEAT:
         /* 心跳响应 */
         LOG_DEBUG("收到心跳响应");
+        break;
+
+    case MSG_TYPE_DEVICE_LIST:
+        /* 设备列表更新（来自服务器） */
+        LOG_INFO("收到设备列表更新: %s", json_data);
         break;
         
     default:

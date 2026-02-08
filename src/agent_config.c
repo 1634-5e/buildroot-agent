@@ -80,8 +80,33 @@ int config_load(agent_config_t *config, const char *path)
     
     FILE *fp = fopen(path, "r");
     if (!fp) {
-        LOG_WARN("配置文件不存在，使用默认配置: %s", path);
-        return 0;  /* 使用默认配置 */
+        /* 尝试其他路径 */
+        char alt_path[256];
+        
+        /* 如果路径不以 .conf 结尾，尝试添加 .conf */
+        if (!strstr(path, ".conf")) {
+            snprintf(alt_path, sizeof(alt_path), "%s.conf", path);
+            fp = fopen(alt_path, "r");
+            if (fp) {
+                LOG_INFO("使用替代配置路径: %s", alt_path);
+                path = alt_path;
+            }
+        }
+        
+        /* 如果仍未找到，尝试在当前目录查找 */
+        if (!fp && strchr(path, '/') == NULL) {
+            snprintf(alt_path, sizeof(alt_path), "./%s", path);
+            fp = fopen(alt_path, "r");
+            if (fp) {
+                LOG_INFO("使用替代配置路径: %s", alt_path);
+                path = alt_path;
+            }
+        }
+        
+        if (!fp) {
+            LOG_WARN("配置文件不存在，使用默认配置: %s", path);
+            return 0;  /* 使用默认配置 */
+        }
     }
     
     char line[512];

@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <libwebsockets.h>
 #include "agent.h"
+#include <time.h>
 
 /* 兼容不同版本的 libwebsockets: older versions used lws_context_create, newer use lws_create_context */
 #if defined(LWS_LIBRARY_VERSION_MAJOR) && (LWS_LIBRARY_VERSION_MAJOR >= 3)
@@ -32,6 +33,10 @@ typedef struct {
     pthread_mutex_t send_lock;
     pthread_cond_t send_cond;
     bool has_pending_send;
+    /* 简单的发送队列，避免单缓冲覆盖/丢弃 */
+    struct msg_node *msg_head;
+    struct msg_node *msg_tail;
+    int queued_count;
     
     /* 接收缓冲区 */
     unsigned char *recv_buffer;
@@ -45,6 +50,13 @@ typedef struct {
     
     agent_context_t *agent_ctx;
 } ws_client_t;
+
+/* 消息节点 */
+struct msg_node {
+    unsigned char *data; /* 指向分配的缓冲区，包含 LWS_PRE 前缀 */
+    size_t len;          /* 数据长度（不包含 LWS_PRE） */
+    struct msg_node *next;
+};
 
 static ws_client_t *g_ws_client = NULL;
 
@@ -67,26 +79,16 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
         
         if (client->agent_ctx) {
             client->agent_ctx->connected = true;
-            /* 发送认证消息 */
+            /* 发送认证消息，使用统一的入队发送接口 */
             char *auth_msg = protocol_create_auth_msg(client->agent_ctx);
             if (auth_msg) {
                 LOG_DEBUG("发送认证消息: %s", auth_msg);
-                /* 直接将消息放入缓冲区，不通过ws_send_json */
-                size_t msg_len = strlen(auth_msg);
-                if (msg_len + 1 > 65535) {
-                    LOG_ERROR("认证消息太大: %zu > 65535", msg_len);
-                    free(auth_msg);
-                    break;
+                int rc = ws_send_json(client->agent_ctx, MSG_TYPE_AUTH, auth_msg);
+                if (rc != 0) {
+                    LOG_ERROR("入队认证消息失败: %d", rc);
+                } else {
+                    LOG_DEBUG("认证消息已入队 via ws_send_json");
                 }
-                pthread_mutex_lock(&client->send_lock);
-                client->send_buffer[LWS_PRE] = (unsigned char)MSG_TYPE_AUTH;
-                memcpy(client->send_buffer + LWS_PRE + 1, auth_msg, msg_len);
-                client->send_len = msg_len + 1;
-                client->has_pending_send = true;
-                pthread_mutex_unlock(&client->send_lock);
-                LOG_DEBUG("认证消息已入队，长度: %zu bytes", client->send_len);
-                lws_callback_on_writable(wsi);
-                LOG_DEBUG("已调用 lws_callback_on_writable");
                 free(auth_msg);
             } else {
                 LOG_ERROR("创建认证消息失败");
@@ -95,8 +97,8 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
         break;
         
     case LWS_CALLBACK_CLIENT_RECEIVE:
-        LOG_DEBUG("收到数据: %zu bytes", len);
-        
+        LOG_INFO("收到数据: %zu bytes", len);
+
         /* 处理接收到的消息 */
         if (client->agent_ctx && in && len > 0) {
             protocol_handle_message(client->agent_ctx, (const char *)in, len);
@@ -105,46 +107,37 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
         
     case LWS_CALLBACK_CLIENT_WRITEABLE:
         pthread_mutex_lock(&client->send_lock);
-        if (client->has_pending_send && client->send_buffer && client->send_len > 0) {
-            LOG_DEBUG("LWS_CALLBACK_CLIENT_WRITEABLE: 准备发送 %zu 字节", client->send_len);
-            /* 发送数据 */
-            int written = lws_write(wsi, client->send_buffer + LWS_PRE,
-                                    client->send_len, LWS_WRITE_BINARY);
+
+        if (client->msg_head) {
+            struct msg_node *node = client->msg_head;
+            struct timespec _ts_write;
+            clock_gettime(CLOCK_REALTIME, &_ts_write);
+            LOG_INFO("WRITEABLE: sending queued message, queued=%d, len=%zu, ts=%ld.%09ld", client->queued_count, node->len, (long)_ts_write.tv_sec, _ts_write.tv_nsec);
+
+            int written = lws_write(wsi, node->data + LWS_PRE, node->len, LWS_WRITE_BINARY);
             if (written < 0) {
                 LOG_ERROR("WebSocket发送失败: %d", written);
-            } else {
-                LOG_INFO("WebSocket消息已发送: %d bytes", written);
+            } else if (written != (int)node->len) {
+                LOG_WARN("WebSocket发送不完整: %d/%zu bytes", written, node->len);
             }
-            client->has_pending_send = false;
+
+            /* 弹出并释放节点 */
+            client->msg_head = node->next;
+            if (!client->msg_head) client->msg_tail = NULL;
+            client->queued_count--;
+            free(node->data);
+            free(node);
+
+            client->has_pending_send = (client->msg_head != NULL);
+            if (client->has_pending_send && client->wsi) {
+                lws_callback_on_writable(client->wsi);
+            }
             pthread_cond_signal(&client->send_cond);
         } else {
-            LOG_DEBUG("LWS_CALLBACK_CLIENT_WRITEABLE: 但没有待发送数据");
+            client->has_pending_send = false;
+            pthread_cond_signal(&client->send_cond);
         }
         pthread_mutex_unlock(&client->send_lock);
-        break;
-        
-    case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-        LOG_ERROR("WebSocket连接错误: %s", in ? (char *)in : "unknown");
-        LOG_ERROR("未能建立连接，30秒后重连");
-        client->connected = false;
-        client->connecting = false;
-        if (client->agent_ctx) {
-            client->agent_ctx->connected = false;
-            client->agent_ctx->authenticated = false;
-        }
-        break;
-        
-    case LWS_CALLBACK_CLIENT_CLOSED:
-        LOG_WARN("WebSocket连接已关闭 (原因: %s)", in ? (char *)in : "未知");
-        LOG_WARN("已认证状态: %d, 已连接状态: %d", 
-                 client->agent_ctx ? client->agent_ctx->authenticated : -1,
-                 client->agent_ctx ? client->agent_ctx->connected : -1);
-        client->connected = false;
-        client->wsi = NULL;
-        if (client->agent_ctx) {
-            client->agent_ctx->connected = false;
-            client->agent_ctx->authenticated = false;
-        }
         break;
         
     default:
@@ -174,13 +167,18 @@ static void *ws_service_thread(void *arg)
     
     while (client->thread_running) {
         if (client->context) {
-            lws_service(client->context, 100);
+            /* 高频处理WebSocket事件以避免任何延迟 */
+            lws_service(client->context, 1);
         }
         
         /* 检查是否需要重连 */
         if (!client->connected && !client->connecting && 
             client->agent_ctx && client->agent_ctx->running) {
-            sleep(client->agent_ctx->config.reconnect_interval);
+            /* 在需要重连时进行较短的延迟，以便快速重连 */
+            int reconnect_interval = client->agent_ctx->config.reconnect_interval;
+            for (int i = 0; i < reconnect_interval && client->thread_running; i++) {
+                sleep(1);
+            }
             if (client->agent_ctx->running) {
                 LOG_INFO("尝试重新连接...");
                 ws_connect(client->agent_ctx);
@@ -394,45 +392,68 @@ void ws_disconnect(agent_context_t *ctx)
 /* 发送消息 */
 int ws_send_message(agent_context_t *ctx, msg_type_t type, const char *data, size_t len)
 {
-    if (!g_ws_client || !g_ws_client->connected) {
-        LOG_WARN("WebSocket未连接");
+    if (!g_ws_client) {
+        LOG_WARN("WebSocket客户端未初始化");
         return -1;
     }
     
     ws_client_t *client = g_ws_client;
     
+    /* 检查连接状态 */
+    if (!client->connected) {
+        LOG_WARN("WebSocket未连接，跳过发送");
+        return -1;
+    }
+    
+    /* 检查wsi有效性 */
+    if (!client->wsi) {
+        LOG_WARN("WebSocket连接无效，跳过发送");
+        return -1;
+    }
+    
     pthread_mutex_lock(&client->send_lock);
-    
-    /* 等待上一次发送完成 */
-    while (client->has_pending_send) {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 5;
-        if (pthread_cond_timedwait(&client->send_cond, &client->send_lock, &ts) != 0) {
-            pthread_mutex_unlock(&client->send_lock);
-            LOG_ERROR("发送超时");
-            return -1;
-        }
+
+    if (len > 65535 - 1) {
+        pthread_mutex_unlock(&client->send_lock);
+        LOG_ERROR("消息太大: %zu > 65534", len);
+        return -1;
     }
-    
-    /* 构造消息：类型(1字节) + 数据 */
-    client->send_buffer[LWS_PRE] = (unsigned char)type;
-    if (data && len > 0) {
-        memcpy(client->send_buffer + LWS_PRE + 1, data, len);
-        client->send_len = len + 1;
-    } else {
-        client->send_len = 1;
+
+    size_t buf_len = LWS_PRE + 1 + len;
+    unsigned char *buf = malloc(buf_len);
+    if (!buf) {
+        pthread_mutex_unlock(&client->send_lock);
+        LOG_ERROR("内存分配失败: send buffer");
+        return -1;
     }
-    
+    buf[LWS_PRE] = (unsigned char)type;
+    if (data && len > 0) memcpy(buf + LWS_PRE + 1, data, len);
+
+    struct msg_node *node = malloc(sizeof(*node));
+    if (!node) {
+        free(buf);
+        pthread_mutex_unlock(&client->send_lock);
+        LOG_ERROR("内存分配失败: msg_node");
+        return -1;
+    }
+    node->data = buf;
+    node->len = 1 + len;
+    node->next = NULL;
+
+    if (client->msg_tail) client->msg_tail->next = node;
+    client->msg_tail = node;
+    if (!client->msg_head) client->msg_head = node;
+    client->queued_count++;
     client->has_pending_send = true;
-    
+
+    struct timespec _ts_enqueue;
+    clock_gettime(CLOCK_REALTIME, &_ts_enqueue);
+    LOG_INFO("消息已入队 timestamp=%ld.%09ld: type=0x%02X, len=%zu, queued=%d", (long)_ts_enqueue.tv_sec, _ts_enqueue.tv_nsec, type, node->len, client->queued_count);
+
     pthread_mutex_unlock(&client->send_lock);
-    
-    /* 请求写入回调 */
-    if (client->wsi) {
-        lws_callback_on_writable(client->wsi);
-    }
-    
+
+    if (client->wsi) lws_callback_on_writable(client->wsi);
+
     return 0;
 }
 

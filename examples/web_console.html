@@ -474,14 +474,19 @@
                 </div>
                 
                 <div class="card">
-                    <h3>💻 终端</h3>
-                    <div id="terminal" class="terminal">
+                    <h3>💻 终端 <small id="terminalStatus" style="color: #888;">(未连接)</small></h3>
+                    <div id="terminal" class="terminal" onclick="handleTerminalFocus()">
                         <div id="terminalOutput" class="terminal-output"></div>
                         <div class="terminal-input-line">
-                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-prompt" id="terminalPrompt">$</span>
                             <input type="text" id="terminalInput" class="terminal-input" 
-                                   placeholder="输入命令..." onkeypress="handleTerminalInput(event)">
+                                placeholder="输入命令... (↑↓历史, Ctrl+C中断, Ctrl+L清屏)" 
+                                onkeydown="handleTerminalInput(event)"
+                                onblur="handleTerminalBlur()" disabled>
                         </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 12px; color: #888;">
+                        快捷键: ↑↓历史命令 | Ctrl+C中断 | Ctrl+L清屏 | Tab补全(暂未实现)
                     </div>
                 </div>
                 
@@ -516,6 +521,12 @@
         let ptySessionId = null;
         let autoRefreshInterval = null;
         
+        // 终端相关变量
+        let terminalHistory = [];
+        let historyIndex = -1;
+        let currentInput = '';
+        let terminalActive = false;
+        
         // 消息类型
         const MSG_TYPES = {
             HEARTBEAT: 0x01,
@@ -536,7 +547,20 @@
         
         // 连接WebSocket
         function connect() {
-            const wsUrl = `ws://${window.location.hostname}:8765/console`;
+            // 自动检测连接URL
+            let wsUrl;
+            
+            // 如果是GitHub Pages环境，使用tunnel URL
+            if (window.location.hostname.includes('github.io') || 
+                window.location.hostname.includes('app.github.dev')) {
+                wsUrl = 'wss://orange-doodle-vp4jg4p7x4g3p5pg-8765.app.github.dev/';
+            } else {
+                // 本地环境，使用当前主机
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                wsUrl = `${protocol}//${window.location.hostname}:8765/console`;
+            }
+            
+            console.log('连接到:', wsUrl);
             ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
@@ -555,7 +579,8 @@
             };
             
             ws.onerror = (err) => {
-                log('error', 'WebSocket错误');
+                console.error('WebSocket错误:', err);
+                log('error', `WebSocket错误: ${err.type || 'unknown'}`);
             };
             
             ws.onmessage = (event) => {
@@ -583,7 +608,10 @@
                     case MSG_TYPES.SCRIPT_RESULT:
                         handleScriptResult(jsonData);
                         break;
-                    case MSG_TYPES.PTY_DATA:
+                        case MSG_TYPES.PTY_CREATE:
+                            handlePtyCreate(jsonData);
+                            break;
+                        case MSG_TYPES.PTY_DATA:
                         handlePtyData(jsonData);
                         break;
                     case MSG_TYPES.PTY_CLOSE:
@@ -608,31 +636,56 @@
             
             if (!data.devices || data.devices.length === 0) {
                 deviceList.innerHTML = '<li class="device-item" style="color: #888; text-align: center;">等待设备连接...</li>';
+                // 如果当前选中的设备之前在线，现在列表为空，则标记为离线
+                if (currentDevice) {
+                    document.getElementById('selectedDevice').textContent = `当前设备: ${currentDevice} (已断开)`;
+                    document.getElementById('terminalStatus').textContent = '(设备已断开)';
+                    document.getElementById('terminalInput').disabled = true;
+                }
                 return;
             }
             
+            // 构建设备列表并标记在线状态
+            let foundCurrent = false;
             data.devices.forEach(device => {
                 const li = document.createElement('li');
                 li.className = 'device-item';
                 if (device.device_id === currentDevice) {
                     li.classList.add('active');
+                    foundCurrent = true;
                 }
-                
+
+                const onlineLabel = device.status && device.status !== 'offline' ?
+                    '<span style="color: #00c853;">在线</span>' : '<span style="color: #ff5252;">离线</span>';
+
                 li.innerHTML = `
                     <div class="device-name">${device.device_id}</div>
                     <div class="device-info">
-                        状态: <span style="color: #00c853;">在线</span> | 
+                        状态: ${onlineLabel} | 
                         连接时间: ${new Date(device.connected_time).toLocaleTimeString()}
                     </div>
                 `;
-                
+
                 li.onclick = () => selectDevice(device.device_id);
                 deviceList.appendChild(li);
             });
+
+            // 如果当前选中的设备不在最新列表里，则认为该设备已断开
+            if (currentDevice && !foundCurrent) {
+                document.getElementById('selectedDevice').textContent = `当前设备: ${currentDevice} (已断开)`;
+                document.getElementById('terminalStatus').textContent = '(设备已断开)';
+                document.getElementById('terminalInput').disabled = true;
+            }
             
             // 如果没有选中设备，自动选择第一个
             if (!currentDevice && data.devices.length > 0) {
                 selectDevice(data.devices[0].device_id);
+            }
+            
+            // 如果选中设备存在且在线，确保终端可用
+            if (currentDevice && foundCurrent) {
+                document.getElementById('terminalStatus').textContent = '(已连接)';
+                document.getElementById('terminalInput').disabled = false;
             }
         }
         
@@ -1024,39 +1077,165 @@
         
         // 打开终端
         function openTerminal() {
+            if (ptySessionId) {
+                log('warn', '终端会话已存在，先关闭现有会话');
+                closeTerminal();
+            }
+            
+            if (!currentDevice) {
+                log('warn', '请先选择设备');
+                return;
+            }
+            
             ptySessionId = Date.now();
+            terminalHistory = [];
+            historyIndex = -1;
+            currentInput = '';
+            
             sendMessage(MSG_TYPES.PTY_CREATE, {
                 session_id: ptySessionId,
                 rows: 24,
                 cols: 80
             });
+            
             log('info', '正在创建终端会话...');
-            document.getElementById('terminalInput').focus();
+            document.getElementById('terminalStatus').textContent = '(连接中...)';
+            document.getElementById('terminalStatus').style.color = '#ffc107';
+            clearTerminal();
+            // 禁用输入，直到收到 PTY_CREATE 创建成功回包
+            document.getElementById('terminalInput').disabled = true;
+            terminalActive = true;
+            
+            // 更新按钮状态
+            const btn = document.getElementById('terminalBtn');
+            btn.textContent = '关闭终端';
+            btn.onclick = closeTerminal;
+        }
+        
+        // 关闭终端
+        function closeTerminal() {
+            if (ptySessionId) {
+                sendMessage(MSG_TYPES.PTY_CLOSE, {
+                    session_id: ptySessionId
+                });
+                ptySessionId = null;
+                log('info', '终端会话已关闭');
+            }
+            
+            terminalActive = false;
+            
+            // 更新UI状态
+            document.getElementById('terminalStatus').textContent = '(未连接)';
+            document.getElementById('terminalStatus').style.color = '#888';
+            // 禁用输入框
+            document.getElementById('terminalInput').disabled = true;
+            
+            const btn = document.getElementById('terminalBtn');
+            btn.textContent = '打开终端';
+            btn.onclick = openTerminal;
         }
         
         // 处理终端输入
         function handleTerminalInput(event) {
-            if (event.key === 'Enter') {
-                const input = document.getElementById('terminalInput');
-                const cmd = input.value;
-                input.value = '';
-                
-                if (ptySessionId) {
-                    // 发送到PTY
-                    const encoded = btoa(cmd + '\n');
-                    sendMessage(MSG_TYPES.PTY_DATA, {
-                        session_id: ptySessionId,
-                        data: encoded
-                    });
-                } else {
-                    // 直接执行命令
-                    sendMessage(MSG_TYPES.CMD_REQUEST, {
-                        cmd: cmd,
-                        request_id: 'cmd-' + Date.now()
-                    });
-                }
-                
-                appendTerminal('$ ' + cmd + '\n');
+            const input = document.getElementById('terminalInput');
+            
+            switch(event.key) {
+                case 'Enter':
+                    event.preventDefault();
+                    const cmd = input.value;
+                    if (cmd.trim()) {
+                        // 添加到历史记录
+                        terminalHistory.push(cmd);
+                        historyIndex = terminalHistory.length;
+                        
+                        if (terminalActive && !ptySessionId) {
+                            // 终端模式下尚未建立会话，拒绝输入
+                            log('warn', '终端尚未连接，命令未发送');
+                            input.value = '';
+                        } else if (ptySessionId) {
+                            // 发送到PTY
+                            const encoded = btoa(cmd + '\n');
+                            sendMessage(MSG_TYPES.PTY_DATA, {
+                                session_id: ptySessionId,
+                                data: encoded
+                            });
+                        } else {
+                            // 直接执行命令
+                            sendMessage(MSG_TYPES.CMD_REQUEST, {
+                                cmd: cmd,
+                                request_id: 'cmd-' + Date.now()
+                            });
+                        }
+                        
+                        appendTerminal('$ ' + cmd + '\n');
+                    }
+                    input.value = '';
+                    currentInput = '';
+                    break;
+                    
+                case 'ArrowUp':
+                    event.preventDefault();
+                    if (historyIndex > 0) {
+                        historyIndex--;
+                        input.value = terminalHistory[historyIndex];
+                        currentInput = input.value;
+                    }
+                    break;
+                    
+                case 'ArrowDown':
+                    event.preventDefault();
+                    if (historyIndex < terminalHistory.length - 1) {
+                        historyIndex++;
+                        input.value = terminalHistory[historyIndex];
+                        currentInput = input.value;
+                    } else {
+                        historyIndex = terminalHistory.length;
+                        input.value = currentInput;
+                    }
+                    break;
+                    
+                case 'Tab':
+                    event.preventDefault();
+                    // 简单的Tab补全提示
+                    appendTerminal('\n[Tab补全功能暂未实现]\n$ ' + input.value);
+                    break;
+                    
+                case 'Escape':
+                    event.preventDefault();
+                    input.value = '';
+                    currentInput = '';
+                    break;
+                    
+                case 'c':
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        // Ctrl+C 发送中断信号
+                        if (ptySessionId) {
+                            const encoded = btoa('\x03');
+                            sendMessage(MSG_TYPES.PTY_DATA, {
+                                session_id: ptySessionId,
+                                data: encoded
+                            });
+                        }
+                        appendTerminal('^C\n');
+                        input.value = '';
+                        currentInput = '';
+                    }
+                    break;
+                    
+                case 'l':
+                    if (event.ctrlKey) {
+                        event.preventDefault();
+                        // Ctrl+L 清屏
+                        clearTerminal();
+                        input.value = '';
+                        currentInput = '';
+                    }
+                    break;
+                    
+                default:
+                    currentInput = input.value;
+                    break;
             }
         }
         
@@ -1068,20 +1247,99 @@
             terminal.scrollTop = terminal.scrollHeight;
         }
         
+        // 清空终端
+        function clearTerminal() {
+            const output = document.getElementById('terminalOutput');
+            output.textContent = '';
+            if (ptySessionId) {
+                appendTerminal('');
+            } else {
+                appendTerminal('$ ');
+            }
+        }
+        
+        // 处理终端焦点
+        function handleTerminalFocus() {
+            const input = document.getElementById('terminalInput');
+            if (!terminalActive) {
+                input.focus();
+                terminalActive = true;
+            }
+        }
+        
+        // 处理终端失焦
+        function handleTerminalBlur() {
+            terminalActive = false;
+        }
+        
+        // 处理PTY创建
+        function handlePtyCreate(data) {
+            const status = data.status || 'unknown';
+            const sessionId = data.session_id;
+
+            if (status === 'created') {
+                log('info', `PTY会话已创建: session_id=${sessionId}, ${data.cols}x${data.rows}`);
+
+                // 更新终端状态为已连接
+                document.getElementById('terminalStatus').textContent = '(已连接)';
+                document.getElementById('terminalStatus').style.color = '#00c853';
+                appendTerminal('[终端已就绪]\n');
+                // 启用输入框并获取焦点
+                const inputEl = document.getElementById('terminalInput');
+                inputEl.disabled = false;
+                inputEl.focus();
+            } else {
+                log('error', `PTY创建失败: ${status}`);
+                document.getElementById('terminalStatus').textContent = '(失败)';
+                document.getElementById('terminalStatus').style.color = '#ff5252';
+            }
+        }
+
         // 处理PTY数据
         function handlePtyData(data) {
             if (data.data) {
                 try {
                     const decoded = atob(data.data);
-                    appendTerminal(decoded);
-                } catch(e) {}
+                    // 处理ANSI转义序列（简化版本）
+                    const processed = processAnsiEscapes(decoded);
+                    appendTerminal(processed);
+                    
+                    // 更新终端状态为已连接
+                    if (document.getElementById('terminalStatus').textContent.includes('连接中')) {
+                        document.getElementById('terminalStatus').textContent = '(已连接)';
+                        document.getElementById('terminalStatus').style.color = '#00c853';
+                    }
+                } catch(e) {
+                    appendTerminal('[数据解码错误]');
+                }
             }
+        }
+        
+        // 处理ANSI转义序列（简化版本）
+        function processAnsiEscapes(text) {
+            // 移除常见的ANSI转义序列
+            return text
+                .replace(/\x1b\[[0-9;]*m/g, '') // 颜色代码
+                .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // 光标控制
+                .replace(/\x1b\[?[0-9;]*[ABCDHJK]/g, '') // 其他控制序列
+                .replace(/\x1b[=>]/g, ''); // 其他转义
         }
         
         // 处理PTY关闭
         function handlePtyClose(data) {
             log('info', '终端会话已关闭');
             ptySessionId = null;
+            terminalActive = false;
+            
+            // 更新UI状态
+            document.getElementById('terminalStatus').textContent = '(未连接)';
+            document.getElementById('terminalStatus').style.color = '#888';
+            
+            const btn = document.getElementById('terminalBtn');
+            btn.textContent = '打开终端';
+            btn.onclick = openTerminal;
+            
+            appendTerminal('\n--- 终端会话已关闭 ---\n');
         }
         
         // 显示脚本模态框

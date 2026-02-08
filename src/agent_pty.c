@@ -18,6 +18,7 @@
 #include <termios.h>
 #include <pty.h>
 #include "agent.h"
+#include <time.h>
 
 #define MAX_PTY_SESSIONS    8
 #define PTY_READ_BUF_SIZE   4096
@@ -134,52 +135,63 @@ static void *pty_read_thread(void *arg)
     
     char buf[PTY_READ_BUF_SIZE];
     
-    LOG_INFO("PTY读取线程启动: session_id=%d", session->session_id);
+    LOG_INFO("PTY读取线程启动: session_id=%d, fd=%d", session->session_id, session->master_fd);
     
     while (session->active) {
-        fd_set rfds;
-        struct timeval tv;
-        
-        FD_ZERO(&rfds);
-        FD_SET(session->master_fd, &rfds);
-        
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;  /* 100ms超时 */
-        
-        int ret = select(session->master_fd + 1, &rfds, NULL, NULL, &tv);
-        
-        if (ret < 0) {
-            if (errno == EINTR) continue;
-            LOG_ERROR("PTY select错误: %s", strerror(errno));
+        /* 检查文件描述符有效性 */
+        if (session->master_fd < 0) {
+            LOG_ERROR("PTY文件描述符无效: fd=%d", session->master_fd);
             break;
         }
         
-        if (ret == 0) continue;  /* 超时 */
+        /* 使用非阻塞读取，避免select的FD_SETSIZE限制 */
+        ssize_t n = read(session->master_fd, buf, sizeof(buf) - 1);
         
-        if (FD_ISSET(session->master_fd, &rfds)) {
-            ssize_t n = read(session->master_fd, buf, sizeof(buf));
-            
-            if (n <= 0) {
-                if (n < 0 && errno == EAGAIN) continue;
-                LOG_INFO("PTY读取结束: session_id=%d", session->session_id);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                /* 非阻塞模式下没有数据可读，短暂休眠 */
+                usleep(10000);  /* 10ms - 更少延迟 */
+                continue;
+            } else if (errno == EINTR) {
+                continue;
+            } else {
+                LOG_ERROR("PTY读取错误: fd=%d, %s", session->master_fd, strerror(errno));
                 break;
             }
-            
-            /* Base64编码并发送 */
-            if (ctx && ctx->connected) {
-                size_t encoded_len;
-                char *encoded = base64_encode_pty((unsigned char *)buf, n, &encoded_len);
-                if (encoded) {
-                    char *json = malloc(encoded_len + 256);
-                    if (json) {
-                        snprintf(json, encoded_len + 256,
-                            "{\"session_id\":%d,\"data\":\"%s\"}",
-                            session->session_id, encoded);
-                        ws_send_json(ctx, MSG_TYPE_PTY_DATA, json);
-                        free(json);
+        } else if (n == 0) {
+            /* EOF - 连接关闭 */
+            LOG_INFO("PTY连接关闭: session_id=%d", session->session_id);
+            break;
+        }
+        
+        /* 确保字符串结束 */
+        buf[n] = '\0';
+        LOG_INFO("PTY读取: session_id=%d, bytes=%zd", session->session_id, n);
+        
+        /* Base64编码并发送 */
+        if (ctx && ctx->connected) {
+            size_t encoded_len;
+            char *encoded = base64_encode_pty((unsigned char *)buf, n, &encoded_len);
+            if (encoded) {
+                char *json = malloc(encoded_len + 256);
+                if (json) {
+                    snprintf(json, encoded_len + 256,
+                        "{\"session_id\":%d,\"data\":\"%s\"}",
+                        session->session_id, encoded);
+                    struct timespec _ts_enqueue;
+                    clock_gettime(CLOCK_REALTIME, &_ts_enqueue);
+                    LOG_INFO("发送 PTY_DATA 入队: session_id=%d, encoded_len=%zu, ts=%ld.%09ld", session->session_id, encoded_len, (long)_ts_enqueue.tv_sec, _ts_enqueue.tv_nsec);
+                    int send_result = ws_send_json(ctx, MSG_TYPE_PTY_DATA, json);
+                    if (send_result != 0) {
+                        LOG_WARN("PTY数据发送失败，session_id=%d", session->session_id);
+                    } else {
+                        struct timespec _ts_sentok;
+                        clock_gettime(CLOCK_REALTIME, &_ts_sentok);
+                        LOG_INFO("PTY_DATA 已成功入队发送: session_id=%d, ts=%ld.%09ld", session->session_id, (long)_ts_sentok.tv_sec, _ts_sentok.tv_nsec);
                     }
-                    free(encoded);
+                    free(json);
                 }
+                free(encoded);
             }
         }
     }
@@ -231,9 +243,12 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     session->session_id = session_id;
     session->rows = rows > 0 ? rows : 24;
     session->cols = cols > 0 ? cols : 80;
+    session->master_fd = -1;  /* 初始化为无效值 */
+    session->child_pid = -1;
+    session->active = false;
     
     /* 创建伪终端 */
-    int master_fd, slave_fd;
+    int master_fd;
     
     struct winsize ws;
     ws.ws_row = session->rows;
@@ -272,6 +287,16 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
         _exit(127);
     }
     
+    /* 检查文件描述符有效性 (移除FD_SETSIZE检查，因为不再使用select) */
+    if (master_fd < 0) {
+        LOG_ERROR("PTY master文件描述符无效: fd=%d", master_fd);
+        close(master_fd);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        pthread_mutex_unlock(&g_pty_lock);
+        return -1;
+    }
+    
     /* 父进程 */
     session->master_fd = master_fd;
     session->child_pid = pid;
@@ -279,6 +304,15 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     
     /* 设置非阻塞模式 */
     int flags = fcntl(master_fd, F_GETFL, 0);
+    if (flags < 0) {
+        LOG_ERROR("获取文件描述符标志失败: %s", strerror(errno));
+        close(master_fd);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        session->active = false;
+        pthread_mutex_unlock(&g_pty_lock);
+        return -1;
+    }
     fcntl(master_fd, F_SETFL, flags | O_NONBLOCK);
     
     /* 启动读取线程 */
@@ -294,8 +328,8 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     
     pthread_mutex_unlock(&g_pty_lock);
     
-    LOG_INFO("PTY会话已创建: session_id=%d, pid=%d, size=%dx%d", 
-             session_id, pid, session->cols, session->rows);
+    LOG_INFO("PTY会话已创建: session_id=%d, pid=%d, fd=%d, size=%dx%d", 
+             session_id, pid, master_fd, session->cols, session->rows);
     
     /* 发送创建成功消息 */
     char json[256];
@@ -319,6 +353,13 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
         return -1;
     }
     
+    /* 检查会话状态和文件描述符 */
+    if (!session->active || session->master_fd < 0) {
+        pthread_mutex_unlock(&g_pty_lock);
+        LOG_WARN("PTY会话未活跃或文件描述符无效: session_id=%d", session_id);
+        return -1;
+    }
+    
     /* Base64解码 */
     size_t decoded_len;
     unsigned char *decoded = base64_decode_pty(data, len, &decoded_len);
@@ -329,14 +370,19 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
         LOG_ERROR("Base64解码失败");
         return -1;
     }
+    LOG_DEBUG("PTY写入: session_id=%d, decoded_len=%zu", session_id, decoded_len);
     
     /* 写入PTY */
     ssize_t written = write(session->master_fd, decoded, decoded_len);
     free(decoded);
     
     if (written < 0) {
-        LOG_ERROR("PTY写入失败: %s", strerror(errno));
+        LOG_ERROR("PTY写入失败: fd=%d, %s", session->master_fd, strerror(errno));
         return -1;
+    }
+    
+    if (written != (ssize_t)decoded_len) {
+        LOG_WARN("PTY写入不完整: 期望%zu字节，实际写入%zd字节", decoded_len, written);
     }
     
     return 0;
@@ -354,27 +400,36 @@ int pty_resize(agent_context_t *ctx, int session_id, int rows, int cols)
         return -1;
     }
     
+    /* 检查会话状态和文件描述符 */
+    if (!session->active || session->master_fd < 0) {
+        pthread_mutex_unlock(&g_pty_lock);
+        LOG_WARN("PTY会话未活跃或文件描述符无效: session_id=%d", session_id);
+        return -1;
+    }
+    
     struct winsize ws;
-    ws.ws_row = rows;
-    ws.ws_col = cols;
+    ws.ws_row = rows > 0 ? rows : 24;
+    ws.ws_col = cols > 0 ? cols : 80;
     ws.ws_xpixel = 0;
     ws.ws_ypixel = 0;
     
     if (ioctl(session->master_fd, TIOCSWINSZ, &ws) < 0) {
         pthread_mutex_unlock(&g_pty_lock);
-        LOG_ERROR("设置PTY窗口大小失败: %s", strerror(errno));
+        LOG_ERROR("设置PTY窗口大小失败: fd=%d, %s", session->master_fd, strerror(errno));
         return -1;
     }
     
-    session->rows = rows;
-    session->cols = cols;
+    session->rows = ws.ws_row;
+    session->cols = ws.ws_col;
     
     /* 发送SIGWINCH信号 */
-    kill(session->child_pid, SIGWINCH);
+    if (session->child_pid > 0) {
+        kill(session->child_pid, SIGWINCH);
+    }
     
     pthread_mutex_unlock(&g_pty_lock);
     
-    LOG_INFO("PTY窗口大小已调整: session_id=%d, size=%dx%d", session_id, cols, rows);
+    LOG_INFO("PTY窗口大小已调整: session_id=%d, size=%dx%d", session_id, ws.ws_col, ws.ws_row);
     return 0;
 }
 
@@ -389,8 +444,10 @@ int pty_close_session(agent_context_t *ctx, int session_id)
         return 0;
     }
     
-    LOG_INFO("关闭PTY会话: session_id=%d", session_id);
+    LOG_INFO("关闭PTY会话: session_id=%d, fd=%d, pid=%d", 
+             session_id, session->master_fd, session->child_pid);
     
+    /* 先标记为非活跃，让读取线程退出 */
     session->active = false;
     
     /* 关闭master fd */
@@ -401,11 +458,24 @@ int pty_close_session(agent_context_t *ctx, int session_id)
     
     /* 终止子进程 */
     if (session->child_pid > 0) {
+        /* 发送SIGHUP信号 */
         kill(session->child_pid, SIGHUP);
         usleep(100000);  /* 等待100ms */
-        kill(session->child_pid, SIGKILL);
-        waitpid(session->child_pid, NULL, WNOHANG);
-        session->child_pid = 0;
+        
+        /* 检查进程是否还存在 */
+        int status;
+        if (waitpid(session->child_pid, &status, WNOHANG) == 0) {
+            /* 进程仍在运行，发送SIGKILL */
+            kill(session->child_pid, SIGKILL);
+            waitpid(session->child_pid, NULL, 0);
+        }
+        session->child_pid = -1;
+    }
+    
+    /* 等待读取线程结束 */
+    if (session->read_thread) {
+        pthread_join(session->read_thread, NULL);
+        session->read_thread = 0;
     }
     
     pthread_mutex_unlock(&g_pty_lock);
@@ -422,15 +492,33 @@ void pty_cleanup_all(agent_context_t *ctx)
     
     for (int i = 0; i < MAX_PTY_SESSIONS; i++) {
         if (g_pty_sessions[i].active) {
+            LOG_INFO("清理PTY会话: session_id=%d, fd=%d, pid=%d", 
+                     g_pty_sessions[i].session_id, 
+                     g_pty_sessions[i].master_fd, 
+                     g_pty_sessions[i].child_pid);
+            
+            /* 标记为非活跃 */
             g_pty_sessions[i].active = false;
             
+            /* 关闭文件描述符 */
             if (g_pty_sessions[i].master_fd >= 0) {
                 close(g_pty_sessions[i].master_fd);
+                g_pty_sessions[i].master_fd = -1;
             }
             
+            /* 终止子进程 */
             if (g_pty_sessions[i].child_pid > 0) {
+                kill(g_pty_sessions[i].child_pid, SIGHUP);
+                usleep(50000);  /* 等待50ms */
                 kill(g_pty_sessions[i].child_pid, SIGKILL);
-                waitpid(g_pty_sessions[i].child_pid, NULL, WNOHANG);
+                waitpid(g_pty_sessions[i].child_pid, NULL, 0);
+                g_pty_sessions[i].child_pid = -1;
+            }
+            
+            /* 等待线程结束 */
+            if (g_pty_sessions[i].read_thread) {
+                pthread_join(g_pty_sessions[i].read_thread, NULL);
+                g_pty_sessions[i].read_thread = 0;
             }
         }
     }

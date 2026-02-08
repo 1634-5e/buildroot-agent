@@ -14,11 +14,23 @@ import base64
 import struct
 import logging
 from datetime import datetime
-from typing import Dict, Set
+from typing import Dict, Set, Any
+
+# 显式导入WebSocketServerProtocol
+try:
+    from websockets.server import WebSocketServerProtocol
+except ImportError:
+    pass
 
 try:
     import websockets
-    from websockets.server import WebSocketServerProtocol
+
+    try:
+        from websockets.server import WebSocketServerProtocol
+    except ImportError:
+        # 旧版本websockets可能没有WebSocketServerProtocol
+        class WebSocketServerProtocol:
+            pass
 except ImportError:
     print("请先安装 websockets: pip install websockets")
     exit(1)
@@ -79,7 +91,7 @@ def parse_message(data: bytes) -> tuple:
     return msg_type, json_data
 
 
-async def handle_auth(websocket: WebSocketServerProtocol, data: dict) -> bool:
+async def handle_auth(websocket, data: dict) -> bool:
     """处理认证"""
     device_id = data.get("device_id", "unknown")
     token = data.get("token", "")
@@ -94,14 +106,23 @@ async def handle_auth(websocket: WebSocketServerProtocol, data: dict) -> bool:
             MSG_TYPE_AUTH_RESULT,
             {"success": True, "message": f"欢迎, {VALID_TOKENS[token]}"},
         )
-        await websocket.send(response)
+        # 检查send方法
+        if hasattr(websocket, "send") and callable(getattr(websocket, "send", None)):
+            await websocket.send(response)
+        else:
+            logger.error(f"WebSocket没有send方法: {device_id}")
+            return False
         return True
     else:
-        logger.warning(f"设备认证失败: {device_id}, 无效Token")
+        logger.warning(f"设备认证失败: {device_id}:{token}, 无效Token")
         response = create_message(
             MSG_TYPE_AUTH_RESULT, {"success": False, "message": "认证失败: Token无效"}
         )
-        await websocket.send(response)
+        if hasattr(websocket, "send") and callable(getattr(websocket, "send", None)):
+            await websocket.send(response)
+        else:
+            logger.error(f"WebSocket没有send方法: {device_id}")
+            return False
         return False
 
 
@@ -159,14 +180,13 @@ async def handle_pty_data(device_id: str, data: dict):
     """处理PTY数据 (从设备到服务器)"""
     session_id = data.get("session_id", -1)
     pty_data = data.get("data", "")
-
+    # 直接将Base64编码的数据转发给web控制台（保持与前端格式一致）
     if device_id in pty_sessions and session_id in pty_sessions[device_id]:
-        # 解码Base64
         try:
-            decoded = base64.b64decode(pty_data).decode("utf-8", errors="replace")
-            # 放入队列供终端显示
-            await pty_sessions[device_id][session_id].put(decoded)
-        except:
+            await broadcast_to_web_consoles(
+                MSG_TYPE_PTY_DATA, {"device_id": device_id, "session_id": session_id, "data": pty_data}
+            )
+        except Exception:
             pass
 
 
@@ -178,6 +198,45 @@ async def handle_pty_close(device_id: str, data: dict):
 
     if device_id in pty_sessions and session_id in pty_sessions[device_id]:
         del pty_sessions[device_id][session_id]
+
+
+async def handle_pty_create(device_id: str, data: dict):
+    """处理PTY创建"""
+    session_id = data.get("session_id", -1)
+    status = data.get("status", "unknown")
+    rows = data.get("rows", 24)
+    cols = data.get("cols", 80)
+
+    logger.info(
+        f"PTY会话创建 [{device_id}]: session={session_id}, status={status}, size={cols}x{rows}"
+    )
+
+    if device_id not in pty_sessions:
+        pty_sessions[device_id] = {}
+
+    # 创建PTY会话队列
+    if session_id not in pty_sessions[device_id]:
+        pty_sessions[device_id][session_id] = asyncio.Queue()
+
+    # 转发PTY创建消息给web控制台
+    await broadcast_to_web_consoles(
+        MSG_TYPE_PTY_CREATE, {"device_id": device_id, **data}
+    )
+
+
+async def handle_auth_result(device_id: str, data: dict):
+    """处理认证结果（从设备到服务器）"""
+    success = data.get("success", False)
+    message = data.get("message", "")
+
+    logger.info(
+        f"设备认证结果 [{device_id}]: {'成功' if success else '失败'}, {message}"
+    )
+
+    # 转发认证结果给web控制台
+    await broadcast_to_web_consoles(
+        MSG_TYPE_AUTH_RESULT, {"device_id": device_id, **data}
+    )
 
 
 async def handle_message(
@@ -194,6 +253,8 @@ async def handle_message(
         await handle_log_upload(device_id, json_data)
     elif msg_type == MSG_TYPE_SCRIPT_RESULT:
         await handle_script_result(device_id, json_data)
+    elif msg_type == MSG_TYPE_PTY_CREATE:
+        await handle_pty_create(device_id, json_data)
     elif msg_type == MSG_TYPE_PTY_DATA:
         await handle_pty_data(device_id, json_data)
     elif msg_type == MSG_TYPE_PTY_CLOSE:
@@ -205,13 +266,22 @@ async def handle_message(
         # 转发命令响应给web控制台
         response_data = {"device_id": device_id, **json_data}
         await broadcast_to_web_consoles(MSG_TYPE_CMD_RESPONSE, response_data)
+    elif msg_type == MSG_TYPE_AUTH:
+        logger.debug(f"收到认证消息 [{device_id}]（已认证）")
+    elif msg_type == MSG_TYPE_AUTH_RESULT:
+        await handle_auth_result(device_id, json_data)
+    elif msg_type == MSG_TYPE_DEVICE_LIST:
+        logger.info(f"设备列表查询 [{device_id}]: {json_data}")
     else:
         logger.warning(f"未知消息类型: 0x{msg_type:02X}")
 
 
-async def agent_handler(websocket: WebSocketServerProtocol):
+async def agent_handler(websocket):
     """WebSocket连接处理"""
-    remote = websocket.remote_address
+    try:
+        remote = getattr(websocket, "remote_address", "unknown")
+    except:
+        remote = "unknown"
     logger.info(f"新连接: {remote}")
 
     # 先尝试作为web控制台处理（发送设备列表）
@@ -223,6 +293,11 @@ async def agent_handler(websocket: WebSocketServerProtocol):
     is_device = False
 
     try:
+        # 检查websocket是否有异步迭代器
+        if not hasattr(websocket, "__aiter__"):
+            logger.error("WebSocket不支持异步迭代")
+            return
+
         async for message in websocket:
             if len(message) < 1:
                 continue
@@ -242,16 +317,25 @@ async def agent_handler(websocket: WebSocketServerProtocol):
                         # 通知web控制台有新设备连接
                         await notify_device_list_update()
                     else:
-                        await websocket.close()
+                        if hasattr(websocket, "close") and callable(
+                            getattr(websocket, "close", None)
+                        ):
+                            await websocket.close()
                         return
                 except Exception as e:
                     logger.error(f"解析认证消息失败: {e}")
-                    await websocket.close()
+                    if hasattr(websocket, "close") and callable(
+                        getattr(websocket, "close", None)
+                    ):
+                        await websocket.close()
                     return
 
             # 设备连接后的消息处理
             if is_device and authenticated:
-                await handle_message(websocket, device_id, message)
+                if device_id is not None:  # 添加None检查
+                    await handle_message(websocket, str(device_id), message)
+                else:
+                    logger.warning("设备ID为None，跳过消息处理")
 
             # Web控制台的消息处理
             elif not is_device:
@@ -261,10 +345,14 @@ async def agent_handler(websocket: WebSocketServerProtocol):
                         device_id = json_data["device_id"]
                         # 转发消息给指定设备
                         if device_id in connected_devices:
-                            new_message = bytes([msg_type]) + json.dumps(
-                                json_data
-                            ).encode("utf-8")
-                            await connected_devices[device_id].send(new_message)
+                            target_ws = connected_devices[device_id]
+                            if hasattr(target_ws, "send") and callable(
+                                getattr(target_ws, "send", None)
+                            ):
+                                new_message = bytes([msg_type]) + json.dumps(
+                                    json_data
+                                ).encode("utf-8")
+                                await target_ws.send(new_message)
                 except Exception as e:
                     logger.error(f"Web控制台消息处理失败: {e}")
 
@@ -297,8 +385,16 @@ async def send_to_device(device_id: str, msg_type: int, data: dict) -> bool:
         return False
 
     try:
+        # 确保设备websocket有效
+        websocket = connected_devices[device_id]
+        if not hasattr(websocket, "send") or not callable(
+            getattr(websocket, "send", None)
+        ):
+            logger.error(f"设备WebSocket无效: {device_id}")
+            return False
+
         message = create_message(msg_type, data)
-        await connected_devices[device_id].send(message)
+        await websocket.send(message)
         return True
     except Exception as e:
         logger.error(f"发送失败: {e}")
@@ -313,12 +409,24 @@ async def broadcast_to_web_consoles(msg_type: int, data: dict):
     try:
         message = create_message(msg_type, data)
         # 发送给所有web控制台
+        to_remove = []
         for console in list(web_consoles):
             try:
-                await console.send(message)
+                # 检查console是否有send方法
+                if hasattr(console, "send") and callable(
+                    getattr(console, "send", None)
+                ):
+                    await console.send(message)
+                else:
+                    logger.warning("Web控制台没有send方法")
+                    to_remove.append(console)
             except Exception as e:
                 logger.warning(f"向web控制台发送失败: {e}")
-                web_consoles.discard(console)
+                to_remove.append(console)
+
+        # 移除无效连接
+        for console in to_remove:
+            web_consoles.discard(console)
     except Exception as e:
         logger.error(f"广播消息失败: {e}")
 
@@ -326,12 +434,25 @@ async def broadcast_to_web_consoles(msg_type: int, data: dict):
 async def notify_device_list_update():
     """通知web控制台设备列表更新"""
     device_list = []
-    for device_id in connected_devices:
+    for device_id, ws in connected_devices.items():
+        # 获取远程地址信息
+        remote_addr = "unknown"
+        if hasattr(ws, "remote_address"):
+            try:
+                remote_addr = (
+                    ws.remote_address[0]
+                    if isinstance(ws.remote_address, tuple)
+                    else str(ws.remote_address)
+                )
+            except:
+                pass
+
         device_list.append(
             {
                 "device_id": device_id,
                 "connected_time": datetime.now().isoformat(),
                 "status": "online",
+                "remote_addr": remote_addr,
             }
         )
 

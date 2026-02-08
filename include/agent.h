@@ -43,6 +43,7 @@ typedef enum {
     MSG_TYPE_FILE_DATA      = 0x21,     /* 文件数据 */
     MSG_TYPE_CMD_REQUEST    = 0x30,     /* 命令请求 */
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
+    MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
     MSG_TYPE_AUTH           = 0xF0,     /* 认证 */
     MSG_TYPE_AUTH_RESULT    = 0xF1,     /* 认证结果 */
 } msg_type_t;
