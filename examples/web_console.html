@@ -1387,6 +1387,13 @@
 
                     <!-- Monitor Tab -->
                     <div class="tab-pane" id="tab-monitor">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 12px 16px; background: var(--bg-secondary); border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
+                            <div style="font-size: 14px; font-weight: 600;">📊 系统监控</div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-sm" id="autoRefreshBtn" onclick="toggleMonitorAutoRefresh()">⏸️ 暂停刷新</button>
+                                <button class="btn btn-sm" onclick="refreshSystemStatus()">🔄 立即刷新</button>
+                            </div>
+                        </div>
                         <div class="metrics-grid">
                             <!-- CPU -->
                             <div class="metric-card">
@@ -1571,11 +1578,15 @@
         const MSG_TYPES = {
             HEARTBEAT: 0x01,
             SYSTEM_STATUS: 0x02,
+            LOG_UPLOAD: 0x03,
+            SCRIPT_RECV: 0x04,
             SCRIPT_RESULT: 0x05,
             PTY_CREATE: 0x10,
             PTY_DATA: 0x11,
             PTY_RESIZE: 0x12,
             PTY_CLOSE: 0x13,
+            FILE_REQUEST: 0x20,
+            FILE_DATA: 0x21,
             FILE_LIST_REQUEST: 0x22,
             FILE_LIST_RESPONSE: 0x23,
             DOWNLOAD_PACKAGE: 0x24,
@@ -1714,6 +1725,9 @@
                     }
                     updateFileList(data.files || []);
                     break;
+                case MSG_TYPES.FILE_DATA:
+                    handleFileData(data);
+                    break;
                 case MSG_TYPES.CMD_RESPONSE:
                     handleCommandResponse(data);
                     break;
@@ -1814,10 +1828,19 @@
                 refreshFileTree();
             }, 200);
             
+            // Fetch system status immediately
+            setTimeout(() => refreshSystemStatus(), 300);
+            
+            // Start auto-refresh for monitor tab
+            startMonitorAutoRefresh();
+            
             showToast(`已选择设备: ${deviceId}`, 'success');
         }
 
         function disconnectDevice() {
+            // Stop monitor auto-refresh
+            stopMonitorAutoRefresh();
+            
             if (ptySessionId) {
                 sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
                 ptySessionId = null;
@@ -1916,22 +1939,31 @@
         function renderTreeItem(item, parentPath) {
             const fullPath = parentPath === '/' ? '/' + item.name : parentPath + '/' + item.name;
             const isExpanded = expandedDirs.has(fullPath);
-            const hasChildren = item.is_dir;
+            const isDir = item.is_dir;
             
             const div = document.createElement('div');
-            div.className = `tree-item ${isExpanded ? 'expanded' : ''} ${fullPath === currentPath ? 'selected' : ''}`;
+            div.className = `tree-item ${isExpanded && isDir ? 'expanded' : ''} ${fullPath === currentPath && isDir ? 'selected' : ''}`;
             div.dataset.path = fullPath;
-            div.dataset.isDir = item.is_dir;
+            div.dataset.isDir = isDir;
+            
+            // File items don't have toggle, directories do
+            const toggleHtml = isDir ? 
+                `<span class="tree-toggle">▶</span>` : 
+                `<span class="tree-toggle empty"></span>`;
+            
+            const iconHtml = isDir ? 
+                (isExpanded ? '📂' : '📁') : 
+                getFileIcon(item.name);
             
             div.innerHTML = `
-                <span class="tree-toggle ${hasChildren ? '' : 'empty'}">▶</span>
-                <span class="tree-icon">${item.is_dir ? (isExpanded ? '📂' : '📁') : getFileIcon(item.name)}</span>
+                ${toggleHtml}
+                <span class="tree-icon">${iconHtml}</span>
                 <span class="tree-label">${item.name}</span>
             `;
             
-            // Toggle expand/collapse
-            const toggle = div.querySelector('.tree-toggle');
-            if (hasChildren) {
+            // Toggle expand/collapse for directories
+            if (isDir) {
+                const toggle = div.querySelector('.tree-toggle');
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
                     toggleTreeItem(fullPath, div);
@@ -1940,12 +1972,15 @@
             
             // Click to select/navigate
             div.addEventListener('click', () => {
-                if (item.is_dir) {
+                if (isDir) {
                     navigateTo(fullPath);
                     if (!isExpanded) {
                         toggleTreeItem(fullPath, div);
                     }
                 } else {
+                    // Select file and show preview
+                    document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('selected'));
+                    div.classList.add('selected');
                     selectFileInTree(fullPath, item);
                 }
             });
@@ -2004,18 +2039,16 @@
             
             if (!container) return;
             
-            // Sort: directories first
+            // Sort: directories first, then by name
             files.sort((a, b) => {
                 if (a.is_dir && !b.is_dir) return -1;
                 if (!a.is_dir && b.is_dir) return 1;
                 return a.name.localeCompare(b.name);
             });
             
-            // Only show directories in tree
-            const dirs = files.filter(f => f.is_dir);
-            
+            // Show both directories and files in tree
             container.innerHTML = '';
-            dirs.forEach(item => {
+            files.forEach(item => {
                 container.appendChild(renderTreeItem(item, path));
             });
         }
@@ -2092,6 +2125,9 @@
             previewFile(path, item.name, item.size);
         }
 
+        // Pending file preview requests
+        let pendingFilePreview = null;
+
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
             selectedFile = path;
@@ -2108,27 +2144,94 @@
             // Check file type
             const ext = name.split('.').pop().toLowerCase();
             const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-            const textExts = ['txt', 'log', 'md', 'json', 'xml', 'html', 'css', 'js', 'py', 'sh', 'conf', 'cfg', 'ini'];
+            const textExts = ['txt', 'log', 'md', 'json', 'xml', 'html', 'css', 'js', 'py', 'sh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml', 'ini', 'properties'];
+            const codeExts = ['c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua', 'swift', 'kt'];
             
             previewContent.className = 'file-preview-content';
             previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">加载中...</div>';
             
             if (imageExts.includes(ext)) {
-                // For images, show placeholder
+                // For images, try to display via download URL
                 previewContent.classList.add('image');
-                previewContent.innerHTML = '<div style="color: var(--text-muted);">图片预览需要下载</div>';
-            } else if (textExts.includes(ext) || size < 102400) { // Text files or files < 100KB
-                // Request file content
+                previewContent.innerHTML = '<div style="color: var(--text-muted);">图片预览功能开发中</div>';
+            } else if (textExts.includes(ext) || codeExts.includes(ext) || size < 51200) { // Text/code files or files < 50KB
+                // Request file content from server
                 previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">正在加载文件内容...</div>';
-                // TODO: Implement file content reading
+                
+                pendingFilePreview = { path, name, ext };
+                
+                // Send file read request
+                sendMessage(MSG_TYPES.FILE_REQUEST, {
+                    action: 'read',
+                    filepath: path,
+                    offset: 0,
+                    length: Math.min(size, 102400) // Max 100KB
+                });
+                
+                // Set timeout
                 setTimeout(() => {
-                    previewContent.innerHTML = '<div style="color: var(--text-muted);">文件内容预览功能开发中...</div>';
-                }, 500);
+                    if (pendingFilePreview && pendingFilePreview.path === path) {
+                        previewContent.innerHTML = '<div style="color: var(--text-muted);">加载超时，请重试</div>';
+                        pendingFilePreview = null;
+                    }
+                }, 5000);
             } else {
                 // Binary or large file
                 previewContent.classList.add('binary');
                 previewContent.textContent = `二进制文件或文件过大 (${formatBytes(size)})\n\n请下载后查看`;
             }
+        }
+
+        function handleFileData(data) {
+            console.log('Received file data:', data);
+            
+            if (!pendingFilePreview) return;
+            
+            const { path, name, ext } = pendingFilePreview;
+            const previewContent = document.getElementById('previewContent');
+            
+            if (data.error) {
+                previewContent.innerHTML = `<div style="color: var(--accent-error);">错误: ${data.error}</div>`;
+                pendingFilePreview = null;
+                return;
+            }
+            
+            if (data.content) {
+                try {
+                    // Decode base64 content
+                    const content = atob(data.content);
+                    
+                    // Apply syntax highlighting for code files
+                    const codeExts = ['js', 'py', 'sh', 'json', 'xml', 'html', 'css', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'php', 'rb', 'lua'];
+                    if (codeExts.includes(ext)) {
+                        previewContent.innerHTML = `<pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;"><code>${escapeHtml(content)}</code></pre>`;
+                    } else {
+                        // Plain text
+                        previewContent.textContent = content;
+                    }
+                } catch (e) {
+                    console.error('Error decoding file content:', e);
+                    previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
+                }
+            } else if (data.chunk_data) {
+                // Handle chunked data
+                try {
+                    const content = atob(data.chunk_data);
+                    previewContent.textContent = content;
+                } catch (e) {
+                    previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
+                }
+            } else {
+                previewContent.innerHTML = '<div style="color: var(--text-muted);">文件内容为空</div>';
+            }
+            
+            pendingFilePreview = null;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function closePreview() {
@@ -2277,6 +2380,88 @@
                 currentDevice.load_1min = data.load_1min;
                 renderDeviceList();
             }
+            
+            // Update process list if available
+            if (data.processes && Array.isArray(data.processes)) {
+                updateProcessList(data.processes);
+            }
+        }
+
+        function updateProcessList(processes) {
+            const container = document.getElementById('processList');
+            if (!processes || processes.length === 0) {
+                container.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">暂无进程数据</div>';
+                return;
+            }
+            
+            // Sort by CPU usage descending
+            const sortedProcesses = [...processes].sort((a, b) => (b.cpu || 0) - (a.cpu || 0)).slice(0, 20);
+            
+            container.innerHTML = sortedProcesses.map(p => `
+                <div class="process-row">
+                    <span class="process-pid">${p.pid || '--'}</span>
+                    <span class="process-name" title="${p.name || ''}">${p.name || '--'}</span>
+                    <span class="process-cpu">${(p.cpu || 0).toFixed(1)}%</span>
+                    <span class="process-mem">${formatBytes((p.mem || 0) * 1024)}</span>
+                    <span style="color: var(--text-muted);">${p.time || '--'}</span>
+                </div>
+            `).join('');
+        }
+
+        // ============================================
+        // Monitor Auto-Refresh
+        // ============================================
+        let monitorRefreshInterval = null;
+        let isMonitorAutoRefreshEnabled = false;
+        const MONITOR_REFRESH_INTERVAL = 5000; // 5 seconds - balance between performance and real-time
+
+        function startMonitorAutoRefresh() {
+            if (monitorRefreshInterval) {
+                clearInterval(monitorRefreshInterval);
+            }
+            
+            isMonitorAutoRefreshEnabled = true;
+            
+            // Immediate refresh
+            if (currentTab === 'monitor') {
+                refreshSystemStatus();
+            }
+            
+            // Setup interval
+            monitorRefreshInterval = setInterval(() => {
+                if (currentTab === 'monitor' && currentDevice && isMonitorAutoRefreshEnabled) {
+                    refreshSystemStatus();
+                }
+            }, MONITOR_REFRESH_INTERVAL);
+            
+            console.log('Monitor auto-refresh started');
+        }
+
+        function stopMonitorAutoRefresh() {
+            if (monitorRefreshInterval) {
+                clearInterval(monitorRefreshInterval);
+                monitorRefreshInterval = null;
+            }
+            isMonitorAutoRefreshEnabled = false;
+            console.log('Monitor auto-refresh stopped');
+        }
+
+        function toggleMonitorAutoRefresh() {
+            isMonitorAutoRefreshEnabled = !isMonitorAutoRefreshEnabled;
+            const btn = document.getElementById('autoRefreshBtn');
+            if (btn) {
+                btn.textContent = isMonitorAutoRefreshEnabled ? '⏸️ 暂停刷新' : '▶️ 自动刷新';
+                btn.classList.toggle('btn-primary', isMonitorAutoRefreshEnabled);
+            }
+            showToast(isMonitorAutoRefreshEnabled ? '自动刷新已开启 (5秒)' : '自动刷新已暂停', 'info');
+        }
+
+        function refreshSystemStatus() {
+            if (!currentDevice) return;
+            sendMessage(MSG_TYPES.CMD_REQUEST, {
+                cmd: 'status',
+                request_id: 'status-' + Date.now()
+            });
         }
 
         function handleCommandResponse(data) {
@@ -2367,16 +2552,13 @@
             if (tab === 'files') {
                 refreshFiles();
             } else if (tab === 'monitor') {
+                // Immediate refresh when switching to monitor tab
                 refreshSystemStatus();
+                // Ensure auto-refresh is running
+                if (!monitorRefreshInterval && currentDevice) {
+                    startMonitorAutoRefresh();
+                }
             }
-        }
-
-        function refreshSystemStatus() {
-            if (!currentDevice) return;
-            sendMessage(MSG_TYPES.CMD_REQUEST, {
-                cmd: 'status',
-                request_id: 'status-' + Date.now()
-            });
         }
 
         function rebootDevice() {
