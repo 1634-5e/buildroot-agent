@@ -11,7 +11,6 @@
             --bg-secondary: #16161e;
             --bg-tertiary: #1e1e28;
             --bg-elevated: #252532;
-            --bg-card: rgba(30, 30, 40, 0.8);
             
             --text-primary: #f0f0f5;
             --text-secondary: #a0a0b0;
@@ -43,9 +42,6 @@
             overflow: hidden;
         }
 
-        /* ============================================
-           App Shell
-           ============================================ */
         .app {
             display: grid;
             grid-template-columns: 64px 320px 1fr;
@@ -62,9 +58,7 @@
             .sidebar-primary { display: none; }
         }
 
-        /* ============================================
-           Primary Sidebar - Navigation
-           ============================================ */
+        /* Primary Sidebar */
         .sidebar-primary {
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
@@ -102,12 +96,7 @@
             position: relative;
         }
 
-        .nav-item:hover {
-            background: var(--bg-tertiary);
-            color: var(--text-primary);
-        }
-
-        .nav-item.active {
+        .nav-item:hover, .nav-item.active {
             background: rgba(99, 102, 241, 0.15);
             color: var(--accent-primary);
         }
@@ -135,9 +124,7 @@
             border: 2px solid var(--bg-secondary);
         }
 
-        /* ============================================
-           Secondary Sidebar - Device List
-           ============================================ */
+        /* Secondary Sidebar */
         .sidebar-secondary {
             background: var(--bg-tertiary);
             border-right: 1px solid var(--border-color);
@@ -156,41 +143,47 @@
             margin-bottom: 4px;
         }
 
-        .sidebar-subtitle {
+        .connection-status {
             font-size: 13px;
             color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .connection-status.online {
+            color: var(--accent-success);
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .connection-status.online .connection-dot {
+            background: var(--accent-success);
+            box-shadow: 0 0 8px var(--accent-success);
         }
 
         .device-search {
             margin: 12px 20px;
-            position: relative;
         }
 
         .device-search input {
             width: 100%;
-            padding: 10px 14px 10px 36px;
+            padding: 10px 14px;
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-md);
             color: var(--text-primary);
             font-size: 14px;
             outline: none;
-            transition: all var(--transition);
         }
 
         .device-search input:focus {
             border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
-        .device-search::before {
-            content: '🔍';
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 14px;
-            opacity: 0.5;
         }
 
         .device-list {
@@ -240,24 +233,11 @@
         .device-info h4 {
             font-size: 14px;
             font-weight: 600;
-            margin-bottom: 2px;
         }
 
         .device-status {
             font-size: 12px;
             color: var(--accent-success);
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .device-status::before {
-            content: '';
-            width: 6px;
-            height: 6px;
-            background: var(--accent-success);
-            border-radius: 50%;
-            box-shadow: 0 0 8px var(--accent-success);
         }
 
         .device-metrics {
@@ -281,19 +261,15 @@
         .device-metric-label {
             font-size: 11px;
             color: var(--text-muted);
-            margin-top: 2px;
         }
 
-        /* ============================================
-           Main Content
-           ============================================ */
+        /* Main Content */
         .main {
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
-        /* Empty State */
         .empty-state {
             flex: 1;
             display: flex;
@@ -319,11 +295,9 @@
         .empty-text {
             font-size: 15px;
             color: var(--text-secondary);
-            max-width: 400px;
-            margin-bottom: 24px;
         }
 
-        /* Device Detail View */
+        /* Device Detail */
         .device-detail {
             display: none;
             flex-direction: column;
@@ -334,7 +308,6 @@
             display: flex;
         }
 
-        /* Header */
         .detail-header {
             padding: 20px 24px;
             background: var(--bg-secondary);
@@ -428,9 +401,7 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* ============================================
-           Terminal Pane
-           ============================================ */
+        /* Terminal */
         .terminal-container {
             height: 100%;
             display: flex;
@@ -492,10 +463,12 @@
             flex: 1;
             padding: 16px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
+            font-size: 13px;
             line-height: 1.6;
             overflow-y: auto;
             white-space: pre-wrap;
+            word-break: break-all;
+            background: var(--bg-primary);
         }
 
         .terminal-input-line {
@@ -511,6 +484,7 @@
             color: var(--accent-success);
             font-weight: 600;
             white-space: nowrap;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .terminal-input {
@@ -520,12 +494,10 @@
             outline: none;
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 14px;
+            font-size: 13px;
         }
 
-        /* ============================================
-           Files Pane
-           ============================================ */
+        /* Files */
         .files-layout {
             display: grid;
             grid-template-columns: 240px 1fr;
@@ -567,14 +539,9 @@
             transition: all var(--transition);
         }
 
-        .file-tree-item:hover {
+        .file-tree-item:hover, .file-tree-item.active {
             background: var(--bg-tertiary);
             color: var(--text-primary);
-        }
-
-        .file-tree-item.active {
-            background: rgba(99, 102, 241, 0.15);
-            color: var(--accent-primary);
         }
 
         .file-tree-icon {
@@ -620,10 +587,6 @@
             background: var(--bg-tertiary);
         }
 
-        .breadcrumb-separator {
-            color: var(--text-muted);
-        }
-
         .file-browser-actions {
             display: flex;
             gap: 8px;
@@ -647,10 +610,6 @@
 
         .file-item:hover {
             background: var(--bg-tertiary);
-        }
-
-        .file-item.selected {
-            background: rgba(99, 102, 241, 0.1);
         }
 
         .file-icon {
@@ -680,13 +639,12 @@
             text-align: right;
         }
 
-        /* ============================================
-           Monitor Pane
-           ============================================ */
+        /* Monitor - Enhanced */
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
+            margin-bottom: 24px;
         }
 
         .metric-card {
@@ -694,6 +652,10 @@
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
             padding: 20px;
+        }
+
+        .metric-card.large {
+            grid-column: span 2;
         }
 
         .metric-header {
@@ -712,53 +674,128 @@
         }
 
         .metric-value {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 700;
         }
 
-        .metric-chart {
-            height: 100px;
+        .metric-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .metric-bar {
+            height: 8px;
             background: var(--bg-tertiary);
-            border-radius: var(--radius-md);
+            border-radius: 4px;
+            overflow: hidden;
             margin-top: 12px;
         }
 
-        /* ============================================
-           Upload Drop Zone
-           ============================================ */
-        .upload-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(13, 13, 18, 0.9);
-            backdrop-filter: blur(10px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            border: 4px dashed var(--accent-primary);
+        .metric-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
         }
 
-        .upload-overlay.active {
+        .metric-bar-fill.low { background: var(--accent-success); }
+        .metric-bar-fill.medium { background: var(--accent-warning); }
+        .metric-bar-fill.high { background: var(--accent-error); }
+
+        .metric-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .metric-detail {
             display: flex;
+            justify-content: space-between;
+            font-size: 13px;
         }
 
-        .upload-overlay-content {
-            text-align: center;
+        .metric-detail-label {
+            color: var(--text-muted);
         }
 
-        .upload-overlay-icon {
-            font-size: 64px;
-            margin-bottom: 16px;
+        .metric-detail-value {
+            color: var(--text-primary);
+            font-weight: 500;
         }
 
-        .upload-overlay-text {
-            font-size: 20px;
+        /* Process Table */
+        .process-table {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .process-table-header {
+            display: grid;
+            grid-template-columns: 60px 1fr 100px 100px 80px;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
             font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        /* ============================================
-           Modal
-           ============================================ */
+        .process-row {
+            display: grid;
+            grid-template-columns: 60px 1fr 100px 100px 80px;
+            gap: 12px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 13px;
+            transition: background var(--transition);
+        }
+
+        .process-row:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .process-pid {
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .process-name {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .process-cpu, .process-mem {
+            color: var(--accent-primary);
+        }
+
+        /* Scripts */
+        textarea.script-editor {
+            width: 100%;
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            min-height: 300px;
+            resize: vertical;
+            outline: none;
+        }
+
+        textarea.script-editor:focus {
+            border-color: var(--accent-primary);
+        }
+
+        /* Modal */
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -779,29 +816,51 @@
             background: var(--bg-secondary);
             border-radius: var(--radius-lg);
             width: 100%;
-            max-width: 480px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden;
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-lg);
-            animation: modalIn 0.2s ease;
-        }
-
-        @keyframes modalIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
         }
 
         .modal-header {
             padding: 20px 24px;
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .modal-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            transition: all var(--transition);
+        }
+
+        .modal-close:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
 
         .modal-body {
             padding: 24px;
+            max-height: 60vh;
+            overflow-y: auto;
         }
 
         .modal-footer {
@@ -812,9 +871,18 @@
             gap: 12px;
         }
 
-        /* ============================================
-           Components
-           ============================================ */
+        pre.output {
+            background: var(--bg-primary);
+            padding: 16px;
+            border-radius: var(--radius-md);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* Buttons */
         .btn {
             display: inline-flex;
             align-items: center;
@@ -858,37 +926,6 @@
             font-size: 13px;
         }
 
-        .btn-icon {
-            width: 36px;
-            height: 36px;
-            padding: 0;
-        }
-
-        input[type="text"],
-        textarea {
-            width: 100%;
-            padding: 12px 16px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
-            color: var(--text-primary);
-            font-size: 14px;
-            outline: none;
-            transition: all var(--transition);
-        }
-
-        input[type="text"]:focus,
-        textarea:focus {
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
-        textarea {
-            font-family: 'JetBrains Mono', monospace;
-            min-height: 200px;
-            resize: vertical;
-        }
-
         /* Toast */
         .toast-container {
             position: fixed;
@@ -920,7 +957,6 @@
 
         .toast.success { border-left: 3px solid var(--accent-success); }
         .toast.error { border-left: 3px solid var(--accent-error); }
-        .toast.warning { border-left: 3px solid var(--accent-warning); }
 
         /* Scrollbar */
         ::-webkit-scrollbar {
@@ -940,49 +976,43 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.2);
         }
+
+        .empty-folder {
+            padding: 60px 20px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-folder-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
-    <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- Upload Overlay -->
-    <div class="upload-overlay" id="uploadOverlay">
-        <div class="upload-overlay-content">
-            <div class="upload-overlay-icon">📤</div>
-            <div class="upload-overlay-text">释放以上传文件</div>
-        </div>
-    </div>
-
-    <!-- App -->
     <div class="app">
-        <!-- Primary Sidebar - Navigation -->
+        <!-- Primary Sidebar -->
         <nav class="sidebar-primary">
             <div class="nav-logo">🖥️</div>
             <div class="nav-item active" data-view="devices" onclick="showView('devices')" title="设备">
                 📱
-                <span class="nav-badge" id="deviceBadge" style="display: none;"></span>
             </div>
-            <div class="nav-item" data-view="terminal" onclick="showView('terminal')" title="终端">
-                💻
-            </div>
-            <div class="nav-item" data-view="files" onclick="showView('files')" title="文件">
-                📁
-            </div>
-            <div class="nav-item" data-view="monitor" onclick="showView('monitor')" title="监控">
-                📊
-            </div>
-            <div style="flex: 1;"></div>
             <div class="nav-item" title="设置" onclick="showSettings()">
                 ⚙️
             </div>
         </nav>
 
-        <!-- Secondary Sidebar - Device List -->
+        <!-- Secondary Sidebar -->
         <aside class="sidebar-secondary" id="deviceSidebar">
             <div class="sidebar-header">
                 <div class="sidebar-title">设备列表</div>
-                <div class="sidebar-subtitle" id="connectionStatus">未连接</div>
+                <div class="connection-status" id="connectionStatusText">
+                    <span class="connection-dot"></span>
+                    <span>未连接</span>
+                </div>
             </div>
             <div class="device-search">
                 <input type="text" placeholder="搜索设备..." id="deviceSearch" oninput="filterDevices()">
@@ -1056,7 +1086,7 @@
                                 <div class="terminal-info">
                                     <span class="terminal-shell">bash</span>
                                     <span style="color: var(--text-muted);">•</span>
-                                    <span class="terminal-path" id="terminalPath">/home/user</span>
+                                    <span class="terminal-path" id="terminalPath">/root</span>
                                 </div>
                                 <div class="terminal-controls">
                                     <button class="terminal-btn" onclick="clearTerminal()">清空</button>
@@ -1065,9 +1095,9 @@
                             </div>
                             <div class="terminal-output" id="terminalOutput"></div>
                             <div class="terminal-input-line">
-                                <span class="terminal-prompt" id="terminalPrompt">user@device:~$</span>
+                                <span class="terminal-prompt" id="terminalPrompt">#</span>
                                 <input type="text" class="terminal-input" id="terminalInput" 
-                                       placeholder="输入命令..." onkeydown="handleTerminalKeydown(event)">
+                                       placeholder="输入命令..." onkeydown="handleTerminalInput(event)">
                             </div>
                         </div>
                     </div>
@@ -1078,41 +1108,39 @@
                             <div class="file-sidebar">
                                 <div class="file-sidebar-header">目录</div>
                                 <div class="file-tree" id="fileTree">
-                                    <div class="file-tree-item active" onclick="navigateTo('/')">
+                                    <div class="file-tree-item active" onclick="navigateTo('/root')">
                                         <span class="file-tree-icon">📁</span>
-                                        <span>/</span>
-                                    </div>
-                                    <div class="file-tree-item" onclick="navigateTo('/home')">
-                                        <span class="file-tree-icon">📁</span>
-                                        <span>home</span>
+                                        <span>/root</span>
                                     </div>
                                     <div class="file-tree-item" onclick="navigateTo('/etc')">
                                         <span class="file-tree-icon">📁</span>
-                                        <span>etc</span>
+                                        <span>/etc</span>
                                     </div>
                                     <div class="file-tree-item" onclick="navigateTo('/var')">
                                         <span class="file-tree-icon">📁</span>
-                                        <span>var</span>
+                                        <span>/var</span>
                                     </div>
                                     <div class="file-tree-item" onclick="navigateTo('/tmp')">
                                         <span class="file-tree-icon">📁</span>
-                                        <span>tmp</span>
+                                        <span>/tmp</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="file-browser">
                                 <div class="file-browser-toolbar">
                                     <div class="breadcrumb" id="breadcrumb">
-                                        <span class="breadcrumb-item">/</span>
+                                        <span class="breadcrumb-item" onclick="navigateTo('/root')">/root</span>
                                     </div>
                                     <div class="file-browser-actions">
                                         <button class="btn btn-sm" onclick="uploadFile()">📤 上传</button>
-                                        <button class="btn btn-sm" onclick="downloadSelected()">⬇️ 下载</button>
                                         <button class="btn btn-sm" onclick="refreshFiles()">🔄 刷新</button>
                                     </div>
                                 </div>
                                 <div class="file-list" id="fileList">
-                                    <!-- Files will be listed here -->
+                                    <div class="empty-folder">
+                                        <div class="empty-folder-icon">📂</div>
+                                        <div>空目录</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1121,51 +1149,153 @@
                     <!-- Monitor Tab -->
                     <div class="tab-pane" id="tab-monitor">
                         <div class="metrics-grid">
+                            <!-- CPU -->
                             <div class="metric-card">
                                 <div class="metric-header">
                                     <div class="metric-title">📊 CPU 使用率</div>
                                 </div>
-                                <div class="metric-value" id="metricCpu">45.2%</div>
-                                <div class="metric-chart"></div>
+                                <div class="metric-value" id="metricCpu">--%</div>
+                                <div class="metric-subtitle" id="metricCpuDetail">-- 核心</div>
+                                <div class="metric-bar">
+                                    <div class="metric-bar-fill" id="metricCpuBar" style="width: 0%"></div>
+                                </div>
+                                <div class="metric-details">
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">用户态</span>
+                                        <span class="metric-detail-value" id="metricCpuUser">--%</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">系统态</span>
+                                        <span class="metric-detail-value" id="metricCpuSys">--%</span>
+                                    </div>
+                                </div>
                             </div>
+
+                            <!-- Memory -->
                             <div class="metric-card">
                                 <div class="metric-header">
                                     <div class="metric-title">💾 内存使用</div>
                                 </div>
-                                <div class="metric-value" id="metricMem">2.4 GB</div>
-                                <div class="metric-chart"></div>
+                                <div class="metric-value" id="metricMem">--</div>
+                                <div class="metric-subtitle" id="metricMemDetail">共 --</div>
+                                <div class="metric-bar">
+                                    <div class="metric-bar-fill" id="metricMemBar" style="width: 0%"></div>
+                                </div>
+                                <div class="metric-details">
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">已用</span>
+                                        <span class="metric-detail-value" id="metricMemUsed">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">可用</span>
+                                        <span class="metric-detail-value" id="metricMemFree">--</span>
+                                    </div>
+                                </div>
                             </div>
+
+                            <!-- Disk -->
                             <div class="metric-card">
                                 <div class="metric-header">
                                     <div class="metric-title">💿 磁盘使用</div>
                                 </div>
-                                <div class="metric-value" id="metricDisk">67%</div>
-                                <div class="metric-chart"></div>
+                                <div class="metric-value" id="metricDisk">--%</div>
+                                <div class="metric-subtitle" id="metricDiskDetail">-- / --</div>
+                                <div class="metric-bar">
+                                    <div class="metric-bar-fill" id="metricDiskBar" style="width: 0%"></div>
+                                </div>
+                                <div class="metric-details">
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">已用</span>
+                                        <span class="metric-detail-value" id="metricDiskUsed">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">可用</span>
+                                        <span class="metric-detail-value" id="metricDiskFree">--</span>
+                                    </div>
+                                </div>
                             </div>
+
+                            <!-- Load & Network -->
                             <div class="metric-card">
                                 <div class="metric-header">
                                     <div class="metric-title">⚡ 系统负载</div>
                                 </div>
-                                <div class="metric-value" id="metricLoad">0.85</div>
-                                <div class="metric-chart"></div>
+                                <div class="metric-value" id="metricLoad">--</div>
+                                <div class="metric-subtitle">1分钟 / 5分钟 / 15分钟</div>
+                                <div class="metric-details">
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">1m</span>
+                                        <span class="metric-detail-value" id="metricLoad1">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">5m</span>
+                                        <span class="metric-detail-value" id="metricLoad5">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">15m</span>
+                                        <span class="metric-detail-value" id="metricLoad15">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">运行时间</span>
+                                        <span class="metric-detail-value" id="metricUptime">--</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Network -->
+                            <div class="metric-card large">
+                                <div class="metric-header">
+                                    <div class="metric-title">🌐 网络流量</div>
+                                </div>
+                                <div class="metric-details">
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">IP 地址</span>
+                                        <span class="metric-detail-value" id="metricIp">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">MAC 地址</span>
+                                        <span class="metric-detail-value" id="metricMac">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">接收</span>
+                                        <span class="metric-detail-value" id="metricRx">--</span>
+                                    </div>
+                                    <div class="metric-detail">
+                                        <span class="metric-detail-label">发送</span>
+                                        <span class="metric-detail-value" id="metricTx">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Process List -->
+                        <div class="process-table" style="margin-top: 24px;">
+                            <div class="process-table-header">
+                                <span>PID</span>
+                                <span>进程名</span>
+                                <span>CPU</span>
+                                <span>内存</span>
+                                <span>时间</span>
+                            </div>
+                            <div id="processList">
+                                <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                                    暂无进程数据
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Scripts Tab -->
                     <div class="tab-pane" id="tab-scripts">
-                        <div style="max-width: 800px;">
+                        <div style="max-width: 900px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                                <h3 style="font-size: 16px; font-weight: 600;">执行脚本</h3>
-                                <button class="btn btn-primary" onclick="runScript()">▶️ 运行</button>
-                            </div>
-                            <textarea id="scriptEditor" placeholder="#!/bin/bash&#10;# 在此输入脚本&#10;echo 'Hello, World!'"></textarea>
-                            <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: var(--radius-md);">
-                                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">执行历史</div>
-                                <div id="scriptHistory" style="font-size: 13px; color: var(--text-secondary);">
-                                    暂无执行记录
+                                <div>
+                                    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 4px;">执行脚本</h3>
+                                    <div style="font-size: 13px; color: var(--text-muted);">在设备上执行 Shell 脚本</div>
                                 </div>
+                                <button class="btn btn-primary" onclick="runScript()">▶️ 运行脚本</button>
                             </div>
+                            <textarea class="script-editor" id="scriptEditor" placeholder="#!/bin/bash&#10;&#10;# 在此输入脚本代码&#10;echo 'Hello, World!'&#10;uname -a"></textarea>
                         </div>
                     </div>
                 </div>
@@ -1173,22 +1303,48 @@
         </main>
     </div>
 
-    <!-- Modals -->
+    <!-- Script Output Modal -->
     <div class="modal-overlay" id="scriptModal">
         <div class="modal">
             <div class="modal-header">
                 <div class="modal-title">📜 脚本执行结果</div>
+                <button class="modal-close" onclick="closeModal()">×</button>
             </div>
             <div class="modal-body">
-                <pre id="scriptOutput" style="background: var(--bg-tertiary); padding: 16px; border-radius: var(--radius-md); font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow-x: auto;"></pre>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <span id="scriptStatusIcon">⏳</span>
+                    <span id="scriptStatusText">执行中...</span>
+                    <span style="margin-left: auto; font-size: 12px; color: var(--text-muted);" id="scriptExitCode"></span>
+                </div>
+                <pre class="output" id="scriptOutput"></pre>
             </div>
             <div class="modal-footer">
-                <button class="btn" onclick="closeModal('scriptModal')">关闭</button>
+                <button class="btn" onclick="closeModal()">关闭</button>
+                <button class="btn btn-primary" onclick="copyOutput()">📋 复制输出</button>
             </div>
         </div>
     </div>
 
     <script>
+        // ============================================
+        // Configuration
+        // ============================================
+        const MSG_TYPES = {
+            HEARTBEAT: 0x01,
+            SYSTEM_STATUS: 0x02,
+            SCRIPT_RESULT: 0x05,
+            PTY_CREATE: 0x10,
+            PTY_DATA: 0x11,
+            PTY_RESIZE: 0x12,
+            PTY_CLOSE: 0x13,
+            FILE_LIST_REQUEST: 0x22,
+            FILE_LIST_RESPONSE: 0x23,
+            DOWNLOAD_PACKAGE: 0x24,
+            CMD_REQUEST: 0x30,
+            CMD_RESPONSE: 0x31,
+            DEVICE_LIST: 0x50
+        };
+
         // ============================================
         // State
         // ============================================
@@ -1196,31 +1352,39 @@
         let devices = [];
         let currentDevice = null;
         let currentTab = 'terminal';
-        let currentPath = '/';
+        let currentPath = '/root';
+        let ptySessionId = null;
+        let isConnected = false;
 
         // ============================================
-        // Init
+        // Toast
         // ============================================
-        document.addEventListener('DOMContentLoaded', () => {
-            connectWebSocket();
-            setupDragDrop();
-        });
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span style="font-size: 20px;">${icons[type]}</span>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
 
         // ============================================
-        // WebSocket
+        // WebSocket Connection
         // ============================================
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            
-            // 自动检测 WebSocket 地址
             let wsUrl;
+            
             if (window.location.hostname.includes('github.dev')) {
-                // GitHub Codespaces 环境 - 只替换端口号部分
-                // 例如: xxx-8080.app.github.dev -> xxx-8765.app.github.dev
                 const wsHostname = window.location.hostname.replace(/-\d+(\.app\.github\.dev)$/, '-8765$1');
                 wsUrl = `${protocol}//${wsHostname}/`;
             } else {
-                // 本地或其他环境
                 wsUrl = `${protocol}//${window.location.hostname}:8765`;
             }
             
@@ -1228,47 +1392,57 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                document.getElementById('connectionStatus').textContent = '已连接';
+                console.log('WebSocket connected');
+                isConnected = true;
+                updateConnectionStatus(true);
                 showToast('已连接到服务器', 'success');
             };
 
             ws.onclose = () => {
-                document.getElementById('connectionStatus').textContent = '未连接';
+                console.log('WebSocket disconnected');
+                isConnected = false;
+                updateConnectionStatus(false);
                 setTimeout(connectWebSocket, 3000);
             };
 
+            ws.onerror = (err) => {
+                console.error('WebSocket error:', err);
+            };
+
             ws.onmessage = async (event) => {
-                const buffer = await event.data.arrayBuffer();
-                const bytes = new Uint8Array(buffer);
-                const msgType = bytes[0];
-                const data = JSON.parse(new TextDecoder().decode(bytes.slice(1)));
-                handleMessage(msgType, data);
+                try {
+                    const buffer = await event.data.arrayBuffer();
+                    const bytes = new Uint8Array(buffer);
+                    const msgType = bytes[0];
+                    const data = JSON.parse(new TextDecoder().decode(bytes.slice(1)));
+                    console.log('Received message:', msgType, data);
+                    handleMessage(msgType, data);
+                } catch (err) {
+                    console.error('Error handling message:', err);
+                }
             };
         }
 
-        function handleMessage(type, data) {
-            switch(type) {
-                case 0x50: // DEVICE_LIST
-                    updateDeviceList(data.devices);
-                    break;
-                case 0x02: // SYSTEM_STATUS
-                    updateMetrics(data);
-                    break;
-                case 0x11: // PTY_DATA
-                    appendTerminalOutput(atob(data.data));
-                    break;
-                case 0x23: // FILE_LIST
-                    updateFileList(data.files);
-                    break;
-                case 0x05: // SCRIPT_RESULT
-                    showScriptResult(data);
-                    break;
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatusText');
+            if (connected) {
+                statusEl.className = 'connection-status online';
+                statusEl.innerHTML = '<span class="connection-dot"></span><span>已连接</span>';
+            } else {
+                statusEl.className = 'connection-status';
+                statusEl.innerHTML = '<span class="connection-dot"></span><span>未连接</span>';
             }
         }
 
         function sendMessage(type, data) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
-            if (currentDevice) data.device_id = currentDevice.id;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showToast('未连接到服务器', 'error');
+                return false;
+            }
+            
+            if (currentDevice && currentDevice.device_id) {
+                data.device_id = currentDevice.device_id;
+            }
             
             const json = JSON.stringify(data);
             const bytes = new TextEncoder().encode(json);
@@ -1276,20 +1450,45 @@
             msg[0] = type;
             msg.set(bytes, 1);
             ws.send(msg);
+            console.log('Sent message:', type, data);
+            return true;
+        }
+
+        // ============================================
+        // Message Handler
+        // ============================================
+        function handleMessage(type, data) {
+            switch(type) {
+                case MSG_TYPES.DEVICE_LIST:
+                    updateDeviceList(data.devices || data);
+                    break;
+                case MSG_TYPES.SYSTEM_STATUS:
+                    updateSystemStatus(data);
+                    break;
+                case MSG_TYPES.PTY_DATA:
+                    handleTerminalData(data);
+                    break;
+                case MSG_TYPES.FILE_LIST_RESPONSE:
+                    updateFileList(data.files || []);
+                    break;
+                case MSG_TYPES.CMD_RESPONSE:
+                    handleCommandResponse(data);
+                    break;
+                case MSG_TYPES.SCRIPT_RESULT:
+                    handleScriptResult(data);
+                    break;
+                default:
+                    console.log('Unknown message type:', type, data);
+            }
         }
 
         // ============================================
         // Device Management
         // ============================================
         function updateDeviceList(newDevices) {
-            devices = newDevices || [];
+            console.log('Updating device list:', newDevices);
+            devices = Array.isArray(newDevices) ? newDevices : [];
             renderDeviceList();
-            
-            // Update badge
-            const badge = document.getElementById('deviceBadge');
-            if (devices.length > 0) {
-                badge.style.display = 'block';
-            }
         }
 
         function renderDeviceList() {
@@ -1311,7 +1510,7 @@
             }
 
             list.innerHTML = filtered.map(device => `
-                <div class="device-card ${currentDevice?.id === device.device_id ? 'active' : ''}" 
+                <div class="device-card ${currentDevice?.device_id === device.device_id ? 'active' : ''}" 
                      onclick="selectDevice('${device.device_id}')">
                     <div class="device-card-header">
                         <div class="device-avatar">📱</div>
@@ -1322,15 +1521,15 @@
                     </div>
                     <div class="device-metrics">
                         <div class="device-metric">
-                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-value">${device.cpu_usage?.toFixed(0) || '--'}%</div>
                             <div class="device-metric-label">CPU</div>
                         </div>
                         <div class="device-metric">
-                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-value">${((device.mem_used || 0) / 1024).toFixed(1)}G</div>
                             <div class="device-metric-label">内存</div>
                         </div>
                         <div class="device-metric">
-                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-value">${device.load_1min?.toFixed(1) || '--'}</div>
                             <div class="device-metric-label">负载</div>
                         </div>
                     </div>
@@ -1343,9 +1542,16 @@
         }
 
         function selectDevice(deviceId) {
-            currentDevice = devices.find(d => d.device_id === deviceId);
-            if (!currentDevice) return;
+            const device = devices.find(d => d.device_id === deviceId);
+            if (!device) return;
 
+            // Disconnect from previous device
+            if (currentDevice && ptySessionId) {
+                sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
+            }
+
+            currentDevice = device;
+            
             // Update UI
             document.querySelectorAll('.device-card').forEach(el => el.classList.remove('active'));
             event.currentTarget.classList.add('active');
@@ -1353,77 +1559,78 @@
             // Show device detail
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('deviceDetail').classList.add('active');
-            document.getElementById('detailDeviceName').textContent = currentDevice.device_id;
+            document.getElementById('detailDeviceName').textContent = device.device_id;
+            document.getElementById('detailDeviceIp').textContent = device.ip_addr || 'IP未知';
 
             // Connect terminal
-            connectTerminal();
+            setTimeout(() => connectTerminal(), 100);
+            
+            // Refresh files
+            setTimeout(() => refreshFiles(), 200);
             
             showToast(`已选择设备: ${deviceId}`, 'success');
         }
 
         function disconnectDevice() {
+            if (ptySessionId) {
+                sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
+                ptySessionId = null;
+            }
             currentDevice = null;
             document.getElementById('deviceDetail').classList.remove('active');
             document.getElementById('emptyState').style.display = 'flex';
-        }
-
-        // ============================================
-        // Navigation
-        // ============================================
-        function showView(view) {
-            // Update nav
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
-
-            // For now, just switch to device view
-            if (view === 'devices') {
-                disconnectDevice();
-            }
-        }
-
-        function switchTab(tab) {
-            currentTab = tab;
-            
-            // Update tabs
-            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-            document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
-            
-            // Update panes
-            document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
-            document.getElementById(`tab-${tab}`)?.classList.add('active');
-
-            // Refresh data
-            if (tab === 'files') {
-                refreshFiles();
-            } else if (tab === 'monitor') {
-                refreshMetrics();
-            }
+            clearTerminal();
         }
 
         // ============================================
         // Terminal
         // ============================================
         function connectTerminal() {
-            sendMessage(0x10, { session_id: 1, rows: 24, cols: 80 });
+            if (!currentDevice) return;
+            
+            ptySessionId = Date.now();
+            console.log('Creating PTY session:', ptySessionId);
+            
+            sendMessage(MSG_TYPES.PTY_CREATE, {
+                session_id: ptySessionId,
+                rows: 24,
+                cols: 80
+            });
+            
+            showToast('正在连接终端...', 'info');
         }
 
         function reconnectTerminal() {
-            document.getElementById('terminalOutput').innerHTML = '';
+            clearTerminal();
             connectTerminal();
         }
 
-        function handleTerminalKeydown(e) {
+        function handleTerminalData(data) {
+            if (data.data) {
+                try {
+                    const text = atob(data.data);
+                    appendTerminalOutput(text);
+                } catch (e) {
+                    console.error('Error decoding terminal data:', e);
+                }
+            }
+        }
+
+        function handleTerminalInput(e) {
             if (e.key === 'Enter') {
                 const input = document.getElementById('terminalInput');
                 const cmd = input.value;
-                input.value = '';
-
-                appendTerminalOutput(`$ ${cmd}\n`);
+                if (!cmd.trim()) return;
                 
-                sendMessage(0x11, {
-                    session_id: 1,
-                    data: btoa(cmd + '\n')
-                });
+                input.value = '';
+                appendTerminalOutput(`# ${cmd}\n`);
+                
+                if (ptySessionId) {
+                    sendMessage(MSG_TYPES.PTY_DATA, {
+                        session_id: ptySessionId,
+                        data: btoa(cmd + '\n')
+                    });
+                }
             }
         }
 
@@ -1441,32 +1648,78 @@
         // Files
         // ============================================
         function refreshFiles() {
-            sendMessage(0x22, { path: currentPath });
+            if (!currentDevice) return;
+            
+            console.log('Refreshing files for path:', currentPath);
+            sendMessage(MSG_TYPES.FILE_LIST_REQUEST, { 
+                path: currentPath,
+                request_id: 'files-' + Date.now()
+            });
         }
 
         function updateFileList(files) {
+            console.log('Updating file list:', files);
             const list = document.getElementById('fileList');
+            
             if (!files || files.length === 0) {
-                list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">空目录</div>';
+                list.innerHTML = `
+                    <div class="empty-folder">
+                        <div class="empty-folder-icon">📂</div>
+                        <div>空目录</div>
+                    </div>
+                `;
                 return;
             }
 
+            // Sort: directories first, then files
+            files.sort((a, b) => {
+                if (a.is_dir && !b.is_dir) return -1;
+                if (!a.is_dir && b.is_dir) return 1;
+                return a.name.localeCompare(b.name);
+            });
+
             list.innerHTML = files.map(f => `
-                <div class="file-item" ondblclick="${f.is_dir ? `navigateTo('${f.path}')` : `downloadFile('${f.path}')`}">
-                    <span class="file-icon">${f.is_dir ? '📁' : '📄'}</span>
+                <div class="file-item" onclick="${f.is_dir ? `navigateTo('${f.path}')` : `downloadFile('${f.path}')`}">
+                    <span class="file-icon">${f.is_dir ? '📁' : getFileIcon(f.name)}</span>
                     <div class="file-details">
                         <div class="file-name">${f.name}</div>
-                        <div class="file-meta">${new Date(f.modified).toLocaleString()}</div>
+                        <div class="file-meta">${f.is_dir ? '目录' : formatDate(f.modified)}</div>
                     </div>
-                    <div class="file-size">${formatBytes(f.size)}</div>
+                    <div class="file-size">${f.is_dir ? '--' : formatBytes(f.size)}</div>
                 </div>
             `).join('');
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                js: '📜', py: '🐍', sh: '⚡', txt: '📝',
+                json: '📋', xml: '📄', html: '🌐', css: '🎨',
+                jpg: '🖼️', png: '🖼️', gif: '🖼️', pdf: '📕',
+                zip: '📦', tar: '📦', gz: '📦', log: '📋'
+            };
+            return icons[ext] || '📄';
         }
 
         function navigateTo(path) {
             currentPath = path;
             document.getElementById('terminalPath').textContent = path;
+            updateBreadcrumb(path);
             refreshFiles();
+        }
+
+        function updateBreadcrumb(path) {
+            const parts = path.split('/').filter(p => p);
+            let html = '<span class="breadcrumb-item" onclick="navigateTo(\'/\')">/</span>';
+            
+            let currentPath = '';
+            parts.forEach((part, i) => {
+                currentPath += '/' + part;
+                html += `<span class="breadcrumb-separator">/</span>`;
+                html += `<span class="breadcrumb-item" onclick="navigateTo('${currentPath}')">${part}</span>`;
+            });
+            
+            document.getElementById('breadcrumb').innerHTML = html;
         }
 
         function uploadFile() {
@@ -1475,146 +1728,234 @@
             input.onchange = (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    showToast(`上传: ${file.name}`, 'info');
-                    // Implement upload logic
+                    showToast(`准备上传: ${file.name}`, 'info');
+                    // TODO: Implement file upload
                 }
             };
             input.click();
         }
 
-        function downloadSelected() {
-            showToast('请选择文件', 'warning');
-        }
-
         function downloadFile(path) {
-            sendMessage(0x24, { path: path, format: 'zip' });
+            sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
+                path: path,
+                format: 'zip'
+            });
             showToast('开始下载...', 'info');
         }
 
         // ============================================
-        // Monitor
+        // System Status - Enhanced
         // ============================================
-        function refreshMetrics() {
-            sendMessage(0x30, { cmd: 'status', request_id: 'metrics' });
+        function updateSystemStatus(data) {
+            console.log('Updating system status:', data);
+            
+            // Update device card
+            if (currentDevice && data.device_id === currentDevice.device_id) {
+                renderDeviceList();
+            }
+
+            // CPU
+            const cpuUsage = data.cpu_usage || 0;
+            document.getElementById('metricCpu').textContent = cpuUsage.toFixed(1) + '%';
+            document.getElementById('metricCpuDetail').textContent = `${data.cpu_cores || '--'} 核心`;
+            document.getElementById('metricCpuBar').style.width = cpuUsage + '%';
+            document.getElementById('metricCpuBar').className = 'metric-bar-fill ' + (cpuUsage > 80 ? 'high' : cpuUsage > 50 ? 'medium' : 'low');
+            document.getElementById('metricCpuUser').textContent = (data.cpu_user || 0).toFixed(1) + '%';
+            document.getElementById('metricCpuSys').textContent = (data.cpu_system || 0).toFixed(1) + '%';
+
+            // Memory
+            const memTotal = data.mem_total || 1;
+            const memUsed = data.mem_used || 0;
+            const memPercent = (memUsed / memTotal) * 100;
+            document.getElementById('metricMem').textContent = formatBytes(memUsed * 1024 * 1024);
+            document.getElementById('metricMemDetail').textContent = `共 ${formatBytes(memTotal * 1024 * 1024)}`;
+            document.getElementById('metricMemBar').style.width = memPercent + '%';
+            document.getElementById('metricMemBar').className = 'metric-bar-fill ' + (memPercent > 80 ? 'high' : memPercent > 50 ? 'medium' : 'low');
+            document.getElementById('metricMemUsed').textContent = formatBytes(memUsed * 1024 * 1024);
+            document.getElementById('metricMemFree').textContent = formatBytes((memTotal - memUsed) * 1024 * 1024);
+
+            // Disk
+            const diskTotal = data.disk_total || 1;
+            const diskUsed = data.disk_used || 0;
+            const diskPercent = (diskUsed / diskTotal) * 100;
+            document.getElementById('metricDisk').textContent = diskPercent.toFixed(1) + '%';
+            document.getElementById('metricDiskDetail').textContent = `${formatBytes(diskUsed * 1024 * 1024)} / ${formatBytes(diskTotal * 1024 * 1024)}`;
+            document.getElementById('metricDiskBar').style.width = diskPercent + '%';
+            document.getElementById('metricDiskBar').className = 'metric-bar-fill ' + (diskPercent > 80 ? 'high' : diskPercent > 50 ? 'medium' : 'low');
+            document.getElementById('metricDiskUsed').textContent = formatBytes(diskUsed * 1024 * 1024);
+            document.getElementById('metricDiskFree').textContent = formatBytes((diskTotal - diskUsed) * 1024 * 1024);
+
+            // Load & Uptime
+            document.getElementById('metricLoad').textContent = (data.load_1min || 0).toFixed(2);
+            document.getElementById('metricLoad1').textContent = (data.load_1min || 0).toFixed(2);
+            document.getElementById('metricLoad5').textContent = (data.load_5min || 0).toFixed(2);
+            document.getElementById('metricLoad15').textContent = (data.load_15min || 0).toFixed(2);
+            document.getElementById('metricUptime').textContent = formatUptime(data.uptime || 0);
+
+            // Network
+            document.getElementById('metricIp').textContent = data.ip_addr || '--';
+            document.getElementById('metricMac').textContent = data.mac_addr || '--';
+            document.getElementById('metricRx').textContent = formatBytes(data.net_rx_bytes || 0);
+            document.getElementById('metricTx').textContent = formatBytes(data.net_tx_bytes || 0);
+
+            // Update device card metrics
+            if (currentDevice) {
+                currentDevice.cpu_usage = data.cpu_usage;
+                currentDevice.mem_used = data.mem_used;
+                currentDevice.load_1min = data.load_1min;
+                renderDeviceList();
+            }
         }
 
-        function updateMetrics(data) {
-            document.getElementById('metricCpu').textContent = (data.cpu_usage || 0).toFixed(1) + '%';
-            document.getElementById('metricMem').textContent = ((data.mem_used || 0) / 1024).toFixed(1) + ' GB';
-            document.getElementById('metricDisk').textContent = ((data.disk_used || 0) / (data.disk_total || 1) * 100).toFixed(0) + '%';
-            document.getElementById('metricLoad').textContent = (data.load_1min || 0).toFixed(2);
+        function handleCommandResponse(data) {
+            if (data.request_id?.startsWith('status')) {
+                // System status response
+                updateSystemStatus(data);
+            } else if (data.output) {
+                // Command output
+                appendTerminalOutput(data.output + '\n');
+            }
         }
 
         // ============================================
         // Scripts
         // ============================================
         function runScript() {
-            const script = document.getElementById('scriptEditor').value;
-            if (!script.trim()) return;
+            if (!currentDevice) {
+                showToast('请先选择设备', 'warning');
+                return;
+            }
 
-            sendMessage(0x04, {
+            const script = document.getElementById('scriptEditor').value;
+            if (!script.trim()) {
+                showToast('请输入脚本内容', 'warning');
+                return;
+            }
+
+            document.getElementById('scriptModal').classList.add('active');
+            document.getElementById('scriptStatusIcon').textContent = '⏳';
+            document.getElementById('scriptStatusText').textContent = '执行中...';
+            document.getElementById('scriptExitCode').textContent = '';
+            document.getElementById('scriptOutput').textContent = '正在执行脚本...';
+
+            sendMessage(0x04, {  // SCRIPT_RECV
                 script_id: 'script-' + Date.now(),
                 content: script,
                 execute: true
             });
-
-            showToast('脚本已发送执行', 'info');
         }
 
-        function showScriptResult(data) {
-            document.getElementById('scriptOutput').textContent = data.output || 'No output';
-            document.getElementById('scriptModal').classList.add('active');
+        function handleScriptResult(data) {
+            const icon = data.success ? '✓' : '✕';
+            const text = data.success ? '执行成功' : '执行失败';
+            const color = data.success ? 'var(--accent-success)' : 'var(--accent-error)';
             
-            // Update history
-            document.getElementById('scriptHistory').innerHTML = `
-                <div style="margin-bottom: 8px;">
-                    <span style="color: ${data.success ? 'var(--accent-success)' : 'var(--accent-error)'};">
-                        ${data.success ? '✓' : '✗'}
-                    </span>
-                    <span>退出码: ${data.exit_code}</span>
-                    <span style="color: var(--text-muted); margin-left: 8px;">${new Date().toLocaleTimeString()}</span>
-                </div>
-            `;
+            document.getElementById('scriptStatusIcon').textContent = icon;
+            document.getElementById('scriptStatusIcon').style.color = color;
+            document.getElementById('scriptStatusText').textContent = text;
+            document.getElementById('scriptStatusText').style.color = color;
+            document.getElementById('scriptExitCode').textContent = `退出码: ${data.exit_code}`;
+            document.getElementById('scriptOutput').textContent = data.output || '无输出';
+            
+            showToast(`脚本执行${data.success ? '成功' : '失败'}`, data.success ? 'success' : 'error');
         }
 
-        // ============================================
-        // Drag & Drop
-        // ============================================
-        function setupDragDrop() {
-            let dragCounter = 0;
-            
-            document.addEventListener('dragenter', (e) => {
-                e.preventDefault();
-                dragCounter++;
-                if (e.dataTransfer.types.includes('Files')) {
-                    document.getElementById('uploadOverlay').classList.add('active');
-                }
-            });
+        function closeModal() {
+            document.getElementById('scriptModal').classList.remove('active');
+        }
 
-            document.addEventListener('dragleave', (e) => {
-                e.preventDefault();
-                dragCounter--;
-                if (dragCounter === 0) {
-                    document.getElementById('uploadOverlay').classList.remove('active');
-                }
-            });
-
-            document.addEventListener('dragover', (e) => {
-                e.preventDefault();
-            });
-
-            document.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dragCounter = 0;
-                document.getElementById('uploadOverlay').classList.remove('active');
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0 && currentTab === 'files') {
-                    showToast(`准备上传 ${files.length} 个文件`, 'info');
-                }
+        function copyOutput() {
+            const output = document.getElementById('scriptOutput').textContent;
+            navigator.clipboard.writeText(output).then(() => {
+                showToast('已复制到剪贴板', 'success');
             });
         }
 
         // ============================================
-        // Utilities
+        // Navigation
         // ============================================
-        function showToast(message, type = 'info') {
-            const container = document.getElementById('toastContainer');
-            const icons = { success: '✓', error: '✗', warning: '⚠', info: 'ℹ' };
-            
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-            toast.innerHTML = `
-                <span style="font-size: 20px;">${icons[type]}</span>
-                <span>${message}</span>
-            `;
-            
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
+        function showView(view) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
+
+            if (view === 'devices') {
+                disconnectDevice();
+            }
         }
 
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+            
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tab}`)?.classList.add('active');
+
+            if (tab === 'files') {
+                refreshFiles();
+            } else if (tab === 'monitor') {
+                refreshSystemStatus();
+            }
         }
 
-        function formatBytes(bytes) {
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        function refreshSystemStatus() {
+            if (!currentDevice) return;
+            sendMessage(MSG_TYPES.CMD_REQUEST, {
+                cmd: 'status',
+                request_id: 'status-' + Date.now()
+            });
         }
 
         function rebootDevice() {
+            if (!currentDevice) {
+                showToast('请先选择设备', 'warning');
+                return;
+            }
+            
             if (confirm('确定要重启设备吗？')) {
-                sendMessage(0x30, { cmd: 'reboot' });
+                sendMessage(MSG_TYPES.CMD_REQUEST, { cmd: 'reboot' });
                 showToast('重启命令已发送', 'info');
+                setTimeout(() => disconnectDevice(), 1000);
             }
         }
 
         function showSettings() {
             showToast('设置功能开发中...', 'info');
         }
+
+        // ============================================
+        // Utilities
+        // ============================================
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) return `${days}天 ${hours}小时`;
+            if (hours > 0) return `${hours}小时 ${minutes}分钟`;
+            return `${minutes}分钟`;
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return '--';
+            return new Date(timestamp * 1000).toLocaleString();
+        }
+
+        // ============================================
+        // Init
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+        });
     </script>
 </body>
 </html>
