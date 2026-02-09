@@ -497,65 +497,299 @@
             font-size: 13px;
         }
 
-        /* Files */
+        /* Files - VSCode Style */
         .files-layout {
             display: grid;
-            grid-template-columns: 240px 1fr;
-            gap: 24px;
+            grid-template-columns: 260px 1fr 400px;
+            gap: 0;
             height: 100%;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        
+        @media (max-width: 1400px) {
+            .files-layout {
+                grid-template-columns: 240px 1fr;
+            }
+            .file-preview {
+                position: fixed;
+                right: 24px;
+                top: 100px;
+                width: 500px;
+                height: calc(100vh - 140px);
+                z-index: 100;
+                box-shadow: var(--shadow-lg);
+            }
         }
 
         .file-sidebar {
             background: var(--bg-secondary);
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--border-color);
+            border-right: 1px solid var(--border-color);
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
 
         .file-sidebar-header {
-            padding: 16px;
+            padding: 10px 16px;
             border-bottom: 1px solid var(--border-color);
             font-weight: 600;
-            font-size: 14px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .file-tree {
             flex: 1;
             overflow-y: auto;
-            padding: 8px;
+            padding: 4px;
+            font-size: 13px;
         }
 
-        .file-tree-item {
+        .file-tree-root {
+            padding-left: 0;
+        }
+
+        .tree-item {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 8px 12px;
-            border-radius: var(--radius-sm);
+            gap: 4px;
+            padding: 4px 8px;
             cursor: pointer;
-            font-size: 13px;
-            color: var(--text-secondary);
             transition: all var(--transition);
+            user-select: none;
         }
 
-        .file-tree-item:hover, .file-tree-item.active {
+        .tree-item:hover {
             background: var(--bg-tertiary);
-            color: var(--text-primary);
         }
 
-        .file-tree-icon {
-            font-size: 16px;
-            opacity: 0.7;
+        .tree-item.selected {
+            background: rgba(99, 102, 241, 0.2);
+        }
+
+        .tree-item.expanded > .tree-toggle {
+            transform: rotate(90deg);
+        }
+
+        .tree-toggle {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: var(--text-muted);
+            transition: transform var(--transition);
+        }
+
+        .tree-toggle.empty {
+            visibility: hidden;
+        }
+
+        .tree-icon {
+            width: 16px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .tree-label {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .tree-children {
+            padding-left: 20px;
+            display: none;
+        }
+
+        .tree-item.expanded + .tree-children {
+            display: block;
+        }
+
+        .tree-loading {
+            padding: 4px 8px 4px 40px;
+            color: var(--text-muted);
+            font-size: 12px;
         }
 
         .file-browser {
             background: var(--bg-secondary);
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--border-color);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .file-browser-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+            background: var(--bg-tertiary);
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        .breadcrumb-item {
+            padding: 4px 8px;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all var(--transition);
+        }
+
+        .breadcrumb-item:hover {
+            color: var(--text-primary);
+            background: var(--bg-elevated);
+        }
+
+        .file-browser-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .file-item:hover, .file-item.selected {
+            background: var(--bg-tertiary);
+        }
+
+        .file-item.selected {
+            border-left: 2px solid var(--accent-primary);
+        }
+
+        .file-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 13px;
+            margin-bottom: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: var(--text-secondary);
+            width: 70px;
+            text-align: right;
+        }
+
+        /* File Preview Panel */
+        .file-preview {
+            background: var(--bg-tertiary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .file-preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .file-preview-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .file-preview-title span:first-child {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-preview-size {
+            font-size: 12px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .file-preview-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-preview-content {
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+            background: var(--bg-primary);
+        }
+
+        .file-preview-content.image {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .file-preview-content.image img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .file-preview-content.binary {
+            color: var(--text-muted);
+            font-style: italic;
         }
 
         .file-browser-toolbar {
@@ -1106,41 +1340,46 @@
                     <div class="tab-pane" id="tab-files">
                         <div class="files-layout">
                             <div class="file-sidebar">
-                                <div class="file-sidebar-header">目录</div>
+                                <div class="file-sidebar-header">
+                                    <span>资源管理器</span>
+                                    <button class="btn btn-sm" onclick="refreshFileTree()" style="margin-left: auto;">🔄</button>
+                                </div>
                                 <div class="file-tree" id="fileTree">
-                                    <div class="file-tree-item active" onclick="navigateTo('/root')">
-                                        <span class="file-tree-icon">📁</span>
-                                        <span>/root</span>
-                                    </div>
-                                    <div class="file-tree-item" onclick="navigateTo('/etc')">
-                                        <span class="file-tree-icon">📁</span>
-                                        <span>/etc</span>
-                                    </div>
-                                    <div class="file-tree-item" onclick="navigateTo('/var')">
-                                        <span class="file-tree-icon">📁</span>
-                                        <span>/var</span>
-                                    </div>
-                                    <div class="file-tree-item" onclick="navigateTo('/tmp')">
-                                        <span class="file-tree-icon">📁</span>
-                                        <span>/tmp</span>
+                                    <div class="file-tree-root" id="fileTreeRoot">
+                                        <!-- Dynamic tree will be rendered here -->
                                     </div>
                                 </div>
                             </div>
-                            <div class="file-browser">
+                            <div class="file-browser" id="fileBrowser">
                                 <div class="file-browser-toolbar">
                                     <div class="breadcrumb" id="breadcrumb">
-                                        <span class="breadcrumb-item" onclick="navigateTo('/root')">/root</span>
+                                        <span class="breadcrumb-item" onclick="navigateTo('/')">/</span>
                                     </div>
                                     <div class="file-browser-actions">
                                         <button class="btn btn-sm" onclick="uploadFile()">📤 上传</button>
-                                        <button class="btn btn-sm" onclick="refreshFiles()">🔄 刷新</button>
+                                        <button class="btn btn-sm" onclick="refreshCurrentDir()">🔄 刷新</button>
                                     </div>
                                 </div>
                                 <div class="file-list" id="fileList">
                                     <div class="empty-folder">
                                         <div class="empty-folder-icon">📂</div>
-                                        <div>空目录</div>
+                                        <div>选择左侧目录或双击文件夹</div>
                                     </div>
+                                </div>
+                            </div>
+                            <div class="file-preview" id="filePreview" style="display: none;">
+                                <div class="file-preview-header">
+                                    <div class="file-preview-title">
+                                        <span id="previewFilename">文件名</span>
+                                        <span class="file-preview-size" id="previewFilesize">--</span>
+                                    </div>
+                                    <div class="file-preview-actions">
+                                        <button class="btn btn-sm" onclick="downloadSelectedFile()">⬇️ 下载</button>
+                                        <button class="btn btn-sm" onclick="closePreview()">✕</button>
+                                    </div>
+                                </div>
+                                <div class="file-preview-content" id="previewContent">
+                                    <!-- File content will be displayed here -->
                                 </div>
                             </div>
                         </div>
@@ -1469,6 +1708,10 @@
                     handleTerminalData(data);
                     break;
                 case MSG_TYPES.FILE_LIST_RESPONSE:
+                    // Update both tree and file list
+                    if (data.path) {
+                        updateTreeWithFiles(data.path, data.files || []);
+                    }
                     updateFileList(data.files || []);
                     break;
                 case MSG_TYPES.CMD_RESPONSE:
@@ -1565,8 +1808,11 @@
             // Connect terminal
             setTimeout(() => connectTerminal(), 100);
             
-            // Refresh files
-            setTimeout(() => refreshFiles(), 200);
+            // Refresh files and load file tree
+            setTimeout(() => {
+                refreshFiles();
+                refreshFileTree();
+            }, 200);
             
             showToast(`已选择设备: ${deviceId}`, 'success');
         }
@@ -1645,14 +1891,145 @@
         }
 
         // ============================================
-        // Files
+        // Files - VSCode Style Explorer
         // ============================================
-        function refreshFiles() {
+        let fileTreeData = {}; // Cache for tree data
+        let selectedFile = null;
+        let expandedDirs = new Set(['/']);
+
+        function refreshFileTree() {
             if (!currentDevice) return;
+            console.log('Loading root directory tree...');
+            loadTreeItem('/', document.getElementById('fileTreeRoot'));
+        }
+
+        function loadTreeItem(path, container) {
+            console.log('Loading tree item:', path);
+            container.innerHTML = '<div class="tree-loading">加载中...</div>';
             
-            console.log('Refreshing files for path:', currentPath);
-            sendMessage(MSG_TYPES.FILE_LIST_REQUEST, { 
-                path: currentPath,
+            sendMessage(MSG_TYPES.FILE_LIST_REQUEST, {
+                path: path,
+                request_id: 'tree-' + Date.now()
+            });
+        }
+
+        function renderTreeItem(item, parentPath) {
+            const fullPath = parentPath === '/' ? '/' + item.name : parentPath + '/' + item.name;
+            const isExpanded = expandedDirs.has(fullPath);
+            const hasChildren = item.is_dir;
+            
+            const div = document.createElement('div');
+            div.className = `tree-item ${isExpanded ? 'expanded' : ''} ${fullPath === currentPath ? 'selected' : ''}`;
+            div.dataset.path = fullPath;
+            div.dataset.isDir = item.is_dir;
+            
+            div.innerHTML = `
+                <span class="tree-toggle ${hasChildren ? '' : 'empty'}">▶</span>
+                <span class="tree-icon">${item.is_dir ? (isExpanded ? '📂' : '📁') : getFileIcon(item.name)}</span>
+                <span class="tree-label">${item.name}</span>
+            `;
+            
+            // Toggle expand/collapse
+            const toggle = div.querySelector('.tree-toggle');
+            if (hasChildren) {
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleTreeItem(fullPath, div);
+                });
+            }
+            
+            // Click to select/navigate
+            div.addEventListener('click', () => {
+                if (item.is_dir) {
+                    navigateTo(fullPath);
+                    if (!isExpanded) {
+                        toggleTreeItem(fullPath, div);
+                    }
+                } else {
+                    selectFileInTree(fullPath, item);
+                }
+            });
+            
+            return div;
+        }
+
+        function toggleTreeItem(path, element) {
+            const isExpanded = expandedDirs.has(path);
+            
+            if (isExpanded) {
+                expandedDirs.delete(path);
+                element.classList.remove('expanded');
+                const childrenContainer = element.nextElementSibling;
+                if (childrenContainer) {
+                    childrenContainer.style.display = 'none';
+                }
+            } else {
+                expandedDirs.add(path);
+                element.classList.add('expanded');
+                let childrenContainer = element.nextElementSibling;
+                
+                if (!childrenContainer || !childrenContainer.classList.contains('tree-children')) {
+                    childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'tree-children';
+                    element.parentNode.insertBefore(childrenContainer, element.nextSibling);
+                    loadTreeItem(path, childrenContainer);
+                } else {
+                    childrenContainer.style.display = 'block';
+                }
+            }
+            
+            // Update icon
+            const icon = element.querySelector('.tree-icon');
+            icon.textContent = isExpanded ? '📁' : '📂';
+        }
+
+        function updateTreeWithFiles(path, files) {
+            console.log('Updating tree for path:', path, 'with files:', files);
+            
+            // Find the container for this path
+            let container;
+            if (path === '/') {
+                container = document.getElementById('fileTreeRoot');
+            } else {
+                const parentItem = document.querySelector(`.tree-item[data-path="${path}"]`);
+                if (parentItem) {
+                    container = parentItem.nextElementSibling;
+                    if (!container || !container.classList.contains('tree-children')) {
+                        container = document.createElement('div');
+                        container.className = 'tree-children';
+                        parentItem.parentNode.insertBefore(container, parentItem.nextSibling);
+                    }
+                }
+            }
+            
+            if (!container) return;
+            
+            // Sort: directories first
+            files.sort((a, b) => {
+                if (a.is_dir && !b.is_dir) return -1;
+                if (!a.is_dir && b.is_dir) return 1;
+                return a.name.localeCompare(b.name);
+            });
+            
+            // Only show directories in tree
+            const dirs = files.filter(f => f.is_dir);
+            
+            container.innerHTML = '';
+            dirs.forEach(item => {
+                container.appendChild(renderTreeItem(item, path));
+            });
+        }
+
+        function refreshCurrentDir() {
+            if (!currentDevice) return;
+            refreshFiles(currentPath);
+        }
+
+        function refreshFiles(path) {
+            if (!currentDevice) return;
+            console.log('Refreshing files for path:', path);
+            sendMessage(MSG_TYPES.FILE_LIST_REQUEST, {
+                path: path,
                 request_id: 'files-' + Date.now()
             });
         }
@@ -1679,7 +2056,9 @@
             });
 
             list.innerHTML = files.map(f => `
-                <div class="file-item" onclick="${f.is_dir ? `navigateTo('${f.path}')` : `downloadFile('${f.path}')`}">
+                <div class="file-item ${selectedFile === f.path ? 'selected' : ''}" 
+                     ondblclick="${f.is_dir ? `navigateTo('${f.path}')` : `previewFile('${f.path}', '${f.name}', ${f.size})`}"
+                     onclick="selectFileItem('${f.path}', ${f.is_dir}, '${f.name}', ${f.size})">
                     <span class="file-icon">${f.is_dir ? '📁' : getFileIcon(f.name)}</span>
                     <div class="file-details">
                         <div class="file-name">${f.name}</div>
@@ -1690,13 +2069,92 @@
             `).join('');
         }
 
+        function selectFileItem(path, isDir, name, size) {
+            // Remove previous selection
+            document.querySelectorAll('.file-item.selected').forEach(el => el.classList.remove('selected'));
+            
+            // Add selection to clicked item
+            event.currentTarget.classList.add('selected');
+            selectedFile = path;
+            
+            if (!isDir) {
+                previewFile(path, name, size);
+            }
+        }
+
+        function selectFileInTree(path, item) {
+            selectedFile = path;
+            document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+            const treeItem = document.querySelector(`.tree-item[data-path="${path}"]`);
+            if (treeItem) {
+                treeItem.classList.add('selected');
+            }
+            previewFile(path, item.name, item.size);
+        }
+
+        function previewFile(path, name, size) {
+            console.log('Previewing file:', path, name, size);
+            selectedFile = path;
+            
+            const preview = document.getElementById('filePreview');
+            const previewName = document.getElementById('previewFilename');
+            const previewSize = document.getElementById('previewFilesize');
+            const previewContent = document.getElementById('previewContent');
+            
+            preview.style.display = 'flex';
+            previewName.textContent = name;
+            previewSize.textContent = formatBytes(size);
+            
+            // Check file type
+            const ext = name.split('.').pop().toLowerCase();
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+            const textExts = ['txt', 'log', 'md', 'json', 'xml', 'html', 'css', 'js', 'py', 'sh', 'conf', 'cfg', 'ini'];
+            
+            previewContent.className = 'file-preview-content';
+            previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">加载中...</div>';
+            
+            if (imageExts.includes(ext)) {
+                // For images, show placeholder
+                previewContent.classList.add('image');
+                previewContent.innerHTML = '<div style="color: var(--text-muted);">图片预览需要下载</div>';
+            } else if (textExts.includes(ext) || size < 102400) { // Text files or files < 100KB
+                // Request file content
+                previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">正在加载文件内容...</div>';
+                // TODO: Implement file content reading
+                setTimeout(() => {
+                    previewContent.innerHTML = '<div style="color: var(--text-muted);">文件内容预览功能开发中...</div>';
+                }, 500);
+            } else {
+                // Binary or large file
+                previewContent.classList.add('binary');
+                previewContent.textContent = `二进制文件或文件过大 (${formatBytes(size)})\n\n请下载后查看`;
+            }
+        }
+
+        function closePreview() {
+            document.getElementById('filePreview').style.display = 'none';
+            selectedFile = null;
+            document.querySelectorAll('.file-item.selected').forEach(el => el.classList.remove('selected'));
+        }
+
+        function downloadSelectedFile() {
+            if (selectedFile) {
+                downloadFile(selectedFile);
+            } else {
+                showToast('请先选择文件', 'warning');
+            }
+        }
+
         function getFileIcon(filename) {
             const ext = filename.split('.').pop().toLowerCase();
             const icons = {
                 js: '📜', py: '🐍', sh: '⚡', txt: '📝',
                 json: '📋', xml: '📄', html: '🌐', css: '🎨',
-                jpg: '🖼️', png: '🖼️', gif: '🖼️', pdf: '📕',
-                zip: '📦', tar: '📦', gz: '📦', log: '📋'
+                jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', 
+                bmp: '🖼️', webp: '🖼️', pdf: '📕',
+                zip: '📦', tar: '📦', gz: '📦', rar: '📦',
+                log: '📋', md: '📝', conf: '⚙️', cfg: '⚙️',
+                ini: '⚙️', yaml: '⚙️', yml: '⚙️'
             };
             return icons[ext] || '📄';
         }
@@ -1705,18 +2163,26 @@
             currentPath = path;
             document.getElementById('terminalPath').textContent = path;
             updateBreadcrumb(path);
-            refreshFiles();
+            refreshFiles(path);
+            
+            // Update tree selection
+            document.querySelectorAll('.tree-item').forEach(el => {
+                el.classList.remove('selected');
+                if (el.dataset.path === path) {
+                    el.classList.add('selected');
+                }
+            });
         }
 
         function updateBreadcrumb(path) {
             const parts = path.split('/').filter(p => p);
             let html = '<span class="breadcrumb-item" onclick="navigateTo(\'/\')">/</span>';
             
-            let currentPath = '';
-            parts.forEach((part, i) => {
-                currentPath += '/' + part;
+            let currentBuildPath = '';
+            parts.forEach((part) => {
+                currentBuildPath += '/' + part;
                 html += `<span class="breadcrumb-separator">/</span>`;
-                html += `<span class="breadcrumb-item" onclick="navigateTo('${currentPath}')">${part}</span>`;
+                html += `<span class="breadcrumb-item" onclick="navigateTo('${currentBuildPath}')">${part}</span>`;
             });
             
             document.getElementById('breadcrumb').innerHTML = html;
@@ -1752,6 +2218,13 @@
             // Update device card
             if (currentDevice && data.device_id === currentDevice.device_id) {
                 renderDeviceList();
+            }
+
+            // Update IP address if we have it
+            if (data.ip_addr && currentDevice) {
+                document.getElementById('detailDeviceIp').textContent = data.ip_addr;
+                document.getElementById('metricIp').textContent = data.ip_addr;
+                currentDevice.ip_addr = data.ip_addr;
             }
 
             // CPU
@@ -1793,7 +2266,6 @@
             document.getElementById('metricUptime').textContent = formatUptime(data.uptime || 0);
 
             // Network
-            document.getElementById('metricIp').textContent = data.ip_addr || '--';
             document.getElementById('metricMac').textContent = data.mac_addr || '--';
             document.getElementById('metricRx').textContent = formatBytes(data.net_rx_bytes || 0);
             document.getElementById('metricTx').textContent = formatBytes(data.net_tx_bytes || 0);
