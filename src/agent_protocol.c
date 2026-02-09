@@ -7,7 +7,97 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
 #include "agent.h"
+
+/* 简单的本地 Base64 编码（用于小文件） */
+static const char base64_table_local[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static char *base64_encode_local(const unsigned char *data, size_t input_len, size_t *output_len)
+{
+    *output_len = 4 * ((input_len + 2) / 3);
+    char *encoded = malloc(*output_len + 1);
+    if (!encoded) return NULL;
+    size_t i, j;
+    for (i = 0, j = 0; i < input_len;) {
+        uint32_t octet_a = i < input_len ? data[i++] : 0;
+        uint32_t octet_b = i < input_len ? data[i++] : 0;
+        uint32_t octet_c = i < input_len ? data[i++] : 0;
+        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+        encoded[j++] = base64_table_local[(triple >> 18) & 0x3F];
+        encoded[j++] = base64_table_local[(triple >> 12) & 0x3F];
+        encoded[j++] = base64_table_local[(triple >> 6) & 0x3F];
+        encoded[j++] = base64_table_local[triple & 0x3F];
+    }
+    int mod = input_len % 3;
+    if (mod > 0) {
+        for (i = 0; i < (3 - mod); i++) {
+            encoded[*output_len - 1 - i] = '=';
+        }
+    }
+    encoded[*output_len] = '\0';
+    return encoded;
+}
+
+/* JSON字符串转义（处理特殊字符如、"\、/、\b、\f、\n、\r、\t） */
+static char *json_escape_string(const char *src, size_t max_len)
+{
+    if (!src) return NULL;
+    
+    /* 预估输出大小（最坏情况每字符变成\uXXXX） */
+    char *dst = malloc(max_len * 6 + 1);
+    if (!dst) return NULL;
+    
+    size_t j = 0;
+    for (size_t i = 0; src[i] && i < max_len && j < max_len * 6 - 10; i++) {
+        unsigned char c = (unsigned char)src[i];
+        
+        switch (c) {
+            case '"':
+                dst[j++] = '\\';
+                dst[j++] = '"';
+                break;
+            case '\\':
+                dst[j++] = '\\';
+                dst[j++] = '\\';
+                break;
+            case '\b':
+                dst[j++] = '\\';
+                dst[j++] = 'b';
+                break;
+            case '\f':
+                dst[j++] = '\\';
+                dst[j++] = 'f';
+                break;
+            case '\n':
+                dst[j++] = '\\';
+                dst[j++] = 'n';
+                break;
+            case '\r':
+                dst[j++] = '\\';
+                dst[j++] = 'r';
+                break;
+            case '\t':
+                dst[j++] = '\\';
+                dst[j++] = 't';
+                break;
+            default:
+                if (c < 0x20 || c >= 0x7F) {
+                    /* 控制字符或非ASCII用\uXXXX表示 */
+                    j += snprintf(dst + j, max_len * 6 - j, "\\u%04x", c);
+                } else {
+                    dst[j++] = c;
+                }
+                break;
+        }
+    }
+    
+    dst[j] = '\0';
+    return dst;
+}
 
 /* 简单的JSON解析辅助函数 */
 static char *json_get_string(const char *json, const char *key)
@@ -203,6 +293,322 @@ cleanup:
     if (filepath) free(filepath);
 }
 
+/* 文件信息结构体 */
+typedef struct {
+    char name[512];
+    char path[2048];
+    int is_dir;
+    long size;
+} file_entry_t;
+
+/* 现代风格排序比较函数：文件夹优先，然后按名字不区分大小写排序 */
+static int compare_files(const void *a, const void *b)
+{
+    const file_entry_t *fa = (const file_entry_t *)a;
+    const file_entry_t *fb = (const file_entry_t *)b;
+    
+    /* 文件夹优先 */
+    if (fa->is_dir != fb->is_dir) {
+        return fb->is_dir - fa->is_dir;  /* 文件夹返回结果为1，文件为-1 */
+    }
+    
+    /* 同类型按名字不区分大小写排序 */
+    return strcasecmp(fa->name, fb->name);
+}
+
+/* 规范化路径：确保以/ 开头，不重复/ */
+static void normalize_path(const char *src, char *dst, size_t dstlen)
+{
+    if (!src || dstlen < 2) {
+        if (dstlen > 0) {
+            dst[0] = '/';
+            dst[1] = '\0';
+        }
+        return;
+    }
+    
+    int i = 0, j = 0;
+    
+    /* 处理空字符串 */
+    if (src[0] == '\0') {
+        dst[0] = '/';
+        dst[1] = '\0';
+        return;
+    }
+    
+    /* 确保以/ 开头 */
+    if (src[0] != '/') {
+        if (j < (int)dstlen - 1) dst[j++] = '/';
+    }
+    
+    for (i = 0; src[i] && j < (int)dstlen - 1; i++) {
+        /* 过滤连续的/ */
+        if (src[i] == '/' && j > 0 && dst[j-1] == '/') {
+            continue;
+        }
+        dst[j++] = src[i];
+    }
+    
+    /* 移除末尾的/ (如果不是根目录) */
+    if (j > 1 && dst[j-1] == '/') {
+        j--;
+    }
+    
+    dst[j] = '\0';
+}
+
+/* 处理文件列表请求（通用目录列表） */
+static void handle_file_list_request(agent_context_t *ctx, const char *data)
+{
+    char *path = json_get_string(data, "path");
+    char *request_id = json_get_string(data, "request_id");
+
+    char normalized_dir[2048];
+    normalize_path(path, normalized_dir, sizeof(normalized_dir));
+    
+    const char *dir = normalized_dir;
+    DIR *dp = opendir(dir);
+    if (!dp) {
+        LOG_ERROR("无法打开目录: %s", dir);
+        /* 返回空响应 */
+        char json[512];
+        if (request_id) {
+            snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[],\"request_id\":\"%s\"}", dir, request_id);
+        } else {
+            snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[]}", dir);
+        }
+        ws_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+        if (path) free(path);
+        if (request_id) free(request_id);
+        return;
+    }
+
+    /* 收集目录项到数组 */
+    file_entry_t *entries = malloc(sizeof(file_entry_t) * 1024);
+    if (!entries) {
+        LOG_ERROR("内存不足");
+        closedir(dp);
+        goto cleanup;
+    }
+
+    struct dirent *entry;
+    int count = 0;
+    struct stat st;
+    char filepath[2048];
+
+    while ((entry = readdir(dp)) != NULL && count < 1024) {
+        /* 跳过. 和 .. */
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        /* 构造完整路径 */
+        if (strcmp(dir, "/") == 0) {
+            snprintf(filepath, sizeof(filepath), "/%s", entry->d_name);
+        } else {
+            snprintf(filepath, sizeof(filepath), "%s/%s", dir, entry->d_name);
+        }
+        
+        if (stat(filepath, &st) == 0) {
+            file_entry_t *e = &entries[count];
+            strncpy(e->name, entry->d_name, sizeof(e->name) - 1);
+            e->name[sizeof(e->name) - 1] = '\0';
+            strncpy(e->path, filepath, sizeof(e->path) - 1);
+            e->path[sizeof(e->path) - 1] = '\0';
+            e->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
+            e->size = st.st_size;
+            count++;
+        }
+    }
+
+    closedir(dp);
+
+    /* 排序 */
+    qsort(entries, count, sizeof(file_entry_t), compare_files);
+
+    /* 动态构造JSON响应（避免缓冲区溢出） */
+    char *json = malloc(131072);  /* 128KB缓冲 */
+    if (!json) {
+        LOG_ERROR("内存不足");
+        free(entries);
+        goto cleanup;
+    }
+    
+    int offset = snprintf(json, 131072, "{\"path\":\"%s\",\"files\":[", dir);
+    
+    for (int i = 0; i < count && offset < 131072 - 1024; i++) {
+        char *esc_name = json_escape_string(entries[i].name, sizeof(entries[i].name));
+        char *esc_path = json_escape_string(entries[i].path, sizeof(entries[i].path));
+        
+        if (esc_name && esc_path) {
+            offset += snprintf(json + offset, 131072 - offset,
+                "%s{\"name\":\"%s\",\"path\":\"%s\",\"is_dir\":%d,\"size\":%lld}",
+                i > 0 ? "," : "", esc_name, esc_path, entries[i].is_dir, (long long)entries[i].size);
+        }
+        
+        if (esc_name) free(esc_name);
+        if (esc_path) free(esc_path);
+    }
+
+    offset += snprintf(json + offset, 131072 - offset, "]");
+    if (request_id) {
+        offset += snprintf(json + offset, 131072 - offset, ",\"request_id\":\"%s\"", request_id);
+    }
+    snprintf(json + offset, 131072 - offset, "}");
+
+    ws_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+
+    free(json);
+    free(entries);
+
+cleanup:
+    if (path) free(path);
+    if (request_id) free(request_id);
+}
+
+/* 处理打包并发送请求 */
+static void handle_download_package(agent_context_t *ctx, const char *data)
+{
+    char *path = json_get_string(data, "path");
+    char *format = json_get_string(data, "format");
+    char *request_id = json_get_string(data, "request_id");
+
+    if (!path) {
+        LOG_ERROR("打包请求: 缺少path参数");
+        goto cleanup;
+    }
+    
+    LOG_INFO("打包请求 [%s]: path=%s, format=%s", request_id ? request_id : "unknown", path, format ? format : "zip");
+
+    /* 规范化路径 */
+    char normalized_check[2048];
+    normalize_path(path, normalized_check, sizeof(normalized_check));
+    
+    /* 检查文件/目录是否存在 */
+    struct stat st;
+    if (stat(normalized_check, &st) != 0) {
+        LOG_ERROR("路径不存在: %s", normalized_check);
+        goto cleanup;
+    }
+
+    /* 提取相对路径进行压缩（去掉前导/) */
+    const char *rel_path = normalized_check;
+    if (rel_path[0] == '/' && rel_path[1] != '\0') {
+        rel_path = normalized_check + 1;
+    }
+
+    /* 生成临时归档文件 */
+    char tmpfile[256];
+    snprintf(tmpfile, sizeof(tmpfile), "/tmp/agent_pkg_%d_%llu", getpid(), (unsigned long long)get_timestamp_ms());
+    char archive[320];
+    int ret = -1;
+    
+    if (format && strcmp(format, "tar.gz") == 0) {
+        snprintf(archive, sizeof(archive), "%s.tar.gz", tmpfile);
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd), "tar -czf '%s' -C / '%s' 2>&1", archive, rel_path);
+        LOG_DEBUG("执行压缩: %s", cmd);
+        ret = system(cmd);
+        if (ret != 0) {
+            LOG_ERROR("tar命令失败: ret=%d, errno=%d", ret, errno);
+        } else {
+            LOG_INFO("tar压缩完成");
+        }
+    } else {
+        snprintf(archive, sizeof(archive), "%s.zip", tmpfile);
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd), "cd / && zip -rq '%s' '%s' 2>&1", archive, rel_path);
+        LOG_DEBUG("执行压缩: %s", cmd);
+        ret = system(cmd);
+        if (ret != 0) {
+            LOG_ERROR("zip命令失败: ret=%d, errno=%d", ret, errno);
+        } else {
+            LOG_INFO("zip压缩完成");
+        }
+    }
+
+    /* 读取文件并base64编码后发送 */
+    FILE *fp = fopen(archive, "rb");
+    if (!fp) {
+        LOG_ERROR("无法打开归档: %s (可能压缩失败)", archive);
+        goto cleanup;
+    }
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    LOG_INFO("归档文件大小: %ld bytes", fsize);
+    
+    #define MAX_DOWNLOAD_SIZE  (50 * 1024 * 1024)  /* 50MB */
+    if (fsize <= 0 || fsize > MAX_DOWNLOAD_SIZE) {
+        LOG_ERROR("归档大小不合适: %ld (限制:%d MB)", fsize, MAX_DOWNLOAD_SIZE / (1024 * 1024));
+        fclose(fp);
+        unlink(archive);
+        goto cleanup;
+    }
+
+    unsigned char *buf = malloc(fsize);
+    if (!buf) {
+        LOG_ERROR("内存分配失败: %ld bytes", fsize);
+        fclose(fp);
+        unlink(archive);
+        goto cleanup;
+    }
+    size_t read_size = fread(buf, 1, fsize, fp);
+    fclose(fp);
+    
+    if (read_size != (size_t)fsize) {
+        LOG_ERROR("读取文件失败: 期望%ld, 实际%zu", fsize, read_size);
+        free(buf);
+        unlink(archive);
+        goto cleanup;
+    }
+
+    size_t encoded_len;
+    char *encoded = base64_encode_local(buf, fsize, &encoded_len);
+    free(buf);
+
+    if (encoded) {
+        /* 安全构建JSON（转义文件名） */
+        const char *filename = strrchr(archive, '/') ? strrchr(archive, '/') + 1 : archive;
+        char *esc_filename = json_escape_string(filename, strlen(filename));
+        
+        size_t json_size = encoded_len + 1024;
+        char *json = malloc(json_size);
+        if (json && esc_filename) {
+            int offset = 0;
+            offset += snprintf(json + offset, json_size - offset,
+                "{\"filename\":\"%s\",\"size\":%lld,\"content\":\"", esc_filename, (long long)fsize);
+            offset += snprintf(json + offset, json_size - offset, "%s", encoded);
+            offset += snprintf(json + offset, json_size - offset, "\"");
+            if (request_id) {
+                offset += snprintf(json + offset, json_size - offset, ",\"request_id\":\"%s\"", request_id);
+            }
+            snprintf(json + offset, json_size - offset, "}");
+            
+            LOG_INFO("发送打包响应: 文件=%s, 大小=%lld, 编码后=%zu", filename, (long long)fsize, encoded_len);
+            ws_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
+            free(json);
+        } else {
+            LOG_ERROR("JSON缓冲区或转义分配失败");
+        }
+        if (esc_filename) free(esc_filename);
+        free(encoded);
+    } else {
+        LOG_ERROR("base64编码失败");
+    }
+
+    /* 清理临时文件 */
+    if (unlink(archive) == 0) {
+        LOG_DEBUG("删除临时文件: %s", archive);
+    }
+
+cleanup:
+    if (path) free(path);
+    if (format) free(format);
+    if (request_id) free(request_id);
+}
+
 /* 处理命令请求 */
 static void handle_cmd_request(agent_context_t *ctx, const char *data)
 {
@@ -279,6 +685,12 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     case MSG_TYPE_FILE_REQUEST:
         handle_file_request(ctx, json_data);
         break;
+    case MSG_TYPE_FILE_LIST_REQUEST:
+        handle_file_list_request(ctx, json_data);
+        break;
+    case MSG_TYPE_DOWNLOAD_PACKAGE:
+        handle_download_package(ctx, json_data);
+        break;
         
     case MSG_TYPE_CMD_REQUEST:
         handle_cmd_request(ctx, json_data);
@@ -315,7 +727,7 @@ char *protocol_create_auth_msg(agent_context_t *ctx)
         "\"device_id\":\"%s\","
         "\"token\":\"%s\","
         "\"version\":\"%s\","
-        "\"timestamp\":%llu"
+        "\"timestamp\":%" PRIu64 ""
         "}",
         ctx->config.device_id,
         ctx->config.auth_token,
@@ -334,7 +746,7 @@ char *protocol_create_heartbeat(agent_context_t *ctx)
     if (!json) return NULL;
     
     snprintf(json, 256,
-        "{\"timestamp\":%llu,\"uptime\":%u}",
+        "{\"timestamp\":%" PRIu64 ",\"uptime\":%u}",
         get_timestamp_ms(),
         (unsigned int)(time(NULL)));  /* 简单起见用当前时间 */
     

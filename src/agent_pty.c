@@ -267,8 +267,10 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (pid == 0) {
         /* 子进程 - 执行shell */
         
-        /* 设置环境变量 */
+        /* 设置环境变量 - 确保UTF-8编码 */
         setenv("TERM", "xterm-256color", 1);
+        setenv("LANG", "en_US.UTF-8", 1);
+        setenv("LC_ALL", "en_US.UTF-8", 1);
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin", 1);
         setenv("HOME", "/root", 1);
         setenv("SHELL", "/bin/sh", 1);

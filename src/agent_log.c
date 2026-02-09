@@ -30,7 +30,6 @@ typedef struct {
 } log_watch_t;
 
 static log_watch_t g_log_watches[MAX_LOG_WATCHES];
-static int g_inotify_fd = -1;
 static pthread_mutex_t g_log_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Base64编码表 */
@@ -117,9 +116,9 @@ int log_upload_file(agent_context_t *ctx, const char *filepath)
                 "\"total_chunks\":%d,"
                 "\"size\":%zu,"
                 "\"data\":\"%s\","
-                "\"timestamp\":%llu"
+                "\"timestamp\":%" PRIu64 ""
                 "}",
-                filepath, chunk_num, total_chunks, read_size, 
+                filepath, chunk_num, total_chunks, read_size,
                 encoded, get_timestamp_ms());
             
             ws_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
@@ -162,7 +161,6 @@ int log_tail_file(agent_context_t *ctx, const char *filepath, int lines)
     
     /* 分配缓冲区存储结果 */
     char **line_ptrs = calloc(lines, sizeof(char *));
-    int line_count = 0;
     
     /* 从末尾读取 */
     long pos = file_size - 1;
@@ -222,8 +220,8 @@ int log_tail_file(agent_context_t *ctx, const char *filepath, int lines)
             }
         }
         
-        snprintf(json + offset, json_size - offset, 
-            "],\"timestamp\":%llu}", get_timestamp_ms());
+        snprintf(json + offset, json_size - offset,
+            "],\"timestamp\":%" PRIu64 "}", get_timestamp_ms());
         
         ws_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
         free(json);
@@ -277,7 +275,7 @@ static void *log_watch_thread(void *arg)
                         if (newline) *newline = '\0';
                         
                         snprintf(json, strlen(buffer) + 512,
-                            "{\"filepath\":\"%s\",\"line\":\"%s\",\"timestamp\":%llu}",
+                            "{\"filepath\":\"%s\",\"line\":\"%s\",\"timestamp\":%" PRIu64 "}",
                             watch->filepath, buffer, get_timestamp_ms());
                         
                         ws_send_json(watch->ctx, MSG_TYPE_LOG_UPLOAD, json);

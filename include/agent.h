@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <inttypes.h>
 
 /* 版本信息 */
 #define AGENT_VERSION       "1.0.0"
@@ -41,6 +43,9 @@ typedef enum {
     MSG_TYPE_PTY_CLOSE      = 0x13,     /* 关闭PTY会话 */
     MSG_TYPE_FILE_REQUEST   = 0x20,     /* 文件请求 */
     MSG_TYPE_FILE_DATA      = 0x21,     /* 文件数据 */
+    MSG_TYPE_FILE_LIST_REQUEST = 0x22,  /* 文件列表请求 */
+    MSG_TYPE_FILE_LIST_RESPONSE = 0x23, /* 文件列表响应 */
+    MSG_TYPE_DOWNLOAD_PACKAGE = 0x24,   /* 打包下载响应/请求 */
     MSG_TYPE_CMD_REQUEST    = 0x30,     /* 命令请求 */
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
     MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
@@ -110,6 +115,11 @@ typedef struct {
 /* 全局Agent上下文 */
 extern agent_context_t *g_agent_ctx;
 
+/* 平台兼容性定义 */
+#ifndef PRIu64
+#define PRIu64 "lu"
+#endif
+
 /* 函数声明 */
 
 /* agent_main.c */
@@ -122,12 +132,14 @@ void agent_cleanup(void);
 int config_load(agent_config_t *config, const char *path);
 int config_save(agent_config_t *config, const char *path);
 void config_set_defaults(agent_config_t *config);
+void config_print(agent_config_t *config);
 
 /* agent_websocket.c */
 int ws_connect(agent_context_t *ctx);
 void ws_disconnect(agent_context_t *ctx);
 int ws_send_message(agent_context_t *ctx, msg_type_t type, const char *data, size_t len);
 int ws_send_json(agent_context_t *ctx, msg_type_t type, const char *json);
+void ws_cleanup(void);
 
 /* agent_status.c */
 int status_collect(system_status_t *status);
@@ -139,11 +151,17 @@ int log_upload_file(agent_context_t *ctx, const char *filepath);
 int log_tail_file(agent_context_t *ctx, const char *filepath, int lines);
 int log_watch_start(agent_context_t *ctx, const char *filepath);
 void log_watch_stop(agent_context_t *ctx, const char *filepath);
+void log_watch_stop_all(void);
+int log_list_files(agent_context_t *ctx, const char *filepath);
 
 /* agent_script.c */
 int script_save(const char *script_id, const char *content, const char *path);
 int script_execute(agent_context_t *ctx, const char *script_id, const char *script_path);
 int script_execute_inline(agent_context_t *ctx, const char *script_id, const char *content);
+int script_list(agent_context_t *ctx);
+
+/* agent_pty.c */
+int pty_list_sessions(agent_context_t *ctx);
 
 /* agent_pty.c */
 int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols);
@@ -159,10 +177,21 @@ char *protocol_create_heartbeat(agent_context_t *ctx);
 
 /* agent_util.c */
 void agent_log(int level, const char *fmt, ...);
+void set_log_level(int level);
+int set_log_file(const char *path);
 char *read_file_content(const char *path, size_t *size);
 int write_file_content(const char *path, const char *content, size_t size);
 char *get_device_id(void);
 uint64_t get_timestamp_ms(void);
+int mkdir_recursive(const char *path, mode_t mode);
+bool file_exists(const char *path);
+long get_file_size(const char *path);
+void safe_strncpy(char *dest, const char *src, size_t size);
+char *str_trim(char *str);
+int daemonize(void);
+int write_pid_file(const char *path);
+void remove_pid_file(const char *path);
+bool is_process_running(const char *pid_file);
 
 /* 日志级别 */
 #define LOG_LEVEL_DEBUG     0

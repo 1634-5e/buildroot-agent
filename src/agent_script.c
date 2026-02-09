@@ -234,7 +234,7 @@ static void send_script_result(agent_context_t *ctx, const char *script_id,
         "\"exit_code\":%d,"
         "\"success\":%s,"
         "\"output\":\"%s\","
-        "\"timestamp\":%llu"
+        "\"timestamp\":%" PRIu64 ""
         "}",
         script_id,
         exit_code,

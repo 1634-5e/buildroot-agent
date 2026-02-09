@@ -294,7 +294,7 @@ char *status_to_json(system_status_t *status)
         "\"kernel_version\":\"%s\","
         "\"ip_addr\":\"%s\","
         "\"mac_addr\":\"%s\","
-        "\"timestamp\":%llu"
+        "\"timestamp\":%" PRIu64 ""
         "}",
         status->cpu_usage,
         status->mem_total,

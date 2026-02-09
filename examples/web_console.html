@@ -1,1454 +1,1606 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buildroot Agent 控制台</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg-primary: #0d0d12;
+            --bg-secondary: #16161e;
+            --bg-tertiary: #1e1e28;
+            --bg-elevated: #252532;
+            --bg-card: rgba(30, 30, 40, 0.8);
+            
+            --text-primary: #f0f0f5;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6e6e80;
+            
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-success: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-error: #ef4444;
+            
+            --border-color: rgba(255, 255, 255, 0.08);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+            
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            
+            --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
         }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
         }
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 20px;
+
+        /* ============================================
+           App Shell
+           ============================================ */
+        .app {
+            display: grid;
+            grid-template-columns: 64px 320px 1fr;
+            height: 100vh;
         }
-        
-        @media (max-width: 1200px) {
-            .container {
-                max-width: 1200px;
-                padding: 15px;
-            }
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            }
+
+        @media (max-width: 1024px) {
+            .app { grid-template-columns: 64px 1fr; }
+            .sidebar-secondary { display: none; }
         }
-        
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
-            }
-            .grid {
-                grid-template-columns: 1fr;
-            }
-            .stats-grid {
-                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-                gap: 10px;
-            }
-            .stat-value {
-                font-size: 18px;
-            }
-            .stat-label {
-                font-size: 10px;
-            }
+
+        @media (max-width: 640px) {
+            .app { grid-template-columns: 1fr; }
+            .sidebar-primary { display: none; }
         }
-        header {
+
+        /* ============================================
+           Primary Sidebar - Navigation
+           ============================================ */
+        .sidebar-primary {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
             align-items: center;
-            padding: 20px 0;
-            border-bottom: 1px solid #333;
-            margin-bottom: 20px;
+            padding: 16px 0;
+            gap: 8px;
         }
-        h1 {
-            color: #00d4ff;
-        }
-        .status-badge {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-        }
-        .status-connected {
-            background: #00c853;
-            color: #000;
-        }
-        .status-disconnected {
-            background: #ff5252;
-            color: #fff;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 20px;
-        }
-        .sidebar {
-            background: #16213e;
+
+        .nav-logo {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             border-radius: 10px;
-            padding: 20px;
-        }
-        .main-content {
             display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        .card {
-            background: #16213e;
-            border-radius: 10px;
-            padding: 20px;
-        }
-        .card h3 {
-            color: #00d4ff;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #333;
-        }
-        .device-list {
-            list-style: none;
-        }
-        .device-item {
-            padding: 12px;
-            margin: 8px 0;
-            background: #0f3460;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .device-item:hover {
-            background: #1a4a7a;
-        }
-        .device-item.active {
-            border-left: 4px solid #00d4ff;
-        }
-        .device-name {
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .device-info {
-            font-size: 12px;
-            color: #888;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 15px;
-        }
-        .stat-item {
-            background: #0f3460;
-            padding: 12px;
-            border-radius: 8px;
-            text-align: center;
-            min-height: 75px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .stat-item:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.1);
-        }
-        .stat-value {
+            align-items: center;
+            justify-content: center;
             font-size: 20px;
-            font-weight: bold;
-            color: #00d4ff;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            line-height: 1.2;
-            max-width: 100%;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
         }
-        .stat-label {
-            font-size: 11px;
-            color: #888;
-            margin-top: 5px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 100%;
+
+        .nav-item {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 22px;
+            cursor: pointer;
+            transition: all var(--transition);
+            position: relative;
         }
-        .terminal {
-            background: #000;
-            border-radius: 8px;
-            padding: 15px;
-            font-family: 'Consolas', 'Monaco', monospace;
+
+        .nav-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-primary);
+        }
+
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 24px;
+            background: var(--accent-primary);
+            border-radius: 0 3px 3px 0;
+        }
+
+        .nav-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 8px;
+            height: 8px;
+            background: var(--accent-error);
+            border-radius: 50%;
+            border: 2px solid var(--bg-secondary);
+        }
+
+        /* ============================================
+           Secondary Sidebar - Device List
+           ============================================ */
+        .sidebar-secondary {
+            background: var(--bg-tertiary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .device-search {
+            margin: 12px 20px;
+            position: relative;
+        }
+
+        .device-search input {
+            width: 100%;
+            padding: 10px 14px 10px 36px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
             font-size: 14px;
-            height: 400px;
+            outline: none;
+            transition: all var(--transition);
+        }
+
+        .device-search input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .device-search::before {
+            content: '🔍';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            opacity: 0.5;
+        }
+
+        .device-list {
+            flex: 1;
             overflow-y: auto;
+            padding: 8px;
         }
+
+        .device-card {
+            padding: 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .device-card:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+            transform: translateX(4px);
+        }
+
+        .device-card.active {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: var(--accent-primary);
+        }
+
+        .device-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .device-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .device-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .device-status {
+            font-size: 12px;
+            color: var(--accent-success);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .device-status::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-success);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-success);
+        }
+
+        .device-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .device-metric {
+            text-align: center;
+        }
+
+        .device-metric-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .device-metric-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* ============================================
+           Main Content
+           ============================================ */
+        .main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Empty State */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .empty-icon {
+            font-size: 80px;
+            margin-bottom: 24px;
+            opacity: 0.3;
+        }
+
+        .empty-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .empty-text {
+            font-size: 15px;
+            color: var(--text-secondary);
+            max-width: 400px;
+            margin-bottom: 24px;
+        }
+
+        /* Device Detail View */
+        .device-detail {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .device-detail.active {
+            display: flex;
+        }
+
+        /* Header */
+        .detail-header {
+            padding: 20px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .detail-title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .detail-title h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .connection-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-success);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .detail-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            padding: 0 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab {
+            padding: 12px 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tab-pane {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            padding: 24px;
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================
+           Terminal Pane
+           ============================================ */
+        .terminal-container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .terminal-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .terminal-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+
+        .terminal-shell {
+            color: var(--text-muted);
+        }
+
+        .terminal-path {
+            color: var(--accent-primary);
+            cursor: pointer;
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-btn {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .terminal-btn:hover {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
         .terminal-output {
+            flex: 1;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-y: auto;
             white-space: pre-wrap;
-            word-wrap: break-word;
         }
+
         .terminal-input-line {
             display: flex;
-            margin-top: 10px;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
         }
+
         .terminal-prompt {
-            color: #00d4ff;
-            margin-right: 10px;
+            color: var(--accent-success);
+            font-weight: 600;
+            white-space: nowrap;
         }
+
         .terminal-input {
             flex: 1;
             background: transparent;
             border: none;
-            color: #0f0;
-            font-family: inherit;
-            font-size: inherit;
             outline: none;
-        }
-        .actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
             font-size: 14px;
-            transition: all 0.3s;
         }
-        .btn-primary {
-            background: #00d4ff;
-            color: #000;
-        }
-        .btn-primary:hover {
-            background: #00a8cc;
-        }
-        .btn-danger {
-            background: #ff5252;
-            color: #fff;
-        }
-        .btn-danger:hover {
-            background: #ff1744;
-        }
-        .btn-secondary {
-            background: #555;
-            color: #fff;
-        }
-        .btn-secondary:hover {
-            background: #666;
-        }
-        .log-viewer {
-            background: #000;
-            border-radius: 8px;
-            padding: 15px;
-            font-family: monospace;
-            font-size: 13px;
-            height: 200px;
-            overflow-y: auto;
-        }
-        .log-line {
-            padding: 2px 0;
-        }
-        .log-info { color: #00d4ff; }
-        .log-warn { color: #ffc107; }
-        .log-error { color: #ff5252; }
-        .color-red { color: #ff5252; font-weight: bold; }
-        .color-yellow { color: #ffc107; font-weight: bold; }
-        .color-green { color: #00c853; font-weight: bold; }
-        .color-high { color: #ff5252; font-weight: bold; }
-        .color-medium { color: #ffc107; font-weight: bold; }
-        .color-low { color: #00d4ff; font-weight: bold; }
-        .color-very-low { color: #888; }
-        small { 
-            font-size: 0.8em; 
-            color: #888; 
-            margin-left: 5px;
-        }
-        
-        /* 工具提示样式 */
-        .tooltip {
-            position: relative;
-            cursor: help;
-        }
-        .tooltip:hover::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.9);
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            white-space: nowrap;
-            z-index: 1000;
-            max-width: 300px;
-            white-space: normal;
-            word-wrap: break-word;
-            margin-bottom: 5px;
-            border: 1px solid rgba(0, 212, 255, 0.3);
-        }
-        .tooltip:hover::before {
-            content: '';
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid rgba(0, 0, 0, 0.9);
-            margin-bottom: -1px;
-        }
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: rgba(51, 51, 51, 0.5);
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 4px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .progress-fill {
+
+        /* ============================================
+           Files Pane
+           ============================================ */
+        .files-layout {
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 24px;
             height: 100%;
-            border-radius: 4px;
-            transition: width 0.3s ease;
         }
-        .progress-low { background: #00c853; }
-        .progress-medium { background: #ffc107; }
-        .progress-high { background: #ff5252; }
-        .stat-item-with-progress {
-            background: #0f3460;
-            padding: 12px;
-            border-radius: 8px;
-            text-align: center;
-            min-height: 95px;
+
+        .file-sidebar {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-        .stat-item-with-progress:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.1);
-        }
-        input[type="text"], textarea {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #333;
-            border-radius: 5px;
-            background: #0f3460;
-            color: #fff;
+
+        .file-sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
             font-size: 14px;
-            margin-bottom: 10px;
         }
-        textarea {
-            min-height: 100px;
-            font-family: monospace;
+
+        .file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
         }
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal.show {
+
+        .file-tree-item {
             display: flex;
-        }
-        .modal-content {
-            background: #16213e;
-            padding: 30px;
-            border-radius: 10px;
-            max-width: 600px;
-            width: 90%;
-        }
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-        }
-        .modal-close {
-            background: none;
-            border: none;
-            color: #fff;
-            font-size: 24px;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: all var(--transition);
+        }
+
+        .file-tree-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .file-tree-item.active {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-primary);
+        }
+
+        .file-tree-icon {
+            font-size: 16px;
+            opacity: 0.7;
+        }
+
+        .file-browser {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-browser-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 13px;
+        }
+
+        .breadcrumb-item {
+            padding: 4px 8px;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all var(--transition);
+        }
+
+        .breadcrumb-item:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+        }
+
+        .breadcrumb-separator {
+            color: var(--text-muted);
+        }
+
+        .file-browser-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .file-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .file-item.selected {
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .file-icon {
+            font-size: 20px;
+            width: 32px;
+            text-align: center;
+        }
+
+        .file-details {
+            flex: 1;
+        }
+
+        .file-name {
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .file-size {
+            font-size: 13px;
+            color: var(--text-secondary);
+            width: 80px;
+            text-align: right;
+        }
+
+        /* ============================================
+           Monitor Pane
+           ============================================ */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .metric-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+        }
+
+        .metric-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .metric-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .metric-chart {
+            height: 100px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            margin-top: 12px;
+        }
+
+        /* ============================================
+           Upload Drop Zone
+           ============================================ */
+        .upload-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(13, 13, 18, 0.9);
+            backdrop-filter: blur(10px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            border: 4px dashed var(--accent-primary);
+        }
+
+        .upload-overlay.active {
+            display: flex;
+        }
+
+        .upload-overlay-content {
+            text-align: center;
+        }
+
+        .upload-overlay-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .upload-overlay-text {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        /* ============================================
+           Modal
+           ============================================ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 24px;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 480px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-lg);
+            animation: modalIn 0.2s ease;
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* ============================================
+           Components
+           ============================================ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+
+        .btn:hover {
+            background: var(--bg-elevated);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--accent-primary);
+            border-color: transparent;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5558e6;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-danger {
+            background: var(--accent-error);
+            border-color: transparent;
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 13px;
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+        }
+
+        input[type="text"],
+        textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: all var(--transition);
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        textarea {
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 200px;
+            resize: vertical;
+        }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .toast {
+            padding: 16px 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 300px;
+            animation: toastIn 0.3s ease;
+        }
+
+        @keyframes toastIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .toast.success { border-left: 3px solid var(--accent-success); }
+        .toast.error { border-left: 3px solid var(--accent-error); }
+        .toast.warning { border-left: 3px solid var(--accent-warning); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
 
-        <header>
-            <h1>🖥️ Buildroot Agent 控制台</h1>
-            <span id="wsStatus" class="status-badge status-disconnected">未连接</span>
-        </header>
-        
-        <div class="grid">
-            <aside class="sidebar">
-                <h3>📱 已连接设备</h3>
-                <ul id="deviceList" class="device-list">
-                    <li class="device-item" style="color: #888; text-align: center;">
-                        等待设备连接...
-                    </li>
-                </ul>
-            </aside>
-            
-            <main class="main-content">
-                <div class="card">
-                    <h3>📊 系统状态</h3>
-                    <div id="statsGrid" class="stats-grid">
-                        <div class="stat-item-with-progress">
-                            <div class="stat-value" id="cpuUsage">--</div>
-                            <div class="stat-label">CPU 使用率</div>
-                            <div class="progress-bar">
-                                <div id="cpuProgress" class="progress-fill" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        <div class="stat-item-with-progress">
-                            <div class="stat-value" id="memUsage">--</div>
-                            <div class="stat-label">内存使用</div>
-                            <div class="progress-bar">
-                                <div id="memProgress" class="progress-fill" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        <div class="stat-item-with-progress">
-                            <div class="stat-value" id="diskUsage">--</div>
-                            <div class="stat-label">磁盘使用</div>
-                            <div class="progress-bar">
-                                <div id="diskProgress" class="progress-fill" style="width: 0%"></div>
-                            </div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="loadAvg">--</div>
-                            <div class="stat-label">系统负载</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="uptime">--</div>
-                            <div class="stat-label">运行时间</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="ipAddr">--</div>
-                            <div class="stat-label">IP 地址</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="hostname">--</div>
-                            <div class="stat-label">主机名</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="kernelVersion">--</div>
-                            <div class="stat-label">内核版本</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="networkRx">--</div>
-                            <div class="stat-label">网络接收</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="networkTx">--</div>
-                            <div class="stat-label">网络发送</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="macAddr">--</div>
-                            <div class="stat-label">MAC 地址</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value" id="lastUpdate">--</div>
-                            <div class="stat-label">最后更新</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>🎛️ 操作</h3>
-                    <div class="actions">
-                        <button class="btn btn-primary" id="refreshBtn" onclick="refreshStatus()">刷新状态</button>
-                        <button class="btn btn-primary" id="terminalBtn" onclick="openTerminal()">打开终端</button>
-                        <button class="btn btn-secondary" onclick="showScriptModal()">执行脚本</button>
-                        <button class="btn btn-secondary" onclick="viewLogs()">查看日志</button>
-                        <button class="btn btn-danger" onclick="rebootDevice()">重启设备</button>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 12px; color: #888;">
-                        <span id="refreshStatus">自动刷新: 未启动</span> | 
-                        <span id="selectedDevice">未选择设备</span>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>💻 终端 <small id="terminalStatus" style="color: #888;">(未连接)</small></h3>
-                    <div id="terminal" class="terminal" onclick="handleTerminalFocus()">
-                        <div id="terminalOutput" class="terminal-output"></div>
-                        <div class="terminal-input-line">
-                            <span class="terminal-prompt" id="terminalPrompt">$</span>
-                            <input type="text" id="terminalInput" class="terminal-input" 
-                                placeholder="输入命令... (↑↓历史, Ctrl+C中断, Ctrl+L清屏)" 
-                                onkeydown="handleTerminalInput(event)"
-                                onblur="handleTerminalBlur()" disabled>
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 12px; color: #888;">
-                        快捷键: ↑↓历史命令 | Ctrl+C中断 | Ctrl+L清屏 | Tab补全(暂未实现)
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>📋 日志</h3>
-                    <div id="logViewer" class="log-viewer"></div>
-                </div>
-            </main>
+    <!-- Upload Overlay -->
+    <div class="upload-overlay" id="uploadOverlay">
+        <div class="upload-overlay-content">
+            <div class="upload-overlay-icon">📤</div>
+            <div class="upload-overlay-text">释放以上传文件</div>
         </div>
     </div>
-    
-    <!-- 脚本执行模态框 -->
-    <div id="scriptModal" class="modal">
-        <div class="modal-content">
+
+    <!-- App -->
+    <div class="app">
+        <!-- Primary Sidebar - Navigation -->
+        <nav class="sidebar-primary">
+            <div class="nav-logo">🖥️</div>
+            <div class="nav-item active" data-view="devices" onclick="showView('devices')" title="设备">
+                📱
+                <span class="nav-badge" id="deviceBadge" style="display: none;"></span>
+            </div>
+            <div class="nav-item" data-view="terminal" onclick="showView('terminal')" title="终端">
+                💻
+            </div>
+            <div class="nav-item" data-view="files" onclick="showView('files')" title="文件">
+                📁
+            </div>
+            <div class="nav-item" data-view="monitor" onclick="showView('monitor')" title="监控">
+                📊
+            </div>
+            <div style="flex: 1;"></div>
+            <div class="nav-item" title="设置" onclick="showSettings()">
+                ⚙️
+            </div>
+        </nav>
+
+        <!-- Secondary Sidebar - Device List -->
+        <aside class="sidebar-secondary" id="deviceSidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">设备列表</div>
+                <div class="sidebar-subtitle" id="connectionStatus">未连接</div>
+            </div>
+            <div class="device-search">
+                <input type="text" placeholder="搜索设备..." id="deviceSearch" oninput="filterDevices()">
+            </div>
+            <div class="device-list" id="deviceList">
+                <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                    <div style="font-size: 48px; margin-bottom: 16px;">📡</div>
+                    <div>等待设备连接...</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon">📱</div>
+                <div class="empty-title">选择设备开始</div>
+                <div class="empty-text">从左侧设备列表选择一个设备以开始管理和监控</div>
+            </div>
+
+            <!-- Device Detail View -->
+            <div class="device-detail" id="deviceDetail">
+                <!-- Header -->
+                <div class="detail-header">
+                    <div class="detail-title">
+                        <div style="font-size: 32px;">📱</div>
+                        <div>
+                            <h2 id="detailDeviceName">--</h2>
+                            <div style="display: flex; gap: 8px; margin-top: 4px;">
+                                <span class="connection-pill">
+                                    <span>●</span>
+                                    <span>在线</span>
+                                </span>
+                                <span style="font-size: 13px; color: var(--text-muted);" id="detailDeviceIp">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-actions">
+                        <button class="btn btn-sm" onclick="disconnectDevice()">断开</button>
+                        <button class="btn btn-danger btn-sm" onclick="rebootDevice()">重启</button>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs">
+                    <div class="tab active" data-tab="terminal" onclick="switchTab('terminal')">
+                        <span>💻</span>
+                        <span>终端</span>
+                    </div>
+                    <div class="tab" data-tab="files" onclick="switchTab('files')">
+                        <span>📁</span>
+                        <span>文件</span>
+                    </div>
+                    <div class="tab" data-tab="monitor" onclick="switchTab('monitor')">
+                        <span>📊</span>
+                        <span>监控</span>
+                    </div>
+                    <div class="tab" data-tab="scripts" onclick="switchTab('scripts')">
+                        <span>📜</span>
+                        <span>脚本</span>
+                    </div>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Terminal Tab -->
+                    <div class="tab-pane active" id="tab-terminal">
+                        <div class="terminal-container">
+                            <div class="terminal-toolbar">
+                                <div class="terminal-info">
+                                    <span class="terminal-shell">bash</span>
+                                    <span style="color: var(--text-muted);">•</span>
+                                    <span class="terminal-path" id="terminalPath">/home/user</span>
+                                </div>
+                                <div class="terminal-controls">
+                                    <button class="terminal-btn" onclick="clearTerminal()">清空</button>
+                                    <button class="terminal-btn" onclick="reconnectTerminal()">重连</button>
+                                </div>
+                            </div>
+                            <div class="terminal-output" id="terminalOutput"></div>
+                            <div class="terminal-input-line">
+                                <span class="terminal-prompt" id="terminalPrompt">user@device:~$</span>
+                                <input type="text" class="terminal-input" id="terminalInput" 
+                                       placeholder="输入命令..." onkeydown="handleTerminalKeydown(event)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Files Tab -->
+                    <div class="tab-pane" id="tab-files">
+                        <div class="files-layout">
+                            <div class="file-sidebar">
+                                <div class="file-sidebar-header">目录</div>
+                                <div class="file-tree" id="fileTree">
+                                    <div class="file-tree-item active" onclick="navigateTo('/')">
+                                        <span class="file-tree-icon">📁</span>
+                                        <span>/</span>
+                                    </div>
+                                    <div class="file-tree-item" onclick="navigateTo('/home')">
+                                        <span class="file-tree-icon">📁</span>
+                                        <span>home</span>
+                                    </div>
+                                    <div class="file-tree-item" onclick="navigateTo('/etc')">
+                                        <span class="file-tree-icon">📁</span>
+                                        <span>etc</span>
+                                    </div>
+                                    <div class="file-tree-item" onclick="navigateTo('/var')">
+                                        <span class="file-tree-icon">📁</span>
+                                        <span>var</span>
+                                    </div>
+                                    <div class="file-tree-item" onclick="navigateTo('/tmp')">
+                                        <span class="file-tree-icon">📁</span>
+                                        <span>tmp</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="file-browser">
+                                <div class="file-browser-toolbar">
+                                    <div class="breadcrumb" id="breadcrumb">
+                                        <span class="breadcrumb-item">/</span>
+                                    </div>
+                                    <div class="file-browser-actions">
+                                        <button class="btn btn-sm" onclick="uploadFile()">📤 上传</button>
+                                        <button class="btn btn-sm" onclick="downloadSelected()">⬇️ 下载</button>
+                                        <button class="btn btn-sm" onclick="refreshFiles()">🔄 刷新</button>
+                                    </div>
+                                </div>
+                                <div class="file-list" id="fileList">
+                                    <!-- Files will be listed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monitor Tab -->
+                    <div class="tab-pane" id="tab-monitor">
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div class="metric-header">
+                                    <div class="metric-title">📊 CPU 使用率</div>
+                                </div>
+                                <div class="metric-value" id="metricCpu">45.2%</div>
+                                <div class="metric-chart"></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-header">
+                                    <div class="metric-title">💾 内存使用</div>
+                                </div>
+                                <div class="metric-value" id="metricMem">2.4 GB</div>
+                                <div class="metric-chart"></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-header">
+                                    <div class="metric-title">💿 磁盘使用</div>
+                                </div>
+                                <div class="metric-value" id="metricDisk">67%</div>
+                                <div class="metric-chart"></div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-header">
+                                    <div class="metric-title">⚡ 系统负载</div>
+                                </div>
+                                <div class="metric-value" id="metricLoad">0.85</div>
+                                <div class="metric-chart"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scripts Tab -->
+                    <div class="tab-pane" id="tab-scripts">
+                        <div style="max-width: 800px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 style="font-size: 16px; font-weight: 600;">执行脚本</h3>
+                                <button class="btn btn-primary" onclick="runScript()">▶️ 运行</button>
+                            </div>
+                            <textarea id="scriptEditor" placeholder="#!/bin/bash&#10;# 在此输入脚本&#10;echo 'Hello, World!'"></textarea>
+                            <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: var(--radius-md);">
+                                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">执行历史</div>
+                                <div id="scriptHistory" style="font-size: 13px; color: var(--text-secondary);">
+                                    暂无执行记录
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay" id="scriptModal">
+        <div class="modal">
             <div class="modal-header">
-                <h3>执行脚本</h3>
-                <button class="modal-close" onclick="closeScriptModal()">&times;</button>
+                <div class="modal-title">📜 脚本执行结果</div>
             </div>
-            <textarea id="scriptContent" placeholder="#!/bin/sh&#10;echo 'Hello World'"></textarea>
-            <div class="actions">
-                <button class="btn btn-primary" onclick="executeScript()">执行</button>
-                <button class="btn btn-secondary" onclick="closeScriptModal()">取消</button>
+            <div class="modal-body">
+                <pre id="scriptOutput" style="background: var(--bg-tertiary); padding: 16px; border-radius: var(--radius-md); font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow-x: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('scriptModal')">关闭</button>
             </div>
         </div>
     </div>
-    
+
     <script>
-        // WebSocket连接
+        // ============================================
+        // State
+        // ============================================
         let ws = null;
+        let devices = [];
         let currentDevice = null;
-        let devices = {};
-        let ptySessionId = null;
-        let autoRefreshInterval = null;
-        
-        // 终端相关变量
-        let terminalHistory = [];
-        let historyIndex = -1;
-        let currentInput = '';
-        let terminalActive = false;
-        
-        // 消息类型
-        const MSG_TYPES = {
-            HEARTBEAT: 0x01,
-            SYSTEM_STATUS: 0x02,
-            LOG_UPLOAD: 0x03,
-            SCRIPT_RECV: 0x04,
-            SCRIPT_RESULT: 0x05,
-            PTY_CREATE: 0x10,
-            PTY_DATA: 0x11,
-            PTY_RESIZE: 0x12,
-            PTY_CLOSE: 0x13,
-            FILE_REQUEST: 0x20,
-            CMD_REQUEST: 0x30,
-            AUTH: 0xF0,
-            AUTH_RESULT: 0xF1,
-            DEVICE_LIST: 0x50  // 设备列表更新
-        };
-        
-        // 连接WebSocket
-        function connect() {
-            // 自动检测连接URL
-            let wsUrl;
-            
-            // 如果是GitHub Pages环境，使用tunnel URL
-            if (window.location.hostname.includes('github.io') || 
-                window.location.hostname.includes('app.github.dev')) {
-                wsUrl = 'wss://orange-doodle-vp4jg4p7x4g3p5pg-8765.app.github.dev/';
-            } else {
-                // 本地环境，使用当前主机
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                wsUrl = `${protocol}//${window.location.hostname}:8765/console`;
-            }
-            
-            console.log('连接到:', wsUrl);
-            ws = new WebSocket(wsUrl);
-            
+        let currentTab = 'terminal';
+        let currentPath = '/';
+
+        // ============================================
+        // Init
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            connectWebSocket();
+            setupDragDrop();
+        });
+
+        // ============================================
+        // WebSocket
+        // ============================================
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.hostname}:8765`);
+
             ws.onopen = () => {
-                log('info', 'WebSocket已连接');
-                document.getElementById('wsStatus').className = 'status-badge status-connected';
-                document.getElementById('wsStatus').textContent = '已连接';
+                document.getElementById('connectionStatus').textContent = '已连接';
+                showToast('已连接到服务器', 'success');
             };
-            
+
             ws.onclose = () => {
-                log('warn', 'WebSocket已断开');
-                document.getElementById('wsStatus').className = 'status-badge status-disconnected';
-                document.getElementById('wsStatus').textContent = '未连接';
-                document.getElementById('refreshStatus').textContent = '自动刷新: 连接断开';
-                stopAutoRefresh();
-                setTimeout(connect, 5000);
+                document.getElementById('connectionStatus').textContent = '未连接';
+                setTimeout(connectWebSocket, 3000);
             };
-            
-            ws.onerror = (err) => {
-                console.error('WebSocket错误:', err);
-                log('error', `WebSocket错误: ${err.type || 'unknown'}`);
-            };
-            
-            ws.onmessage = (event) => {
-                handleMessage(event.data);
+
+            ws.onmessage = async (event) => {
+                const buffer = await event.data.arrayBuffer();
+                const bytes = new Uint8Array(buffer);
+                const msgType = bytes[0];
+                const data = JSON.parse(new TextDecoder().decode(bytes.slice(1)));
+                handleMessage(msgType, data);
             };
         }
-        
-        // 处理消息
-        async function handleMessage(data) {
-            const arrayBuffer = await data.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            const msgType = bytes[0];
-            const jsonStr = new TextDecoder().decode(bytes.slice(1));
-            
-            try {
-                const jsonData = JSON.parse(jsonStr);
-                
-                switch(msgType) {
-                    case MSG_TYPES.SYSTEM_STATUS:
-                        updateStatus(jsonData);
-                        break;
-                    case MSG_TYPES.LOG_UPLOAD:
-                        handleLogData(jsonData);
-                        break;
-                    case MSG_TYPES.SCRIPT_RESULT:
-                        handleScriptResult(jsonData);
-                        break;
-                        case MSG_TYPES.PTY_CREATE:
-                            handlePtyCreate(jsonData);
-                            break;
-                        case MSG_TYPES.PTY_DATA:
-                        handlePtyData(jsonData);
-                        break;
-                    case MSG_TYPES.PTY_CLOSE:
-                        handlePtyClose(jsonData);
-                        break;
-                    case MSG_TYPES.DEVICE_LIST:
-                        updateDeviceList(jsonData);
-                        break;
-                    case MSG_TYPES.CMD_RESPONSE:
-                        handleCommandResponse(jsonData);
-                        break;
-                }
-            } catch(e) {
-                console.error('解析消息失败:', e);
+
+        function handleMessage(type, data) {
+            switch(type) {
+                case 0x50: // DEVICE_LIST
+                    updateDeviceList(data.devices);
+                    break;
+                case 0x02: // SYSTEM_STATUS
+                    updateMetrics(data);
+                    break;
+                case 0x11: // PTY_DATA
+                    appendTerminalOutput(atob(data.data));
+                    break;
+                case 0x23: // FILE_LIST
+                    updateFileList(data.files);
+                    break;
+                case 0x05: // SCRIPT_RESULT
+                    showScriptResult(data);
+                    break;
             }
         }
-        
-        // 更新设备列表
-        function updateDeviceList(data) {
-            const deviceList = document.getElementById('deviceList');
-            deviceList.innerHTML = '';
+
+        function sendMessage(type, data) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (currentDevice) data.device_id = currentDevice.id;
             
-            if (!data.devices || data.devices.length === 0) {
-                deviceList.innerHTML = '<li class="device-item" style="color: #888; text-align: center;">等待设备连接...</li>';
-                // 如果当前选中的设备之前在线，现在列表为空，则标记为离线
-                if (currentDevice) {
-                    document.getElementById('selectedDevice').textContent = `当前设备: ${currentDevice} (已断开)`;
-                    document.getElementById('terminalStatus').textContent = '(设备已断开)';
-                    document.getElementById('terminalInput').disabled = true;
-                }
-                return;
+            const json = JSON.stringify(data);
+            const bytes = new TextEncoder().encode(json);
+            const msg = new Uint8Array(1 + bytes.length);
+            msg[0] = type;
+            msg.set(bytes, 1);
+            ws.send(msg);
+        }
+
+        // ============================================
+        // Device Management
+        // ============================================
+        function updateDeviceList(newDevices) {
+            devices = newDevices || [];
+            renderDeviceList();
+            
+            // Update badge
+            const badge = document.getElementById('deviceBadge');
+            if (devices.length > 0) {
+                badge.style.display = 'block';
             }
+        }
+
+        function renderDeviceList() {
+            const list = document.getElementById('deviceList');
+            const search = document.getElementById('deviceSearch').value.toLowerCase();
             
-            // 构建设备列表并标记在线状态
-            let foundCurrent = false;
-            data.devices.forEach(device => {
-                const li = document.createElement('li');
-                li.className = 'device-item';
-                if (device.device_id === currentDevice) {
-                    li.classList.add('active');
-                    foundCurrent = true;
-                }
+            const filtered = devices.filter(d => 
+                d.device_id.toLowerCase().includes(search)
+            );
 
-                const onlineLabel = device.status && device.status !== 'offline' ?
-                    '<span style="color: #00c853;">在线</span>' : '<span style="color: #ff5252;">离线</span>';
-
-                li.innerHTML = `
-                    <div class="device-name">${device.device_id}</div>
-                    <div class="device-info">
-                        状态: ${onlineLabel} | 
-                        连接时间: ${new Date(device.connected_time).toLocaleTimeString()}
+            if (filtered.length === 0) {
+                list.innerHTML = `
+                    <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                        <div style="font-size: 48px; margin-bottom: 16px;">📡</div>
+                        <div>暂无设备</div>
                     </div>
                 `;
+                return;
+            }
 
-                li.onclick = () => selectDevice(device.device_id);
-                deviceList.appendChild(li);
-            });
-
-            // 如果当前选中的设备不在最新列表里，则认为该设备已断开
-            if (currentDevice && !foundCurrent) {
-                document.getElementById('selectedDevice').textContent = `当前设备: ${currentDevice} (已断开)`;
-                document.getElementById('terminalStatus').textContent = '(设备已断开)';
-                document.getElementById('terminalInput').disabled = true;
-            }
-            
-            // 如果没有选中设备，自动选择第一个
-            if (!currentDevice && data.devices.length > 0) {
-                selectDevice(data.devices[0].device_id);
-            }
-            
-            // 如果选中设备存在且在线，确保终端可用
-            if (currentDevice && foundCurrent) {
-                document.getElementById('terminalStatus').textContent = '(已连接)';
-                document.getElementById('terminalInput').disabled = false;
-            }
+            list.innerHTML = filtered.map(device => `
+                <div class="device-card ${currentDevice?.id === device.device_id ? 'active' : ''}" 
+                     onclick="selectDevice('${device.device_id}')">
+                    <div class="device-card-header">
+                        <div class="device-avatar">📱</div>
+                        <div class="device-info">
+                            <h4>${device.device_id}</h4>
+                            <div class="device-status">在线</div>
+                        </div>
+                    </div>
+                    <div class="device-metrics">
+                        <div class="device-metric">
+                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-label">CPU</div>
+                        </div>
+                        <div class="device-metric">
+                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-label">内存</div>
+                        </div>
+                        <div class="device-metric">
+                            <div class="device-metric-value">--</div>
+                            <div class="device-metric-label">负载</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
         }
-        
-        // 选择设备
+
+        function filterDevices() {
+            renderDeviceList();
+        }
+
         function selectDevice(deviceId) {
-            currentDevice = deviceId;
+            currentDevice = devices.find(d => d.device_id === deviceId);
+            if (!currentDevice) return;
+
+            // Update UI
+            document.querySelectorAll('.device-card').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Show device detail
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('deviceDetail').classList.add('active');
+            document.getElementById('detailDeviceName').textContent = currentDevice.device_id;
+
+            // Connect terminal
+            connectTerminal();
             
-            // 更新设备列表UI
-            document.querySelectorAll('.device-item').forEach(item => {
-                item.classList.remove('active');
-                if (item.textContent.includes(deviceId)) {
-                    item.classList.add('active');
-                }
-            });
-            
-            // 更新选中设备显示
-            document.getElementById('selectedDevice').textContent = `当前设备: ${deviceId}`;
-            
-            log('info', `已选择设备: ${deviceId}`);
-            
-            // 清空之前的状态显示
-            clearStatusDisplay();
-            
-            // 立即请求设备状态
-            refreshStatus();
-            
-            // 启动自动刷新
-            startAutoRefresh();
+            showToast(`已选择设备: ${deviceId}`, 'success');
         }
-        
-// 更新状态显示
-        function updateStatus(data) {
-            // 只更新当前选中设备的状态
-            if (data.device_id && data.device_id !== currentDevice) {
-                return;
-            }
-            
-            const statusData = data.device_id ? data : data;
-            
-            // CPU使用率
-            const cpuUsage = statusData.cpu_usage || 0;
-            document.getElementById('cpuUsage').textContent = cpuUsage.toFixed(1) + '%';
-            updateProgressBar('cpuProgress', cpuUsage);
-            
-            // 内存使用（智能单位转换和颜色指示）
-            const memElement = document.getElementById('memUsage');
-            const memHTML = formatMemory(statusData.mem_used, statusData.mem_total);
-            memElement.innerHTML = memHTML;
-            const memUsagePercent = statusData.mem_total > 0 ? 
-                (statusData.mem_used / statusData.mem_total) * 100 : 0;
-            updateProgressBar('memProgress', memUsagePercent);
-            
-            // 磁盘使用（智能单位转换和颜色指示）
-            const diskElement = document.getElementById('diskUsage');
-            const diskHTML = formatDisk(statusData.disk_used, statusData.disk_total);
-            diskElement.innerHTML = diskHTML;
-            const diskUsagePercent = statusData.disk_total > 0 ? 
-                (statusData.disk_used / statusData.disk_total) * 100 : 0;
-            updateProgressBar('diskProgress', diskUsagePercent);
-            
-            // 系统负载（添加颜色指示）
-            const loadAvg = statusData.load_1min || 0;
-            const loadElement = document.getElementById('loadAvg');
-            let loadColorClass = '';
-            if (loadAvg >= 5.0) {
-                loadColorClass = 'color-red';
-            } else if (loadAvg >= 2.0) {
-                loadColorClass = 'color-yellow';
-            } else if (loadAvg >= 1.0) {
-                loadColorClass = 'color-green';
-            }
-            loadElement.innerHTML = `<span class="${loadColorClass}">${loadAvg.toFixed(2)}</span>`;
-            
-            // 运行时间
-            const uptimeElement = document.getElementById('uptime');
-            const uptimeHTML = formatUptime(statusData.uptime);
-            uptimeElement.innerHTML = uptimeHTML;
-            
-            // 网络速率（智能单位转换和颜色指示）
-            const networkRxElement = document.getElementById('networkRx');
-            const networkRxHTML = formatNetworkSpeed(statusData.net_rx_bytes);
-            networkRxElement.innerHTML = networkRxHTML;
-            
-            const networkTxElement = document.getElementById('networkTx');
-            const networkTxHTML = formatNetworkSpeed(statusData.net_tx_bytes);
-            networkTxElement.innerHTML = networkTxHTML;
-            
-            // 其他信息
-            setFieldWithTooltip('ipAddr', formatIPAddress(statusData.ip_addr), statusData.ip_addr);
-            setFieldWithTooltip('hostname', truncateText(statusData.hostname, 15), statusData.hostname);
-            setFieldWithTooltip('kernelVersion', truncateText(statusData.kernel_version, 18), statusData.kernel_version);
-            setFieldWithTooltip('macAddr', formatMacAddress(statusData.mac_addr), statusData.mac_addr);
-            
-            // 记录状态更新时间
-            const now = new Date();
-            document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
-            log('info', `状态已更新: ${now.toLocaleTimeString()}`);
+
+        function disconnectDevice() {
+            currentDevice = null;
+            document.getElementById('deviceDetail').classList.remove('active');
+            document.getElementById('emptyState').style.display = 'flex';
         }
-        
-        // 设置字段并添加工具提示
-        function setFieldWithTooltip(elementId, displayText, fullText) {
-            const element = document.getElementById(elementId);
-            if (element) {
-                element.textContent = displayText;
-                element.className = 'stat-value tooltip';
-                if (fullText && fullText !== displayText) {
-                    element.setAttribute('data-tooltip', fullText);
-                } else {
-                    element.removeAttribute('data-tooltip');
-                }
+
+        // ============================================
+        // Navigation
+        // ============================================
+        function showView(view) {
+            // Update nav
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
+
+            // For now, just switch to device view
+            if (view === 'devices') {
+                disconnectDevice();
             }
         }
-        
-        // 更新进度条
-        function updateProgressBar(elementId, percentage) {
-            const progressBar = document.getElementById(elementId);
-            if (progressBar) {
-                progressBar.style.width = Math.min(100, Math.max(0, percentage)) + '%';
+
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+            
+            // Update panes
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tab}`)?.classList.add('active');
+
+            // Refresh data
+            if (tab === 'files') {
+                refreshFiles();
+            } else if (tab === 'monitor') {
+                refreshMetrics();
+            }
+        }
+
+        // ============================================
+        // Terminal
+        // ============================================
+        function connectTerminal() {
+            sendMessage(0x10, { session_id: 1, rows: 24, cols: 80 });
+        }
+
+        function reconnectTerminal() {
+            document.getElementById('terminalOutput').innerHTML = '';
+            connectTerminal();
+        }
+
+        function handleTerminalKeydown(e) {
+            if (e.key === 'Enter') {
+                const input = document.getElementById('terminalInput');
+                const cmd = input.value;
+                input.value = '';
+
+                appendTerminalOutput(`$ ${cmd}\n`);
                 
-                // 根据使用率设置颜色
-                progressBar.className = 'progress-fill';
-                if (percentage < 50) {
-                    progressBar.classList.add('progress-low');
-                } else if (percentage < 80) {
-                    progressBar.classList.add('progress-medium');
-                } else {
-                    progressBar.classList.add('progress-high');
-                }
-            }
-        }
-        
-        // 格式化运行时间（添加颜色指示）
-        function formatUptime(seconds) {
-            if (!seconds) return '--';
-            
-            const days = Math.floor(seconds / 86400);
-            const hours = Math.floor((seconds % 86400) / 3600);
-            const mins = Math.floor((seconds % 3600) / 60);
-            
-            let uptimeStr, colorClass;
-            
-            if (days > 0) {
-                uptimeStr = `${days}d ${hours}h`;
-                colorClass = 'color-green'; // 长时间运行是好事
-            } else if (hours > 0) {
-                uptimeStr = `${hours}h ${mins}m`;
-                colorClass = 'color-yellow';
-            } else {
-                uptimeStr = `${mins}m`;
-                colorClass = 'color-red'; // 短时间可能表示重启过
-            }
-            
-            return `<span class="${colorClass}">${uptimeStr}</span>`;
-        }
-        
-        // 发送消息
-        function sendMessage(msgType, data) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('error', '未连接到服务器');
-                return;
-            }
-            
-            if (currentDevice) {
-                data.device_id = currentDevice;
-            }
-            
-            const jsonStr = JSON.stringify(data);
-            const jsonBytes = new TextEncoder().encode(jsonStr);
-            const message = new Uint8Array(1 + jsonBytes.length);
-            message[0] = msgType;
-            message.set(jsonBytes, 1);
-            ws.send(message);
-        }
-        
-        // 格式化字节数（智能单位转换）
-        function formatBytes(bytes, decimals = 1) {
-            if (!bytes || bytes === 0) return '0 B';
-            
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-            
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-        
-        // 格式化内存使用（修正单位换算）
-        function formatMemory(value, total = null) {
-            if (value === undefined || value === null) return '--';
-            
-            // 如果有总量，显示使用率和进度
-            if (total && total > 0) {
-                const percent = ((value / total) * 100).toFixed(1);
-                
-                // 根据总量选择合适的单位 (agent返回的是MB)
-                let unitValue, unit;
-                if (total >= 1024) { // GB级别 (1024 MB = 1 GB)
-                    unitValue = (value / 1024).toFixed(2);
-                    unit = 'GB';
-                } else { // MB级别
-                    unitValue = value.toFixed(1);
-                    unit = 'MB';
-                }
-                
-                // 根据使用率添加颜色指示
-                let colorClass = '';
-                if (parseFloat(percent) >= 90) {
-                    colorClass = 'color-red';
-                } else if (parseFloat(percent) >= 75) {
-                    colorClass = 'color-yellow';
-                } else if (parseFloat(percent) >= 50) {
-                    colorClass = 'color-green';
-                }
-                
-                return `<span class="${colorClass}">${unitValue}${unit}</span> <small>(${percent}%)</small>`;
-            }
-            
-            // 没有总量，只显示值 (假设是MB)
-            if (value >= 1024) {
-                return `<span>${(value / 1024).toFixed(2)}GB</span>`;
-            } else {
-                return `<span>${value.toFixed(1)}MB</span>`;
-            }
-        }
-        
-        // 格式化磁盘使用（修正单位换算）
-        function formatDisk(value, total = null) {
-            if (value === undefined || value === null) return '--';
-            
-            // 如果有总量，显示使用率和进度
-            if (total && total > 0) {
-                const percent = ((value / total) * 100).toFixed(1);
-                
-                // 根据总量选择合适的单位 (agent返回的是MB)
-                let unitValue, unit;
-                if (total >= 1024 * 1024) { // TB级别 (1024*1024 MB = 1 TB)
-                    unitValue = (value / (1024 * 1024)).toFixed(2);
-                    unit = 'TB';
-                } else if (total >= 1024) { // GB级别 (1024 MB = 1 GB)
-                    unitValue = (value / 1024).toFixed(2);
-                    unit = 'GB';
-                } else { // MB级别
-                    unitValue = value.toFixed(1);
-                    unit = 'MB';
-                }
-                
-                // 根据使用率添加颜色指示
-                let colorClass = '';
-                if (parseFloat(percent) >= 90) {
-                    colorClass = 'color-red';
-                } else if (parseFloat(percent) >= 75) {
-                    colorClass = 'color-yellow';
-                } else if (parseFloat(percent) >= 50) {
-                    colorClass = 'color-green';
-                }
-                
-                return `<span class="${colorClass}">${unitValue}${unit}</span> <small>(${percent}%)</small>`;
-            }
-            
-            // 没有总量，只显示值 (假设是MB)
-            if (value >= 1024 * 1024) {
-                return `<span>${(value / (1024 * 1024)).toFixed(2)}TB</span>`;
-            } else if (value >= 1024) {
-                return `<span>${(value / 1024).toFixed(2)}GB</span>`;
-            } else {
-                return `<span>${value.toFixed(1)}MB</span>`;
-            }
-        }
-        
-        // 格式化网络速率（智能单位转换和颜色指示）
-        function formatNetworkSpeed(bytesPerSecond) {
-            if (!bytesPerSecond || bytesPerSecond === 0) return '0 B/s';
-            
-            const k = 1024;
-            let value, unit, colorClass;
-            
-            // 根据速度选择合适的单位
-            if (bytesPerSecond >= k * k * k) { // GB/s
-                value = (bytesPerSecond / (k * k * k)).toFixed(2);
-                unit = 'GB/s';
-                colorClass = 'color-high';
-            } else if (bytesPerSecond >= k * k) { // MB/s
-                value = (bytesPerSecond / (k * k)).toFixed(2);
-                unit = 'MB/s';
-                colorClass = 'color-medium';
-            } else if (bytesPerSecond >= k) { // KB/s
-                value = (bytesPerSecond / k).toFixed(1);
-                unit = 'KB/s';
-                colorClass = 'color-low';
-            } else { // B/s
-                value = Math.round(bytesPerSecond);
-                unit = 'B/s';
-                colorClass = 'color-very-low';
-            }
-            
-            return `<span class="${colorClass}">${value}${unit}</span>`;
-        }
-        
-        // 截断长文本
-        function truncateText(text, maxLength = 20) {
-            if (!text) return '--';
-            if (text.length <= maxLength) return text;
-            return text.substring(0, maxLength) + '...';
-        }
-        
-        // 格式化IP地址（确保不会太长）
-        function formatIPAddress(ip) {
-            if (!ip) return '--';
-            return ip.length > 15 ? truncateText(ip, 12) : ip;
-        }
-        
-        // 格式化MAC地址
-        function formatMacAddress(mac) {
-            if (!mac) return '--';
-            return mac.length > 17 ? truncateText(mac, 14) : mac;
-        }
-        
-        // 清空状态显示
-        function clearStatusDisplay() {
-            document.getElementById('cpuUsage').textContent = '--';
-            document.getElementById('memUsage').textContent = '--';
-            document.getElementById('diskUsage').textContent = '--';
-            document.getElementById('loadAvg').textContent = '--';
-            document.getElementById('uptime').textContent = '--';
-            document.getElementById('ipAddr').textContent = '--';
-            document.getElementById('hostname').textContent = '--';
-            document.getElementById('kernelVersion').textContent = '--';
-            document.getElementById('networkRx').textContent = '--';
-            document.getElementById('networkTx').textContent = '--';
-            document.getElementById('macAddr').textContent = '--';
-            document.getElementById('lastUpdate').textContent = '--';
-            
-            // 重置进度条
-            updateProgressBar('cpuProgress', 0);
-            updateProgressBar('memProgress', 0);
-            updateProgressBar('diskProgress', 0);
-        }
-        
-        // 刷新状态
-        function refreshStatus() {
-            if (!currentDevice) {
-                log('warn', '请先选择设备');
-                return;
-            }
-            
-            // 更新按钮状态
-            const btn = document.getElementById('refreshBtn');
-            btn.textContent = '刷新中...';
-            btn.disabled = true;
-            
-            sendMessage(MSG_TYPES.CMD_REQUEST, {
-                cmd: 'status',
-                request_id: 'status-' + Date.now()
-            });
-            log('info', '已请求刷新状态');
-            
-            // 3秒后恢复按钮状态
-            setTimeout(() => {
-                btn.textContent = '刷新状态';
-                btn.disabled = false;
-            }, 3000);
-        }
-        
-        // 启动自动刷新
-        function startAutoRefresh() {
-            // 停止之前的自动刷新
-            stopAutoRefresh();
-            
-            // 每30秒自动刷新一次
-            autoRefreshInterval = setInterval(() => {
-                if (currentDevice && ws && ws.readyState === WebSocket.OPEN) {
-                    refreshStatus();
-                }
-            }, 30000);
-            
-            document.getElementById('refreshStatus').textContent = '自动刷新: 已启动 (30秒)';
-            log('info', '已启动自动刷新 (30秒间隔)');
-        }
-        
-        // 停止自动刷新
-        function stopAutoRefresh() {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-                autoRefreshInterval = null;
-                document.getElementById('refreshStatus').textContent = '自动刷新: 已停止';
-            }
-        }
-        
-        // 打开终端
-        function openTerminal() {
-            if (ptySessionId) {
-                log('warn', '终端会话已存在，先关闭现有会话');
-                closeTerminal();
-            }
-            
-            if (!currentDevice) {
-                log('warn', '请先选择设备');
-                return;
-            }
-            
-            ptySessionId = Date.now();
-            terminalHistory = [];
-            historyIndex = -1;
-            currentInput = '';
-            
-            sendMessage(MSG_TYPES.PTY_CREATE, {
-                session_id: ptySessionId,
-                rows: 24,
-                cols: 80
-            });
-            
-            log('info', '正在创建终端会话...');
-            document.getElementById('terminalStatus').textContent = '(连接中...)';
-            document.getElementById('terminalStatus').style.color = '#ffc107';
-            clearTerminal();
-            // 禁用输入，直到收到 PTY_CREATE 创建成功回包
-            document.getElementById('terminalInput').disabled = true;
-            terminalActive = true;
-            
-            // 更新按钮状态
-            const btn = document.getElementById('terminalBtn');
-            btn.textContent = '关闭终端';
-            btn.onclick = closeTerminal;
-        }
-        
-        // 关闭终端
-        function closeTerminal() {
-            if (ptySessionId) {
-                sendMessage(MSG_TYPES.PTY_CLOSE, {
-                    session_id: ptySessionId
+                sendMessage(0x11, {
+                    session_id: 1,
+                    data: btoa(cmd + '\n')
                 });
-                ptySessionId = null;
-                log('info', '终端会话已关闭');
-            }
-            
-            terminalActive = false;
-            
-            // 更新UI状态
-            document.getElementById('terminalStatus').textContent = '(未连接)';
-            document.getElementById('terminalStatus').style.color = '#888';
-            // 禁用输入框
-            document.getElementById('terminalInput').disabled = true;
-            
-            const btn = document.getElementById('terminalBtn');
-            btn.textContent = '打开终端';
-            btn.onclick = openTerminal;
-        }
-        
-        // 处理终端输入
-        function handleTerminalInput(event) {
-            const input = document.getElementById('terminalInput');
-            
-            switch(event.key) {
-                case 'Enter':
-                    event.preventDefault();
-                    const cmd = input.value;
-                    if (cmd.trim()) {
-                        // 添加到历史记录
-                        terminalHistory.push(cmd);
-                        historyIndex = terminalHistory.length;
-                        
-                        if (terminalActive && !ptySessionId) {
-                            // 终端模式下尚未建立会话，拒绝输入
-                            log('warn', '终端尚未连接，命令未发送');
-                            input.value = '';
-                        } else if (ptySessionId) {
-                            // 发送到PTY
-                            const encoded = btoa(cmd + '\n');
-                            sendMessage(MSG_TYPES.PTY_DATA, {
-                                session_id: ptySessionId,
-                                data: encoded
-                            });
-                        } else {
-                            // 直接执行命令
-                            sendMessage(MSG_TYPES.CMD_REQUEST, {
-                                cmd: cmd,
-                                request_id: 'cmd-' + Date.now()
-                            });
-                        }
-                        
-                        appendTerminal('$ ' + cmd + '\n');
-                    }
-                    input.value = '';
-                    currentInput = '';
-                    break;
-                    
-                case 'ArrowUp':
-                    event.preventDefault();
-                    if (historyIndex > 0) {
-                        historyIndex--;
-                        input.value = terminalHistory[historyIndex];
-                        currentInput = input.value;
-                    }
-                    break;
-                    
-                case 'ArrowDown':
-                    event.preventDefault();
-                    if (historyIndex < terminalHistory.length - 1) {
-                        historyIndex++;
-                        input.value = terminalHistory[historyIndex];
-                        currentInput = input.value;
-                    } else {
-                        historyIndex = terminalHistory.length;
-                        input.value = currentInput;
-                    }
-                    break;
-                    
-                case 'Tab':
-                    event.preventDefault();
-                    // 简单的Tab补全提示
-                    appendTerminal('\n[Tab补全功能暂未实现]\n$ ' + input.value);
-                    break;
-                    
-                case 'Escape':
-                    event.preventDefault();
-                    input.value = '';
-                    currentInput = '';
-                    break;
-                    
-                case 'c':
-                    if (event.ctrlKey) {
-                        event.preventDefault();
-                        // Ctrl+C 发送中断信号
-                        if (ptySessionId) {
-                            const encoded = btoa('\x03');
-                            sendMessage(MSG_TYPES.PTY_DATA, {
-                                session_id: ptySessionId,
-                                data: encoded
-                            });
-                        }
-                        appendTerminal('^C\n');
-                        input.value = '';
-                        currentInput = '';
-                    }
-                    break;
-                    
-                case 'l':
-                    if (event.ctrlKey) {
-                        event.preventDefault();
-                        // Ctrl+L 清屏
-                        clearTerminal();
-                        input.value = '';
-                        currentInput = '';
-                    }
-                    break;
-                    
-                default:
-                    currentInput = input.value;
-                    break;
             }
         }
-        
-        // 追加终端输出
-        function appendTerminal(text) {
+
+        function appendTerminalOutput(text) {
             const output = document.getElementById('terminalOutput');
             output.textContent += text;
-            const terminal = document.getElementById('terminal');
-            terminal.scrollTop = terminal.scrollHeight;
+            output.scrollTop = output.scrollHeight;
         }
-        
-        // 清空终端
+
         function clearTerminal() {
-            const output = document.getElementById('terminalOutput');
-            output.textContent = '';
-            if (ptySessionId) {
-                appendTerminal('');
-            } else {
-                appendTerminal('$ ');
-            }
-        }
-        
-        // 处理终端焦点
-        function handleTerminalFocus() {
-            const input = document.getElementById('terminalInput');
-            if (!terminalActive) {
-                input.focus();
-                terminalActive = true;
-            }
-        }
-        
-        // 处理终端失焦
-        function handleTerminalBlur() {
-            terminalActive = false;
-        }
-        
-        // 处理PTY创建
-        function handlePtyCreate(data) {
-            const status = data.status || 'unknown';
-            const sessionId = data.session_id;
-
-            if (status === 'created') {
-                log('info', `PTY会话已创建: session_id=${sessionId}, ${data.cols}x${data.rows}`);
-
-                // 更新终端状态为已连接
-                document.getElementById('terminalStatus').textContent = '(已连接)';
-                document.getElementById('terminalStatus').style.color = '#00c853';
-                appendTerminal('[终端已就绪]\n');
-                // 启用输入框并获取焦点
-                const inputEl = document.getElementById('terminalInput');
-                inputEl.disabled = false;
-                inputEl.focus();
-            } else {
-                log('error', `PTY创建失败: ${status}`);
-                document.getElementById('terminalStatus').textContent = '(失败)';
-                document.getElementById('terminalStatus').style.color = '#ff5252';
-            }
+            document.getElementById('terminalOutput').textContent = '';
         }
 
-        // 处理PTY数据
-        function handlePtyData(data) {
-            if (data.data) {
-                try {
-                    const decoded = atob(data.data);
-                    // 处理ANSI转义序列（简化版本）
-                    const processed = processAnsiEscapes(decoded);
-                    appendTerminal(processed);
-                    
-                    // 更新终端状态为已连接
-                    if (document.getElementById('terminalStatus').textContent.includes('连接中')) {
-                        document.getElementById('terminalStatus').textContent = '(已连接)';
-                        document.getElementById('terminalStatus').style.color = '#00c853';
-                    }
-                } catch(e) {
-                    appendTerminal('[数据解码错误]');
-                }
-            }
+        // ============================================
+        // Files
+        // ============================================
+        function refreshFiles() {
+            sendMessage(0x22, { path: currentPath });
         }
-        
-        // 处理ANSI转义序列（简化版本）
-        function processAnsiEscapes(text) {
-            // 移除常见的ANSI转义序列
-            return text
-                .replace(/\x1b\[[0-9;]*m/g, '') // 颜色代码
-                .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // 光标控制
-                .replace(/\x1b\[?[0-9;]*[ABCDHJK]/g, '') // 其他控制序列
-                .replace(/\x1b[=>]/g, ''); // 其他转义
-        }
-        
-        // 处理PTY关闭
-        function handlePtyClose(data) {
-            log('info', '终端会话已关闭');
-            ptySessionId = null;
-            terminalActive = false;
-            
-            // 更新UI状态
-            document.getElementById('terminalStatus').textContent = '(未连接)';
-            document.getElementById('terminalStatus').style.color = '#888';
-            
-            const btn = document.getElementById('terminalBtn');
-            btn.textContent = '打开终端';
-            btn.onclick = openTerminal;
-            
-            appendTerminal('\n--- 终端会话已关闭 ---\n');
-        }
-        
-        // 显示脚本模态框
-        function showScriptModal() {
-            document.getElementById('scriptModal').classList.add('show');
-            document.getElementById('scriptContent').value = 
-                '#!/bin/sh\necho "Hello from cloud!"\ndate\nuname -a\n';
-        }
-        
-        // 关闭脚本模态框
-        function closeScriptModal() {
-            document.getElementById('scriptModal').classList.remove('show');
-        }
-        
-        // 执行脚本
-        function executeScript() {
-            const content = document.getElementById('scriptContent').value;
-            sendMessage(MSG_TYPES.SCRIPT_RECV, {
-                script_id: 'web-script-' + Date.now(),
-                content: content,
-                execute: true
-            });
-            closeScriptModal();
-            log('info', '已发送脚本');
-        }
-        
-        // 处理脚本结果
-        function handleScriptResult(data) {
-            const status = data.success ? '成功' : '失败';
-            log(data.success ? 'info' : 'error', 
-                `脚本执行${status} (退出码: ${data.exit_code})`);
-            if (data.output) {
-                appendTerminal('--- 脚本输出 ---\n' + data.output + '\n--- 结束 ---\n');
-            }
-        }
-        
-        // 查看日志
-        function viewLogs() {
-            sendMessage(MSG_TYPES.FILE_REQUEST, {
-                action: 'tail',
-                filepath: '/var/log/messages',
-                lines: 50
-            });
-            log('info', '请求日志...');
-        }
-        
-        // 处理日志数据
-        function handleLogData(data) {
-            const viewer = document.getElementById('logViewer');
-            if (data.content) {
-                data.content.forEach(line => {
-                    const div = document.createElement('div');
-                    div.className = 'log-line log-info';
-                    div.textContent = line;
-                    viewer.appendChild(div);
-                });
-            } else if (data.line) {
-                const div = document.createElement('div');
-                div.className = 'log-line log-info';
-                div.textContent = data.line;
-                viewer.appendChild(div);
-            }
-            viewer.scrollTop = viewer.scrollHeight;
-        }
-        
-        // 重启设备
-        function rebootDevice() {
-            if (confirm('确定要重启设备吗？')) {
-                sendMessage(MSG_TYPES.CMD_REQUEST, {
-                    cmd: 'reboot',
-                    request_id: 'reboot-' + Date.now()
-                });
-                log('warn', '已发送重启命令');
-            }
-        }
-        
-        // 处理命令响应
-        function handleCommandResponse(data) {
-            // 只处理当前选中设备的响应
-            if (data.device_id && data.device_id !== currentDevice) {
+
+        function updateFileList(files) {
+            const list = document.getElementById('fileList');
+            if (!files || files.length === 0) {
+                list.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">空目录</div>';
                 return;
             }
+
+            list.innerHTML = files.map(f => `
+                <div class="file-item" ondblclick="${f.is_dir ? `navigateTo('${f.path}')` : `downloadFile('${f.path}')`}">
+                    <span class="file-icon">${f.is_dir ? '📁' : '📄'}</span>
+                    <div class="file-details">
+                        <div class="file-name">${f.name}</div>
+                        <div class="file-meta">${new Date(f.modified).toLocaleString()}</div>
+                    </div>
+                    <div class="file-size">${formatBytes(f.size)}</div>
+                </div>
+            `).join('');
+        }
+
+        function navigateTo(path) {
+            currentPath = path;
+            document.getElementById('terminalPath').textContent = path;
+            refreshFiles();
+        }
+
+        function uploadFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    showToast(`上传: ${file.name}`, 'info');
+                    // Implement upload logic
+                }
+            };
+            input.click();
+        }
+
+        function downloadSelected() {
+            showToast('请选择文件', 'warning');
+        }
+
+        function downloadFile(path) {
+            sendMessage(0x24, { path: path, format: 'zip' });
+            showToast('开始下载...', 'info');
+        }
+
+        // ============================================
+        // Monitor
+        // ============================================
+        function refreshMetrics() {
+            sendMessage(0x30, { cmd: 'status', request_id: 'metrics' });
+        }
+
+        function updateMetrics(data) {
+            document.getElementById('metricCpu').textContent = (data.cpu_usage || 0).toFixed(1) + '%';
+            document.getElementById('metricMem').textContent = ((data.mem_used || 0) / 1024).toFixed(1) + ' GB';
+            document.getElementById('metricDisk').textContent = ((data.disk_used || 0) / (data.disk_total || 1) * 100).toFixed(0) + '%';
+            document.getElementById('metricLoad').textContent = (data.load_1min || 0).toFixed(2);
+        }
+
+        // ============================================
+        // Scripts
+        // ============================================
+        function runScript() {
+            const script = document.getElementById('scriptEditor').value;
+            if (!script.trim()) return;
+
+            sendMessage(0x04, {
+                script_id: 'script-' + Date.now(),
+                content: script,
+                execute: true
+            });
+
+            showToast('脚本已发送执行', 'info');
+        }
+
+        function showScriptResult(data) {
+            document.getElementById('scriptOutput').textContent = data.output || 'No output';
+            document.getElementById('scriptModal').classList.add('active');
             
-            const responseData = data.device_id ? data : data;
+            // Update history
+            document.getElementById('scriptHistory').innerHTML = `
+                <div style="margin-bottom: 8px;">
+                    <span style="color: ${data.success ? 'var(--accent-success)' : 'var(--accent-error)'};">
+                        ${data.success ? '✓' : '✗'}
+                    </span>
+                    <span>退出码: ${data.exit_code}</span>
+                    <span style="color: var(--text-muted); margin-left: 8px;">${new Date().toLocaleTimeString()}</span>
+                </div>
+            `;
+        }
+
+        // ============================================
+        // Drag & Drop
+        // ============================================
+        function setupDragDrop() {
+            let dragCounter = 0;
             
-            if (responseData.cmd === 'status' && responseData.status) {
-                updateStatus(responseData.status);
-            } else if (responseData.output) {
-                appendTerminal(responseData.output + '\n');
+            document.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                dragCounter++;
+                if (e.dataTransfer.types.includes('Files')) {
+                    document.getElementById('uploadOverlay').classList.add('active');
+                }
+            });
+
+            document.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dragCounter--;
+                if (dragCounter === 0) {
+                    document.getElementById('uploadOverlay').classList.remove('active');
+                }
+            });
+
+            document.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+
+            document.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragCounter = 0;
+                document.getElementById('uploadOverlay').classList.remove('active');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && currentTab === 'files') {
+                    showToast(`准备上传 ${files.length} 个文件`, 'info');
+                }
+            });
+        }
+
+        // ============================================
+        // Utilities
+        // ============================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const icons = { success: '✓', error: '✗', warning: '⚠', info: 'ℹ' };
+            
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <span style="font-size: 20px;">${icons[type]}</span>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function rebootDevice() {
+            if (confirm('确定要重启设备吗？')) {
+                sendMessage(0x30, { cmd: 'reboot' });
+                showToast('重启命令已发送', 'info');
             }
-            
-            log('info', `命令响应: ${responseData.cmd || 'unknown'}`);
         }
-        
-        // 记录日志
-        function log(level, message) {
-            const viewer = document.getElementById('logViewer');
-            const div = document.createElement('div');
-            div.className = `log-line log-${level}`;
-            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            viewer.appendChild(div);
-            viewer.scrollTop = viewer.scrollHeight;
+
+        function showSettings() {
+            showToast('设置功能开发中...', 'info');
         }
-        
-        // 页面加载完成后连接
-        document.addEventListener('DOMContentLoaded', () => {
-            log('info', '正在连接服务器...');
-            connect();
-        });
     </script>
 </body>
 </html>
