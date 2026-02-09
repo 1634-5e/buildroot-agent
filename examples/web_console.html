@@ -1214,10 +1214,11 @@
             
             // 自动检测 WebSocket 地址
             let wsUrl;
-            if (window.location.hostname.includes('github.dev') || window.location.hostname.includes('github.io')) {
-                // GitHub Codespaces 环境 - 使用特殊的 WebSocket 端口转发 URL
-                const baseUrl = window.location.hostname.replace(/-\d+\.github\.dev$/, '');
-                wsUrl = `${protocol}//${baseUrl}-8765.${window.location.hostname.split('.').slice(-2).join('.')}/`;
+            if (window.location.hostname.includes('github.dev')) {
+                // GitHub Codespaces 环境 - 只替换端口号部分
+                // 例如: xxx-8080.app.github.dev -> xxx-8765.app.github.dev
+                const wsHostname = window.location.hostname.replace(/-\d+(\.app\.github\.dev)$/, '-8765$1');
+                wsUrl = `${protocol}//${wsHostname}/`;
             } else {
                 // 本地或其他环境
                 wsUrl = `${protocol}//${window.location.hostname}:8765`;
