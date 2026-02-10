@@ -393,6 +393,89 @@ void log_watch_stop_all(void)
     usleep(100000);
 }
 
+/* 读取文件内容（支持分块） */
+int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length)
+{
+    if (!ctx || !filepath) return -1;
+    
+    LOG_INFO("[FILE_READ] 读取文件: %s, offset=%d, length=%d", filepath, offset, length);
+    
+    FILE *fp = fopen(filepath, "rb");
+    if (!fp) {
+        LOG_ERROR("[FILE_READ] 无法打开文件: %s", filepath);
+        /* 返回错误消息 */
+        char json[512];
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"无法打开文件\"}", filepath);
+        ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        return -1;
+    }
+    
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    
+    if (offset < 0) offset = 0;
+    if (length <= 0 || length > 32768) length = 32768; /* 最大32KB，base64编码后约43KB，低于65534字节限制 */
+    
+    if (offset >= file_size) {
+        fclose(fp);
+        LOG_WARN("[FILE_READ] offset超出文件大小: offset=%d, file_size=%ld", offset, file_size);
+        char json[512];
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\"}", filepath, offset);
+        ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        return 0;
+    }
+    
+    fseek(fp, offset, SEEK_SET);
+    
+    int read_len = length;
+    if (offset + read_len > file_size) {
+        read_len = file_size - offset;
+    }
+    
+    LOG_INFO("[FILE_READ] 准备读取 %d 字节 (offset=%d, file_size=%ld)", read_len, offset, file_size);
+    
+    unsigned char *buffer = malloc(read_len);
+    if (!buffer) {
+        fclose(fp);
+        LOG_ERROR("[FILE_READ] 内存分配失败");
+        return -1;
+    }
+    
+    size_t actual_read = fread(buffer, 1, read_len, fp);
+    fclose(fp);
+    
+    LOG_INFO("[FILE_READ] 实际读取 %zu 字节", actual_read);
+    
+    if (actual_read > 0) {
+        size_t encoded_len;
+        char *encoded = base64_encode(buffer, actual_read, &encoded_len);
+        free(buffer);
+        
+        if (encoded) {
+            LOG_INFO("[FILE_READ] base64编码后长度: %zu", encoded_len);
+            size_t json_size = encoded_len + 1024;
+            char *json = malloc(json_size);
+            if (json) {
+                snprintf(json, json_size,
+                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\"}",
+                    filepath, offset, actual_read, encoded);
+                LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu", filepath, offset, actual_read);
+                ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+                free(json);
+            } else {
+                LOG_ERROR("[FILE_READ] JSON内存分配失败");
+            }
+            free(encoded);
+        } else {
+            LOG_ERROR("[FILE_READ] base64编码失败");
+        }
+    } else {
+        LOG_WARN("[FILE_READ] 没有读取到任何数据");
+    }
+    
+    return 0;
+}
+
 /* 列出可监控的日志文件 */
 int log_list_files(agent_context_t *ctx, const char *log_dir)
 {

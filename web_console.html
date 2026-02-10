@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buildroot Agent 控制台</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Buildroot Agent 控制台 v2.1 (chunked-file-list-fix)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- xterm.js -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
@@ -887,8 +890,8 @@
             display: flex;
             overflow: hidden;
             position: relative;
+            background: var(--bg-primary);
         }
-
         .editor-line-numbers {
             width: 48px;
             padding: 12px 8px 12px 0;
@@ -896,115 +899,21 @@
             border-right: 1px solid var(--border-color);
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
-            line-height: 1.6;
+            line-height: 20.8px;
             color: var(--text-muted);
             text-align: right;
             overflow: hidden;
             user-select: none;
             flex-shrink: 0;
+            box-sizing: border-box;
+            z-index: 10;
         }
-
-        .editor-textarea {
-            flex: 1;
-            padding: 12px 16px;
-            background: var(--bg-primary);
-            border: none;
-            outline: none;
-            color: var(--text-primary);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            line-height: 1.6;
-            resize: none;
-            tab-size: 4;
-            white-space: pre;
-            overflow: auto;
-        }
-
-        .editor-textarea:focus {
-            background: var(--bg-primary);
-        }
-
-        .editor-textarea.wrap {
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        /* Editor Tabs - 多标签编辑 */
-        .editor-tabs-bar {
-            display: flex;
-            align-items: center;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-color);
-            overflow-x: auto;
-            scrollbar-width: none;
-            min-height: 36px;
-        }
-        .editor-tabs-bar::-webkit-scrollbar { display: none; }
-
-        .editor-tab {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            font-size: 12px;
-            color: var(--text-muted);
-            cursor: pointer;
-            border-right: 1px solid var(--border-color);
-            white-space: nowrap;
-            transition: all var(--transition);
-            position: relative;
-            user-select: none;
-            min-width: 0;
-            max-width: 180px;
-        }
-        .editor-tab:hover {
-            background: var(--bg-tertiary);
-            color: var(--text-secondary);
-        }
-        .editor-tab.active {
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            border-bottom: 2px solid var(--accent-primary);
-        }
-        .editor-tab .tab-name {
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .editor-tab .tab-modified {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-warning);
-            flex-shrink: 0;
-        }
-        .editor-tab .tab-close {
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-            font-size: 14px;
-            opacity: 0;
-            transition: all var(--transition);
-            flex-shrink: 0;
-        }
-        .editor-tab:hover .tab-close,
-        .editor-tab.active .tab-close {
-            opacity: 0.6;
-        }
-        .editor-tab .tab-close:hover {
-            opacity: 1;
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--accent-error);
-        }
-
-        /* Syntax Highlight Overlay */
         .editor-highlight-wrapper {
             flex: 1;
-            display: flex;
+            display: block;
             overflow: hidden;
             position: relative;
+            min-width: 0;
         }
         .editor-highlight-backdrop {
             position: absolute;
@@ -1013,20 +922,51 @@
             right: 0;
             bottom: 0;
             padding: 12px 16px;
+            margin: 0;
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
-            line-height: 1.6;
+            line-height: 20.8px;
             white-space: pre;
             overflow: hidden;
             pointer-events: none;
-            color: transparent;
             tab-size: 4;
+            z-index: 2;
+            color: var(--text-primary);
+            background: transparent;
+            box-sizing: border-box;
+        }
+        .editor-textarea {
+            width: 100%;
+            height: 100%;
+            padding: 12px 16px;
+            margin: 0;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: transparent;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 20.8px;
+            resize: none;
+            tab-size: 4;
+            white-space: pre;
+            overflow: auto;
+            position: relative;
+            z-index: 1;
+            box-sizing: border-box;
+            caret-color: var(--text-primary);
+            selection-background-color: rgba(255, 255, 255, 0.2);
+        }
+        .editor-textarea.wrap {
+            white-space: pre-wrap;
+            word-break: break-all;
         }
         .editor-highlight-backdrop.wrap {
             white-space: pre-wrap;
             word-break: break-all;
         }
-        /* Syntax token colors */
+
+        /* Syntax Highlight Overlay */
         .syn-keyword { color: #c678dd; }
         .syn-string { color: #98c379; }
         .syn-number { color: #d19a66; }
@@ -2512,31 +2452,37 @@
                  }
              }
              
-             if (currentDevice && currentDevice.device_id) {
-                 data.device_id = currentDevice.device_id;
-             }
-             
-             try {
-                 const json = JSON.stringify(data);
-                 const bytes = new TextEncoder().encode(json);
-                 const msg = new Uint8Array(1 + bytes.length);
-                 msg[0] = type;
-                 msg.set(bytes, 1);
-                 ws.send(msg);
-                 console.log('Sent message:', type, data);
-                 return true;
-             } catch (error) {
-                 console.error('Error sending message:', error);
-                 // Queue the message if sending failed
-                 if (isReconnecting || isConnected) {
-                     console.log('Queueing message after send error:', type, data);
-                     messageQueue.push({ type, data, timestamp: Date.now() });
-                     return true;
-                 } else {
-                     showToast('发送消息失败', 'error');
-                     return false;
-                 }
-             }
+              if (currentDevice && currentDevice.device_id) {
+                  data.device_id = currentDevice.device_id;
+              }
+              
+              try {
+                  const json = JSON.stringify(data);
+                  const bytes = new TextEncoder().encode(json);
+                  const msg = new Uint8Array(1 + bytes.length);
+                  msg[0] = type;
+                  msg.set(bytes, 1);
+                  
+                  // Debug: log message details for FILE_REQUEST
+                  if (type === MSG_TYPES.FILE_REQUEST) {
+                      console.log(`[SEND] FILE_REQUEST message size: ${msg.length} bytes, data:`, data);
+                  }
+                  
+                  ws.send(msg);
+                  console.log('Sent message:', type, data);
+                  return true;
+              } catch (error) {
+                  console.error('Error sending message:', error);
+                  // Queue the message if sending failed
+                  if (isReconnecting || isConnected) {
+                      console.log('Queueing message after send error:', type, data);
+                      messageQueue.push({ type, data, timestamp: Date.now() });
+                      return true;
+                  } else {
+                      showToast('发送消息失败', 'error');
+                      return false;
+                  }
+              }
          }
 
         // ============================================
@@ -2560,11 +2506,73 @@
                     handlePtyClose(data);
                     break;
                 case MSG_TYPES.FILE_LIST_RESPONSE:
-                    // Update both tree and file list
-                    if (data.path) {
-                        updateTreeWithFiles(data.path, data.files || []);
+                    // Handle chunked file list responses
+                    console.log('[FILE_LIST] Received FILE_LIST_RESPONSE:', data);
+                    
+                    if (data.chunk !== undefined && data.total_chunks) {
+                        // Chunked response
+                        const path = data.path;
+                        const chunk = data.chunk;
+                        const totalChunks = data.total_chunks;
+                        const request_id = data.request_id;
+                        const files = data.files || [];
+                        
+                        console.log(`[FILE_LIST] Chunk ${chunk}/${totalChunks} for path ${path}, files count: ${files.length}, request_id: ${request_id}`);
+                        
+                        // Use request_id as key to avoid conflicts between different path requests
+                        if (!request_id) {
+                            console.error('[FILE_LIST] Missing request_id in chunked response');
+                            return;
+                        }
+                        
+                        // Initialize chunk storage for this request_id if needed
+                        if (!fileListChunks[request_id]) {
+                            fileListChunks[request_id] = {
+                                chunks: new Array(totalChunks),
+                                totalChunks: totalChunks,
+                                receivedChunks: 0,
+                                path: path,
+                                timestamp: Date.now()
+                            };
+                            console.log(`[FILE_LIST] Initialized chunk storage for request ${request_id}, total chunks: ${totalChunks}`);
+                        } else {
+                            // Update timestamp for existing request
+                            fileListChunks[request_id].timestamp = Date.now();
+                        }
+                        
+                        // Store chunk
+                        const chunkData = fileListChunks[request_id];
+                        if (chunkData.chunks[chunk] !== undefined) {
+                            console.warn(`[FILE_LIST] Chunk ${chunk} already received for request ${request_id}, overwriting`);
+                        }
+                        chunkData.chunks[chunk] = files;
+                        chunkData.receivedChunks++;
+                        
+                        console.log(`[FILE_LIST] Received ${chunkData.receivedChunks}/${totalChunks} chunks for request ${request_id}`);
+                        console.log(`[FILE_LIST] Chunk ${chunk} contains ${files.length} files:`, files.map(f => f.name));
+                        
+                        // Check if all chunks received
+                        if (chunkData.receivedChunks >= totalChunks) {
+                            // Merge all chunks
+                            const allFiles = chunkData.chunks.flat();
+                            console.log(`[FILE_LIST] All chunks received for request ${request_id}, total files: ${allFiles.length}`);
+                            console.log(`[FILE_LIST] All files:`, allFiles.map(f => f.name));
+                            
+                            // Update file tree only (no separate file list view)
+                            if (path) {
+                                updateTreeWithFiles(path, allFiles);
+                            }
+                            
+                            // Clean up
+                            delete fileListChunks[request_id];
+                        }
+                    } else {
+                        // Single-chunk response (backward compatibility)
+                        console.log(`[FILE_LIST] Single chunk response for ${path}, files count: ${(data.files || []).length}`);
+                        if (data.path) {
+                            updateTreeWithFiles(data.path, data.files || []);
+                        }
                     }
-                    updateFileList(data.files || []);
                     break;
                 case MSG_TYPES.FILE_DATA:
                     handleFileData(data);
@@ -3372,30 +3380,35 @@
         }
 
         function updateTreeWithFiles(path, files) {
-            console.log('Updating tree for path:', path, 'with files:', files);
+            console.log('[TREE] ===== Starting tree update for path:', path, 'with', files.length, 'files =====');
             
-            // Find the container for this path
+            // Find container for this path
             let container;
             if (path === '/') {
                 container = safeGetElement('fileTreeRoot');
+                console.log('[TREE] Using fileTreeRoot container');
             } else {
                 const parentItem = document.querySelector(`.tree-item[data-path="${path}"]`);
+                console.log('[TREE] Parent item for', path, ':', parentItem);
                 if (parentItem) {
                     container = parentItem.nextElementSibling;
+                    console.log('[TREE] Found existing container:', container);
                     if (!container || !container.classList.contains('tree-children')) {
                         container = document.createElement('div');
                         container.className = 'tree-children';
                         parentItem.parentNode?.insertBefore(container, parentItem.nextSibling);
+                        console.log('[TREE] Created new container');
                     }
                 }
             }
             
             if (!container) {
-                console.warn('Container not found for path:', path);
+                console.error('[TREE] Container not found for path:', path);
                 return;
             }
             
-            if (!container) return;
+            console.log('[TREE] Container element:', container);
+            console.log('[TREE] Container children before clear:', container.children.length);
             
             // Sort: directories first, then by name
             files.sort((a, b) => {
@@ -3404,11 +3417,42 @@
                 return a.name.localeCompare(b.name);
             });
             
-            // Show both directories and files in tree
+            // Clear container
             container.innerHTML = '';
+            console.log('[TREE] Container cleared');
+            
+            // Handle empty directory
+            if (files.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.className = 'tree-empty';
+                emptyMsg.style.padding = '8px 12px';
+                emptyMsg.style.color = 'var(--text-muted)';
+                emptyMsg.style.fontSize = '12px';
+                emptyMsg.textContent = '(空)';
+                container.appendChild(emptyMsg);
+                console.log('[TREE] Empty directory:', path);
+                console.log('[TREE] ===== Tree update completed (empty) =====');
+                return;
+            }
+            
+            // Show both directories and files in tree
+            console.log('[TREE] Adding', files.length, 'items to tree');
+            let dirCount = 0;
+            let fileCount = 0;
+            
             files.forEach((item, index) => {
-                container.appendChild(renderTreeItem(item, path, index));
+                const treeItem = renderTreeItem(item, path, index);
+                container.appendChild(treeItem);
+                if (item.is_dir) {
+                    dirCount++;
+                } else {
+                    fileCount++;
+                }
             });
+            
+            console.log('[TREE] Added', dirCount, 'directories and', fileCount, 'files');
+            console.log('[TREE] Container children after update:', container.children.length);
+            console.log('[TREE] ===== Tree update completed =====');
         }
 
         function refreshCurrentDir() {
@@ -3426,43 +3470,9 @@
         }
 
         function updateFileList(files) {
-            console.log('Updating file list:', files);
-            const list = safeGetElement('fileList');
-            
-            if (!list) {
-                console.warn('fileList element not found, cannot update');
-                return;
-            }
-            
-            if (!files || files.length === 0) {
-                list.innerHTML = `
-                    <div class="empty-folder">
-                        <div class="empty-folder-icon">📂</div>
-                        <div>空目录</div>
-                    </div>
-                `;
-                return;
-            }
-
-            // Sort: directories first, then files
-            files.sort((a, b) => {
-                if (a.is_dir && !b.is_dir) return -1;
-                if (!a.is_dir && b.is_dir) return 1;
-                return a.name.localeCompare(b.name);
-            });
-
-            list.innerHTML = files.map(f => `
-                <div class="file-item ${selectedFiles.has(f.path) ? 'selected' : ''}" 
-                     ondblclick="${f.is_dir ? `navigateTo('${f.path}')` : `previewFile('${f.path}', '${f.name}', ${f.size})`}"
-                     onclick="selectFileItem('${f.path}', ${f.is_dir}, '${f.name}', ${f.size})">
-                    <span class="file-icon">${f.is_dir ? '📁' : getFileIcon(f.name)}</span>
-                    <div class="file-details">
-                        <div class="file-name">${f.name}</div>
-                        <div class="file-meta">${f.is_dir ? '目录' : formatDate(f.modified)}</div>
-                    </div>
-                    <div class="file-size">${f.is_dir ? '--' : formatBytes(f.size)}</div>
-                </div>
-            `).join('');
+            // This function is deprecated - file tree is used instead
+            console.log('updateFileList called but file list view is not implemented, ignoring');
+            return;
         }
 
         function selectFileItem(path, isDir, name, size) {
@@ -3485,6 +3495,58 @@
 
         // Pending file preview requests
         let pendingFilePreview = null;
+
+        // File list chunk handling
+        let fileListChunks = {}; // Map of request_id -> { chunks: [], totalChunks: 0, receivedChunks: 0, path: '', timestamp: 0 }
+        
+        // Editor state variables (must be defined before any function that uses them)
+        let isEditorActive = false;
+        let isEditorModified = false;
+        let editorOriginalContent = '';
+        let editorCurrentFile = null;
+        let editorWordWrap = false;
+        let editorUndoStack = [];
+        let editorRedoStack = [];
+        let editorLastSavedContent = '';
+        let syntaxHighlightEnabled = true;
+        
+        // Clean up expired chunk data periodically
+        setInterval(() => {
+            const now = Date.now();
+            const maxAge = 60000; // 60 seconds
+            let cleaned = false;
+            for (const [request_id, chunkData] of Object.entries(fileListChunks)) {
+                if (!chunkData.timestamp || (now - chunkData.timestamp > maxAge)) {
+                    console.warn(`[FILE_LIST] Cleaning up expired chunk data for request ${request_id} (received ${chunkData.receivedChunks}/${chunkData.totalChunks} chunks)`);
+                    delete fileListChunks[request_id];
+                    cleaned = true;
+                }
+            }
+            if (cleaned) {
+                debugFileListChunks();
+            }
+        }, 15000); // Check every 15 seconds
+
+        // 可编辑的文件扩展名集合
+        const EDITABLE_EXTENSIONS = new Set([
+            'txt', 'log', 'md', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts',
+            'py', 'sh', 'bash', 'zsh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml',
+            'properties', 'env', 'rc', 'profile',
+            'c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua',
+            'swift', 'kt', 'sql', 'makefile', 'dockerfile', 'cmake',
+            'service', 'timer', 'mount', 'rules', 'csv', 'tsv'
+        ]);
+
+        // Utility function to check if file is editable
+        function isFileEditable(filename) {
+            if (!filename) return false;
+            const name = filename.toLowerCase();
+            // 无扩展名的常见可编辑文件
+            const editableNames = ['makefile', 'dockerfile', 'vagrantfile', 'gemfile', 'rakefile', '.gitignore', '.env', '.bashrc', '.profile', '.vimrc'];
+            if (editableNames.includes(name)) return true;
+            const ext = name.split('.').pop();
+            return EDITABLE_EXTENSIONS.has(ext);
+        }
 
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
@@ -3533,7 +3595,7 @@
                 }
                 
                 // 发送图片下载请求
-                pendingFilePreview = { path, name, ext };
+                pendingFilePreview = { path, name, ext, size };
                 sendMessage(MSG_TYPES.FILE_REQUEST, {
                     action: 'download',
                     filepath: path,
@@ -3545,23 +3607,27 @@
                     previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">正在加载文件内容...</div>';
                 }
                 
-                pendingFilePreview = { path, name, ext };
+                pendingFilePreview = { path, name, ext, size };
                 
-                // Send file read request
+                // Send file read request - limit to 32KB to stay under WebSocket message size limit
+                // Base64 encoding will increase size by ~33%, so 32KB -> ~43KB (under 65534 byte limit)
+                const readLength = Math.min(size, 32768); // Max 32KB
+                console.log(`[PREVIEW] Sending file read request for ${path}, length: ${readLength} (file size: ${size})`);
                 sendMessage(MSG_TYPES.FILE_REQUEST, {
                     action: 'read',
                     filepath: path,
                     offset: 0,
-                    length: Math.min(size, 102400) // Max 100KB
+                    length: readLength
                 });
                 
-                // Set timeout
+                // Set timeout (increased to 10 seconds)
                 setTimeout(() => {
                     if (pendingFilePreview && pendingFilePreview.path === path && previewContent) {
+                        console.warn(`[PREVIEW] Timeout for ${path}`);
                         previewContent.innerHTML = '<div style="color: var(--text-muted);">加载超时，请重试</div>';
                         pendingFilePreview = null;
                     }
-                }, 5000);
+                }, 10000);
             } else {
                 // Binary or large file
                 if (previewContent) {
@@ -3572,11 +3638,14 @@
         }
 
         function handleFileData(data) {
-            console.log('Received file data:', data);
+            console.log('[FILE_DATA] Received file data:', data);
             
-            if (!pendingFilePreview) return;
+            if (!pendingFilePreview) {
+                console.warn('[FILE_DATA] No pending file preview');
+                return;
+            }
             
-            const { path, name, ext } = pendingFilePreview;
+            const { path, name, ext, size } = pendingFilePreview;
             const previewContent = safeGetElement('previewContent');
             
             if (!previewContent) {
@@ -3585,7 +3654,13 @@
                 return;
             }
             
+            if (data.filepath && data.filepath !== path) {
+                console.warn(`[FILE_DATA] File path mismatch: expected ${path}, got ${data.filepath}`);
+                return;
+            }
+            
             if (data.error) {
+                console.error('[FILE_DATA] Error:', data.error);
                 previewContent.innerHTML = `<div style="color: var(--accent-error);">错误: ${data.error}</div>`;
                 pendingFilePreview = null;
                 return;
@@ -3600,16 +3675,37 @@
                         const imgSrc = `data:${mimeType};base64,${data.content}`;
                         previewContent.innerHTML = `<img src="${imgSrc}" alt="${name}" style="max-width: 100%; max-height: 100%; object-fit: contain;" onclick="window.open('${imgSrc}', '_blank')" title="点击打开大图">`;
                     } else {
-                        // Decode base64 content
-                        const content = atob(data.content);
+                        // Decode base64 content with UTF-8 support
+                        const binaryString = atob(data.content);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        const decoder = new TextDecoder('utf-8');
+                        const content = decoder.decode(bytes);
+                        console.log('[FILE_DATA] Decoded content length:', content.length);
                         
-                        // Apply syntax highlighting for code files
-                        const codeExts = ['js', 'py', 'sh', 'json', 'xml', 'html', 'css', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'php', 'rb', 'lua'];
-                        if (codeExts.includes(ext)) {
-                            previewContent.innerHTML = `<pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;"><code>${escapeHtml(content)}</code></pre>`;
+                        // Store content for editor mode
+                        editorOriginalContent = content;
+                        editorLastSavedContent = content;
+                        
+                        // Always use editor component for preview (readonly mode)
+                        // For files < 1MB, use editor component
+                        if (size < 1024 * 1024) {
+                            displayEditorContent(content, true);  // true = readonly mode
                         } else {
-                            // Plain text
-                            previewContent.textContent = content;
+                            // Large files: show plain text with line numbers
+                            const lines = content.split('\n');
+                            let html = '<div style="display: flex; height: 100%;">';
+                            html += '<div style="width: 48px; padding: 12px 8px 12px 0; background: var(--bg-secondary); border-right: 1px solid var(--border-color); font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; color: var(--text-muted); text-align: right; overflow: hidden; user-select: none; flex-shrink: 0;">';
+                            for (let i = 1; i <= lines.length; i++) {
+                                html += i + '\n';
+                            }
+                            html += '</div>';
+                            html += '<div style="flex: 1; overflow: auto; padding: 12px 16px; font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; white-space: pre;">';
+                            html += escapeHtml(content);
+                            html += '</div></div>';
+                            previewContent.innerHTML = html;
                         }
                     }
                 } catch (e) {
@@ -3617,14 +3713,44 @@
                     previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
                 }
             } else if (data.chunk_data) {
-                // Handle chunked data
+                // Handle chunked data with UTF-8 support
                 try {
-                    const content = atob(data.chunk_data);
-                    previewContent.textContent = content;
+                    const binaryString = atob(data.chunk_data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const decoder = new TextDecoder('utf-8');
+                    const content = decoder.decode(bytes);
+                    console.log('[FILE_DATA] Decoded chunk_data length:', content.length);
+                    
+                    // Store content
+                    editorOriginalContent = content;
+                    editorLastSavedContent = content;
+                    
+                    // Always use editor component for preview (readonly mode)
+                    if (size < 1024 * 1024) {
+                        displayEditorContent(content, true);  // true = readonly mode
+                    } else {
+                        // Large files: show plain text with line numbers
+                        const lines = content.split('\n');
+                        let html = '<div style="display: flex; height: 100%;">';
+                        html += '<div style="width: 48px; padding: 12px 8px 12px 0; background: var(--bg-secondary); border-right: 1px solid var(--border-color); font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; color: var(--text-muted); text-align: right; overflow: hidden; user-select: none; flex-shrink: 0;">';
+                        for (let i = 1; i <= lines.length; i++) {
+                            html += i + '\n';
+                        }
+                        html += '</div>';
+                        html += '<div style="flex: 1; overflow: auto; padding: 12px 16px; font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; white-space: pre;">';
+                        html += escapeHtml(content);
+                        html += '</div></div>';
+                        previewContent.innerHTML = html;
+                    }
                 } catch (e) {
+                    console.error('Error decoding file content:', e);
                     previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
                 }
             } else {
+                console.warn('[FILE_DATA] No content or chunk_data in response');
                 previewContent.innerHTML = '<div style="color: var(--text-muted);">文件内容为空</div>';
             }
             
@@ -3638,28 +3764,71 @@
         }
 
         function closePreview() {
-            // 如果在编辑模式且有修改，提示确认
-            if (isEditorActive && isEditorModified) {
-                if (!confirm('文件已修改但未保存，确定关闭？')) return;
-            }
+            const previewPanel = document.getElementById('filePreviewPanel');
+            const placeholder = document.getElementById('filePreviewPlaceholder');
+            const preview = document.getElementById('filePreview');
+            
+            if (placeholder) placeholder.style.display = 'flex';
+            if (preview) preview.style.display = 'none';
+            if (previewPanel) previewPanel.style.display = 'none';
+            
             exitEditor();
-            document.getElementById('filePreview').style.display = 'none';
-            document.getElementById('filePreviewPlaceholder').style.display = 'flex';
         }
 
+        // Display content using editor component (both preview and edit modes)
+        function displayEditorContent(content, readonly = false) {
+            const preview = document.getElementById('filePreview');
+            const editorContainer = document.getElementById('fileEditorContainer');
+            const textarea = document.getElementById('editorTextarea');
+            
+            if (!preview || !editorContainer || !textarea) return;
+            
+            // Hide editor container toolbar and show preview
+            editorContainer.style.display = 'flex';
+            preview.style.display = 'flex';
+            document.getElementById('previewContent').style.display = 'none';
+            
+            // Set content
+            textarea.value = content;
+            
+            // Set readonly mode
+            textarea.readOnly = readonly;
+            
+            // Update line numbers
+            updateLineNumbers();
+            
+            // Apply syntax highlighting if enabled
+            if (syntaxHighlightEnabled) {
+                highlightSyntax();
+            }
+            
+            // Update file type
+            document.getElementById('editorFileType').textContent = getFileType(editorCurrentFile ? editorCurrentFile.name : '');
+            
+            // In preview mode, hide edit buttons
+            const btnEdit = document.getElementById('btnEditFile');
+            const btnSave = document.getElementById('btnSaveFile');
+            const btnCancel = document.getElementById('btnCancelEdit');
+            if (readonly) {
+                // Preview mode: show edit button
+                if (btnEdit && isFileEditable(editorCurrentFile.name)) {
+                    btnEdit.style.display = 'inline-flex';
+                }
+                if (btnSave) btnSave.style.display = 'none';
+                if (btnCancel) btnCancel.style.display = 'none';
+                isEditorActive = false;
+            } else {
+                // Edit mode
+                if (btnEdit) btnEdit.style.display = 'none';
+                if (btnSave) btnSave.style.display = 'inline-flex';
+                if (btnCancel) btnCancel.style.display = 'inline-flex';
+                isEditorActive = true;
+            }
+        }
+        
         // ============================================
         // File Editor - 在线编辑器
         // ============================================
-        let isEditorActive = false;
-        let isEditorModified = false;
-        let editorOriginalContent = '';
-        let editorCurrentFile = null; // { path, name, size }
-        let editorWordWrap = false;
-        let editorUndoStack = [];
-        let editorRedoStack = [];
-        let editorLastSavedContent = '';
-        let syntaxHighlightEnabled = true;
-
         // 多标签编辑状态
         // openEditorTabs: Map<path, { path, name, size, content, originalContent, modified, undoStack, redoStack, scrollTop, cursorStart, cursorEnd, lineCount }>
         const openEditorTabs = new Map();
@@ -3668,46 +3837,12 @@
         // 当前活动标签页的编辑器内容
         let currentEditorContent = '';
 
-        // 可编辑的文件扩展名
-        const EDITABLE_EXTENSIONS = new Set([
-            'txt', 'log', 'md', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts',
-            'py', 'sh', 'bash', 'zsh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml',
-            'properties', 'env', 'rc', 'profile',
-            'c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua',
-            'swift', 'kt', 'sql', 'makefile', 'dockerfile', 'cmake',
-            'service', 'timer', 'mount', 'rules', 'csv', 'tsv'
-        ]);
-
-        function isFileEditable(filename) {
-            if (!filename) return false;
-            const name = filename.toLowerCase();
-            // 无扩展名的常见可编辑文件
-            const editableNames = ['makefile', 'dockerfile', 'vagrantfile', 'gemfile', 'rakefile', '.gitignore', '.env', '.bashrc', '.profile', '.vimrc'];
-            if (editableNames.includes(name)) return true;
-            const ext = name.split('.').pop();
-            return EDITABLE_EXTENSIONS.has(ext);
-        }
-
-        function getFileType(filename) {
-            if (!filename) return 'plaintext';
-            const ext = filename.split('.').pop().toLowerCase();
-            const typeMap = {
-                'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'sh': 'shell',
-                'bash': 'shell', 'zsh': 'shell', 'json': 'json', 'xml': 'xml',
-                'html': 'html', 'htm': 'html', 'css': 'css', 'md': 'markdown',
-                'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml', 'ini': 'ini',
-                'conf': 'config', 'cfg': 'config', 'c': 'c', 'cpp': 'c++',
-                'h': 'c-header', 'java': 'java', 'go': 'go', 'rs': 'rust',
-                'rb': 'ruby', 'php': 'php', 'lua': 'lua', 'sql': 'sql',
-                'log': 'log', 'txt': 'plaintext'
-            };
-            return typeMap[ext] || 'plaintext';
-        }
-
         function toggleEditor() {
             if (isEditorActive) {
+                // Switch to preview (readonly) mode
                 exitEditor();
             } else {
+                // Switch to edit mode
                 enterEditor();
             }
         }
@@ -3736,21 +3871,20 @@
                 return;
             }
 
-            isEditorActive = true;
-            isEditorModified = false;
-
             // 获取当前预览内容作为编辑器初始内容
             const previewContent = document.getElementById('previewContent');
-            let content = '';
+            let content = editorOriginalContent;
+            
             if (previewContent) {
-                const codeEl = previewContent.querySelector('code');
-                if (codeEl) {
-                    content = codeEl.textContent;
+                // Try to get content from textarea first
+                const textarea = document.getElementById('editorTextarea');
+                if (textarea) {
+                    content = textarea.value;
                 } else if (previewContent.tagName === 'DIV' && !previewContent.classList.contains('image')) {
                     content = previewContent.textContent;
                 }
             }
-
+            
             // 创建新的标签页
             const newTab = {
                 path: tabPath,
@@ -3766,34 +3900,18 @@
                 cursorEnd: 0
             };
             openEditorTabs.set(tabPath, newTab);
-
+            
             editorOriginalContent = content;
             editorLastSavedContent = content;
             editorUndoStack = [];
             editorRedoStack = [];
             activeEditorTabPath = tabPath;
-
-            // 切换 UI
-            document.getElementById('previewContent').style.display = 'none';
-            document.getElementById('fileEditorContainer').style.display = 'flex';
-            document.getElementById('btnEditFile').style.display = 'none';
-            document.getElementById('btnSaveFile').style.display = 'inline-flex';
-            document.getElementById('btnCancelEdit').style.display = 'inline-flex';
-            document.getElementById('editorModifiedBadge').style.display = 'none';
-
-            // 设置编辑器内容
-            const textarea = document.getElementById('editorTextarea');
-            textarea.value = content;
-            textarea.focus();
-
-            // 更新文件类型显示
-            document.getElementById('editorFileType').textContent = getFileType(editorCurrentFile.name);
-
-            // 渲染行号和标签栏
-            updateLineNumbers();
-            updateEditorCursorInfo();
+            
+            // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
+            displayEditorContent(editorContent, false);  // false = editable mode
+            
             renderEditorTabs();
-
+            
             showToast('已进入编辑模式', 'info');
         }
 
@@ -3847,29 +3965,8 @@
             isEditorModified = newTab.modified;
             editorCurrentFile = { path: newTab.path, name: newTab.name, size: newTab.size };
 
-            // 设置编辑器内容
-            const textarea = document.getElementById('editorTextarea');
-            textarea.value = newTab.content;
-            textarea.scrollTop = newTab.scrollTop;
-            textarea.selectionStart = newTab.cursorStart;
-            textarea.selectionEnd = newTab.cursorEnd;
-
-            // 更新 UI
-            const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
-            document.getElementById('editorFileType').textContent = getFileType(newTab.name);
-            document.getElementById('previewFilename').textContent = newTab.name;
-            document.getElementById('previewFilesize').textContent = formatBytes(newTab.size);
-
-            // 渲染行号和标签
-            updateLineNumbers();
-            updateEditorCursorInfo();
-            renderEditorTabs();
-
-            // 更新语法高亮
-            if (syntaxHighlightEnabled) {
-                highlightSyntax();
-            }
+            // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
+            displayEditorContent(newTab.content, false);  // false = editable mode
         }
 
         function closeEditorTab(path) {
@@ -3916,30 +4013,14 @@
         function exitEditor() {
             isEditorActive = false;
             isEditorModified = false;
-
-            document.getElementById('previewContent').style.display = 'block';
-            const editorContainer = document.getElementById('fileEditorContainer');
-            if (editorContainer) editorContainer.style.display = 'none';
-
-            const btnEdit = document.getElementById('btnEditFile');
-            if (btnEdit) btnEdit.style.display = 'inline-flex';
-            const btnSave = document.getElementById('btnSaveFile');
-            if (btnSave) btnSave.style.display = 'none';
-            const btnCancel = document.getElementById('btnCancelEdit');
-            if (btnCancel) btnCancel.style.display = 'none';
-            const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = 'none';
-
-            closeFindBar();
-
-            // 清除语法高亮
-            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
-            if (highlightBackdrop) {
-                highlightBackdrop.innerHTML = '';
-                highlightBackdrop.textContent = textarea.value || '';
+            
+            // Switch to preview (readonly) mode
+            const textarea = document.getElementById('editorTextarea');
+            if (textarea) {
+                displayEditorContent(textarea.value, true);  // true = readonly
             }
         }
-
+        
         function cancelEdit() {
             if (isEditorModified) {
                 if (!confirm('放弃所有修改？')) return;
@@ -3969,7 +4050,7 @@
             updateLineNumbers();
 
             // 如果启用语法高亮，应用高亮
-            if (syntaxHighlightEnabled && isEditorActive) {
+            if (syntaxHighlightEnabled) {
                 highlightSyntax();
             }
 
@@ -3991,7 +4072,7 @@
             const textarea = document.getElementById('editorTextarea');
             const lineNumbers = document.getElementById('editorLineNumbers');
             if (!textarea || !lineNumbers) return;
-
+            
             const lines = textarea.value.split('\n');
             const count = lines.length;
             let html = '';
@@ -3999,13 +4080,26 @@
                 html += i + '\n';
             }
             lineNumbers.textContent = html;
+            
+            // 确保行号与 textarea 使用相同的行高设置
+            // 13px * 1.6 = 20.8px
+            const lineHeight = 20.8;
+            lineNumbers.style.lineHeight = lineHeight + 'px';
         }
 
         function syncEditorScroll() {
             const textarea = document.getElementById('editorTextarea');
             const lineNumbers = document.getElementById('editorLineNumbers');
+            
+            // Sync line numbers scroll
             if (textarea && lineNumbers) {
                 lineNumbers.scrollTop = textarea.scrollTop;
+            }
+            
+            // Sync highlight backdrop content (not scroll - it's absolute)
+            if (textarea && syntaxHighlightEnabled && isEditorActive) {
+                // Apply syntax highlighting
+                highlightSyntax();
             }
         }
 
@@ -4359,6 +4453,9 @@
             }
             showToast(syntaxHighlightEnabled ? '语法高亮: 开' : '语法高亮: 关', 'info');
             
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+            
             if (syntaxHighlightEnabled && isEditorActive) {
                 highlightSyntax();
             } else {
@@ -4373,6 +4470,26 @@
         // ============================================
         // Syntax Highlighting - 语法高亮
         // ============================================
+        
+        // Apply syntax highlighting to content (for preview mode)
+        function applySyntaxHighlight(content, ext) {
+            const fileType = getFileType(ext ? ('file.' + ext) : '');
+            let patterns = SYNTAX_PATTERNS[fileType] || [];
+            
+            // 处理特殊字符
+            let html = escapeHtml(content);
+            
+            // 应用语法高亮模式
+            let highlighted = html;
+            patterns.forEach(pattern => {
+                highlighted = highlighted.replace(pattern.regex, (match) => {
+                    return `<span class="${pattern.class}">${match}</span>`;
+                });
+            });
+            
+            return highlighted;
+        }
+        
         const SYNTAX_PATTERNS = {
             javascript: [
                 { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
@@ -4474,6 +4591,22 @@
             ],
         };
 
+        function getFileType(filename) {
+            if (!filename) return 'plaintext';
+            const ext = filename.split('.').pop().toLowerCase();
+            const typeMap = {
+                'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'sh': 'shell',
+                'bash': 'shell', 'zsh': 'shell', 'json': 'json', 'xml': 'xml',
+                'html': 'html', 'htm': 'html', 'css': 'css', 'md': 'markdown',
+                'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml', 'ini': 'ini',
+                'conf': 'config', 'cfg': 'config', 'c': 'c', 'cpp': 'c++',
+                'h': 'c-header', 'java': 'java', 'go': 'go', 'rs': 'rust',
+                'rb': 'ruby', 'php': 'php', 'lua': 'lua', 'sql': 'sql',
+                'log': 'log', 'txt': 'plaintext'
+            };
+            return typeMap[ext] || 'plaintext';
+        }
+
         function highlightSyntax() {
             const textarea = document.getElementById('editorTextarea');
             const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
@@ -4490,11 +4623,18 @@
             
             // 应用语法高亮模式（注意：避免重复高亮）
             let highlighted = html;
-            patterns.forEach(pattern => {
-                highlighted = highlighted.replace(pattern.regex, (match) => {
-                    return `<span class="${pattern.class}">${match}</span>`;
+            // 限制正则表达式处理，避免栈溢出
+            if (patterns.length > 0 && content.length < 100000) {
+                patterns.forEach(pattern => {
+                    try {
+                        highlighted = highlighted.replace(pattern.regex, (match) => {
+                            return `<span class="${pattern.class}">${match}</span>`;
+                        });
+                    } catch (e) {
+                        console.warn('Syntax highlighting error for pattern:', pattern.class, e);
+                    }
                 });
-            });
+            }
 
             highlightBackdrop.innerHTML = highlighted;
             

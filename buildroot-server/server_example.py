@@ -778,6 +778,10 @@ class MessageHandler:
             await handlers[msg_type](device_id, json_data)
         elif msg_type == MessageType.FILE_DATA:
             logger.info(f"收到文件数据 [{device_id}]: {json_data}")
+            # Forward FILE_DATA messages to web consoles
+            await self.broadcast_to_web_consoles(
+                MessageType.FILE_DATA, {"device_id": device_id, **json_data}
+            )
         elif msg_type == MessageType.FILE_LIST_RESPONSE:
             await self.broadcast_to_web_consoles(
                 MessageType.FILE_LIST_RESPONSE, {"device_id": device_id, **json_data}

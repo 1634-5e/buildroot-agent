@@ -156,6 +156,7 @@ int log_watch_start(agent_context_t *ctx, const char *filepath);
 void log_watch_stop(agent_context_t *ctx, const char *filepath);
 void log_watch_stop_all(void);
 int log_list_files(agent_context_t *ctx, const char *filepath);
+int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length);
 
 /* agent_script.c */
 int script_save(const char *script_id, const char *content, const char *path);
