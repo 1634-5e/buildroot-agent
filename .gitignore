@@ -3,3 +3,4 @@ bin
 .vscode
 buildroot-package
 __pycache__
+package
