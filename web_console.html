@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buildroot Agent 控制台</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- xterm.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-search@0.15.0/lib/addon-search.min.js"></script>
     <style>
         :root {
             --bg-primary: #0d0d12;
@@ -406,7 +412,7 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            background: var(--bg-tertiary);
+            background: #0d0d12;
             border-radius: var(--radius-lg);
             border: 1px solid var(--border-color);
             overflow: hidden;
@@ -416,9 +422,10 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 16px;
+            padding: 8px 16px;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
 
         .terminal-info {
@@ -459,42 +466,122 @@
             color: var(--text-primary);
         }
 
-        .terminal-output {
-            flex: 1;
-            padding: 16px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            line-height: 1.6;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-all;
-            background: var(--bg-primary);
+        .terminal-btn.active {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--accent-primary);
+            border-color: var(--accent-primary);
         }
 
-        .terminal-input-line {
+        .terminal-xterm-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .terminal-xterm-wrapper .xterm {
+            height: 100%;
+            padding: 8px 0 8px 8px;
+        }
+
+        .terminal-xterm-wrapper .xterm-viewport {
+            overflow-y: auto !important;
+        }
+
+        .terminal-xterm-wrapper .xterm-viewport::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal-xterm-wrapper .xterm-viewport::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .terminal-xterm-wrapper .xterm-viewport::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        .terminal-xterm-wrapper .xterm-viewport::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .terminal-status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+        }
+
+        .terminal-status-left {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px 16px;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border-color);
         }
 
-        .terminal-prompt {
-            color: var(--accent-success);
-            font-weight: 600;
-            white-space: nowrap;
-            font-family: 'JetBrains Mono', monospace;
+        .terminal-status-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
-        .terminal-input {
+        .terminal-status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .terminal-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .terminal-status-dot.connected {
+            background: var(--accent-success);
+            box-shadow: 0 0 6px var(--accent-success);
+        }
+
+        .terminal-search-bar {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .terminal-search-bar.visible {
+            display: flex;
+        }
+
+        .terminal-search-bar input {
             flex: 1;
-            background: transparent;
-            border: none;
-            outline: none;
+            max-width: 300px;
+            padding: 4px 10px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .terminal-search-bar input:focus {
+            border-color: var(--accent-primary);
+        }
+
+        .terminal-search-count {
+            font-size: 11px;
+            color: var(--text-muted);
+            min-width: 60px;
         }
 
         /* Files - VSCode Style (Two Column) */
@@ -744,6 +831,333 @@
             font-style: italic;
         }
 
+        /* File Editor */
+        .editor-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-warning);
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .file-editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-primary);
+        }
+
+        .editor-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .editor-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .editor-separator {
+            color: var(--border-color);
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .editor-find-bar {
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .editor-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .editor-line-numbers {
+            width: 48px;
+            padding: 12px 8px 12px 0;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            text-align: right;
+            overflow: hidden;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .editor-textarea {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--bg-primary);
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            resize: none;
+            tab-size: 4;
+            white-space: pre;
+            overflow: auto;
+        }
+
+        .editor-textarea:focus {
+            background: var(--bg-primary);
+        }
+
+        .editor-textarea.wrap {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        /* Editor Tabs - 多标签编辑 */
+        .editor-tabs-bar {
+            display: flex;
+            align-items: center;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+            scrollbar-width: none;
+            min-height: 36px;
+        }
+        .editor-tabs-bar::-webkit-scrollbar { display: none; }
+
+        .editor-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-right: 1px solid var(--border-color);
+            white-space: nowrap;
+            transition: all var(--transition);
+            position: relative;
+            user-select: none;
+            min-width: 0;
+            max-width: 180px;
+        }
+        .editor-tab:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+        .editor-tab.active {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--accent-primary);
+        }
+        .editor-tab .tab-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .editor-tab .tab-modified {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-warning);
+            flex-shrink: 0;
+        }
+        .editor-tab .tab-close {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 14px;
+            opacity: 0;
+            transition: all var(--transition);
+            flex-shrink: 0;
+        }
+        .editor-tab:hover .tab-close,
+        .editor-tab.active .tab-close {
+            opacity: 0.6;
+        }
+        .editor-tab .tab-close:hover {
+            opacity: 1;
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-error);
+        }
+
+        /* Syntax Highlight Overlay */
+        .editor-highlight-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+        .editor-highlight-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 12px 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre;
+            overflow: hidden;
+            pointer-events: none;
+            color: transparent;
+            tab-size: 4;
+        }
+        .editor-highlight-backdrop.wrap {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        /* Syntax token colors */
+        .syn-keyword { color: #c678dd; }
+        .syn-string { color: #98c379; }
+        .syn-number { color: #d19a66; }
+        .syn-comment { color: #5c6370; font-style: italic; }
+        .syn-function { color: #61afef; }
+        .syn-operator { color: #56b6c2; }
+        .syn-type { color: #e5c07b; }
+        .syn-variable { color: #e06c75; }
+        .syn-tag { color: #e06c75; }
+        .syn-attr { color: #d19a66; }
+        .syn-punctuation { color: #abb2bf; }
+        .syn-builtin { color: #56b6c2; }
+        .syn-regex { color: #98c379; }
+        .syn-decorator { color: #d19a66; }
+
+        /* New File Dialog */
+        .new-file-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            min-width: 400px;
+            z-index: 10001;
+            box-shadow: var(--shadow-lg);
+        }
+        .new-file-dialog h3 {
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+        .new-file-dialog input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+            margin-bottom: 12px;
+        }
+        .new-file-dialog input:focus {
+            border-color: var(--accent-primary);
+        }
+        .new-file-dialog .dialog-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .new-file-dialog .dialog-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        /* Command Palette - 快捷键面板 */
+        .command-palette-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10002;
+            display: none;
+        }
+        .command-palette-overlay.active {
+            display: flex;
+            justify-content: center;
+            padding-top: 20vh;
+        }
+        .command-palette {
+            width: 520px;
+            max-height: 400px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .command-palette input {
+            width: 100%;
+            padding: 14px 18px;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-size: 15px;
+            outline: none;
+        }
+        .command-palette-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px;
+        }
+        .command-palette-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: all var(--transition);
+        }
+        .command-palette-item:hover,
+        .command-palette-item.selected {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--text-primary);
+        }
+        .command-palette-item .cmd-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .command-palette-item .cmd-shortcut {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-secondary);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
         .file-browser-toolbar {
             display: flex;
             align-items: center;
@@ -912,19 +1326,70 @@
             font-weight: 500;
         }
 
-        /* Process Table */
+        /* Process Table - Enhanced */
+        .process-section {
+            margin-top: 24px;
+        }
+
+        .process-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            border-bottom: none;
+        }
+
+        .process-toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .process-toolbar-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .process-count-badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--accent-primary);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .process-search {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            width: 200px;
+            outline: none;
+            transition: border-color var(--transition);
+        }
+
+        .process-search:focus {
+            border-color: var(--accent-primary);
+        }
+
         .process-table {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg);
+            border-radius: 0 0 var(--radius-lg) var(--radius-lg);
             overflow: hidden;
         }
 
         .process-table-header {
             display: grid;
-            grid-template-columns: 60px 1fr 100px 100px 80px;
-            gap: 12px;
-            padding: 12px 16px;
+            grid-template-columns: 65px 1fr 90px 90px 70px 80px;
+            gap: 8px;
+            padding: 10px 16px;
             background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
             font-size: 12px;
@@ -934,14 +1399,63 @@
             letter-spacing: 0.5px;
         }
 
+        .process-table-header span {
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: color var(--transition);
+        }
+
+        .process-table-header span:hover {
+            color: var(--accent-primary);
+        }
+
+        .process-table-header span.sort-active {
+            color: var(--accent-primary);
+        }
+
+        .process-sort-icon {
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        .process-sort-icon.active {
+            opacity: 1;
+        }
+
+        .process-list-body {
+            max-height: 520px;
+            overflow-y: auto;
+        }
+
+        .process-list-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .process-list-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .process-list-body::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
         .process-row {
             display: grid;
-            grid-template-columns: 60px 1fr 100px 100px 80px;
-            gap: 12px;
-            padding: 10px 16px;
+            grid-template-columns: 65px 1fr 90px 90px 70px 80px;
+            gap: 8px;
+            padding: 8px 16px;
             border-bottom: 1px solid var(--border-color);
             font-size: 13px;
             transition: background var(--transition);
+            align-items: center;
+        }
+
+        .process-row:last-child {
+            border-bottom: none;
         }
 
         .process-row:hover {
@@ -951,15 +1465,97 @@
         .process-pid {
             color: var(--text-muted);
             font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
         }
 
         .process-name {
             color: var(--text-primary);
             font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .process-cpu, .process-mem {
-            color: var(--accent-primary);
+        .process-state {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .process-state-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .process-state-dot.state-R { background: #22c55e; }
+        .process-state-dot.state-S { background: #3b82f6; }
+        .process-state-dot.state-D { background: #f59e0b; }
+        .process-state-dot.state-Z { background: #ef4444; }
+        .process-state-dot.state-T { background: #6b7280; }
+
+        .process-state-text {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .process-metric-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .process-metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+
+        .process-metric-bar {
+            height: 3px;
+            border-radius: 2px;
+            background: var(--bg-tertiary);
+            overflow: hidden;
+        }
+
+        .process-metric-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        .process-metric-bar-fill.cpu-bar { background: var(--accent-primary); }
+        .process-metric-bar-fill.cpu-bar.high { background: #ef4444; }
+        .process-metric-bar-fill.cpu-bar.medium { background: #f59e0b; }
+        .process-metric-bar-fill.mem-bar { background: #8b5cf6; }
+        .process-metric-bar-fill.mem-bar.high { background: #ef4444; }
+
+        .process-time {
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .process-empty {
+            padding: 48px 20px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .process-empty-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+
+        .process-empty-text {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .process-empty-hint {
+            font-size: 12px;
+            opacity: 0.7;
         }
 
         /* Scripts */
@@ -1275,20 +1871,35 @@
                         <div class="terminal-container">
                             <div class="terminal-toolbar">
                                 <div class="terminal-info">
-                                    <span class="terminal-shell">bash</span>
+                                    <span class="terminal-shell" id="terminalShell">bash</span>
                                     <span style="color: var(--text-muted);">•</span>
                                     <span class="terminal-path" id="terminalPath">/root</span>
                                 </div>
                                 <div class="terminal-controls">
+                                    <button class="terminal-btn" onclick="terminalSearchToggle()" title="搜索 (Ctrl+Shift+F)">🔍</button>
                                     <button class="terminal-btn" onclick="clearTerminal()">清空</button>
                                     <button class="terminal-btn" onclick="reconnectTerminal()">重连</button>
                                 </div>
                             </div>
-                            <div class="terminal-output" id="terminalOutput"></div>
-                            <div class="terminal-input-line">
-                                <span class="terminal-prompt" id="terminalPrompt">#</span>
-                                <input type="text" class="terminal-input" id="terminalInput" 
-                                       placeholder="输入命令..." onkeydown="handleTerminalInput(event)">
+                            <div class="terminal-search-bar" id="terminalSearchBar">
+                                <input type="text" id="terminalSearchInput" placeholder="搜索终端内容..." 
+                                       oninput="terminalSearchNext()" onkeydown="handleTerminalSearchKey(event)">
+                                <span class="terminal-search-count" id="terminalSearchCount"></span>
+                                <button class="terminal-btn" onclick="terminalSearchPrev()" style="padding: 3px 8px;">▲</button>
+                                <button class="terminal-btn" onclick="terminalSearchNext()" style="padding: 3px 8px;">▼</button>
+                                <button class="terminal-btn" onclick="terminalSearchToggle()" style="padding: 3px 8px;">✕</button>
+                            </div>
+                            <div class="terminal-xterm-wrapper" id="terminalXtermWrapper"></div>
+                            <div class="terminal-status-bar">
+                                <div class="terminal-status-left">
+                                    <span class="terminal-status-indicator">
+                                        <span class="terminal-status-dot" id="terminalStatusDot"></span>
+                                        <span id="terminalStatusText">未连接</span>
+                                    </span>
+                                </div>
+                                <div class="terminal-status-right">
+                                    <span id="terminalSize">--</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1301,6 +1912,7 @@
                                 <div class="file-sidebar-header">
                                     <span>资源管理器</span>
                                     <div class="file-sidebar-actions">
+                                        <button class="btn btn-icon" onclick="showNewFileDialog()" title="新建文件">📝</button>
                                         <button class="btn btn-icon" onclick="uploadFile()" title="上传文件">📤</button>
                                         <button class="btn btn-icon" onclick="downloadSelectedFiles()" title="下载选中">⬇️</button>
                                         <button class="btn btn-icon" onclick="collapseAllFolders()" title="全部折叠">📁</button>
@@ -1330,14 +1942,68 @@
                                         <div class="file-preview-title">
                                             <span id="previewFilename">文件名</span>
                                             <span class="file-preview-size" id="previewFilesize">--</span>
+                                            <span class="editor-badge" id="editorModifiedBadge" style="display: none;">已修改</span>
                                         </div>
                                         <div class="file-preview-actions">
+                                            <button class="btn btn-sm" id="btnEditFile" onclick="toggleEditor()" title="编辑文件">✏️ 编辑</button>
+                                            <button class="btn btn-sm btn-primary" id="btnSaveFile" onclick="saveFileToDevice()" style="display: none;">💾 保存</button>
+                                            <button class="btn btn-sm" id="btnCancelEdit" onclick="cancelEdit()" style="display: none;">取消</button>
                                             <button class="btn btn-sm" onclick="downloadSelectedFile()">⬇️ 下载</button>
                                             <button class="btn btn-sm" onclick="closePreview()">✕</button>
                                         </div>
                                     </div>
+                                    <!-- 预览模式 -->
                                     <div class="file-preview-content" id="previewContent">
                                         <!-- File content will be displayed here -->
+                                    </div>
+                                    <!-- 编辑模式 -->
+                                    <div class="file-editor-container" id="fileEditorContainer" style="display: none;">
+                                        <!-- 多标签栏 -->
+                                        <div class="editor-tabs-bar" id="editorTabsBar">
+                                            <!-- 动态生成的标签 -->
+                                        </div>
+                                        <div class="editor-toolbar">
+                                            <div class="editor-info">
+                                                <span id="editorLineInfo">行 1, 列 1</span>
+                                                <span class="editor-separator">|</span>
+                                                <span id="editorEncoding">UTF-8</span>
+                                                <span class="editor-separator">|</span>
+                                                <span id="editorFileType">plaintext</span>
+                                            </div>
+                                            <div class="editor-actions">
+                                                <button class="terminal-btn" onclick="editorUndo()" title="撤销 (Ctrl+Z)">↩️</button>
+                                                <button class="terminal-btn" onclick="editorRedo()" title="重做 (Ctrl+Y)">↪️</button>
+                                                <button class="terminal-btn" onclick="editorFind()" title="查找 (Ctrl+F)">🔍</button>
+                                                <button class="terminal-btn" onclick="editorWrapToggle()" title="切换自动换行">↔️</button>
+                                                <button class="terminal-btn" onclick="toggleSyntaxHighlight()" title="切换语法高亮" id="btnSyntaxHighlight">🎨</button>
+                                                <button class="terminal-btn" onclick="showCommandPalette()" title="命令面板 (Ctrl+Shift+P)">⌨️</button>
+                                            </div>
+                                        </div>
+                                        <!-- 查找替换栏 -->
+                                        <div class="editor-find-bar" id="editorFindBar" style="display: none;">
+                                            <div style="display: flex; gap: 8px; align-items: center; flex: 1;">
+                                                <input type="text" id="editorFindInput" placeholder="查找..." 
+                                                       oninput="editorFindNext(false)" onkeydown="if(event.key==='Enter'){event.preventDefault();editorFindNext(true);}"
+                                                       style="flex: 1; padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
+                                                <input type="text" id="editorReplaceInput" placeholder="替换..." 
+                                                       style="flex: 1; padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
+                                                <button class="terminal-btn" onclick="editorReplace()" title="替换">替换</button>
+                                                <button class="terminal-btn" onclick="editorReplaceAll()" title="全部替换">全部</button>
+                                                <span id="editorFindCount" style="font-size: 12px; color: var(--text-muted); min-width: 60px;">0 个结果</span>
+                                                <button class="terminal-btn" onclick="closeFindBar()" style="padding: 4px 8px;">✕</button>
+                                            </div>
+                                        </div>
+                                        <div class="editor-wrapper">
+                                            <div class="editor-line-numbers" id="editorLineNumbers"></div>
+                                            <div class="editor-highlight-wrapper">
+                                                <div class="editor-highlight-backdrop" id="editorHighlightBackdrop"></div>
+                                                <textarea class="editor-textarea" id="editorTextarea" 
+                                                          spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
+                                                          oninput="onEditorInput()" onscroll="syncEditorScroll()" 
+                                                          onkeydown="handleEditorKeydown(event)"
+                                                          onclick="updateEditorCursorInfo()" onkeyup="updateEditorCursorInfo()"></textarea>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1474,17 +2140,29 @@
                         </div>
 
                         <!-- Process List -->
-                        <div class="process-table" style="margin-top: 24px;">
-                            <div class="process-table-header">
-                                <span>PID</span>
-                                <span>进程名</span>
-                                <span>CPU</span>
-                                <span>内存</span>
-                                <span>时间</span>
+                        <div class="process-section">
+                            <div class="process-toolbar">
+                                <div class="process-toolbar-left">
+                                    <span class="process-toolbar-title">📋 进程列表</span>
+                                    <span class="process-count-badge" id="processCountBadge">0</span>
+                                </div>
+                                <input type="text" class="process-search" id="processSearch" placeholder="🔍 搜索进程名或PID..." oninput="filterProcessList()">
                             </div>
-                            <div id="processList">
-                                <div style="padding: 40px; text-align: center; color: var(--text-muted);">
-                                    暂无进程数据
+                            <div class="process-table">
+                                <div class="process-table-header">
+                                    <span onclick="sortProcesses('pid')" id="sortPid">PID <span class="process-sort-icon" id="sortIconPid">↕</span></span>
+                                    <span onclick="sortProcesses('name')" id="sortName">进程名 <span class="process-sort-icon" id="sortIconName">↕</span></span>
+                                    <span onclick="sortProcesses('cpu')" id="sortCpu" class="sort-active">CPU <span class="process-sort-icon active" id="sortIconCpu">↓</span></span>
+                                    <span onclick="sortProcesses('mem')" id="sortMem">内存 <span class="process-sort-icon" id="sortIconMem">↕</span></span>
+                                    <span onclick="sortProcesses('state')" id="sortState">状态</span>
+                                    <span>时间</span>
+                                </div>
+                                <div class="process-list-body" id="processList">
+                                    <div class="process-empty">
+                                        <div class="process-empty-icon">📊</div>
+                                        <div class="process-empty-text">等待进程数据</div>
+                                        <div class="process-empty-hint">设备连接后将自动采集进程信息</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1508,6 +2186,31 @@
         </main>
     </div>
 
+    <!-- Command Palette -->
+    <div class="command-palette-overlay" id="commandPaletteOverlay" onclick="if(event.target===this)closeCommandPalette()">
+        <div class="command-palette">
+            <input type="text" id="commandPaletteInput" placeholder="输入命令..." 
+                   oninput="filterCommands()" onkeydown="handleCommandPaletteKey(event)">
+            <div class="command-palette-list" id="commandPaletteList">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- New File Dialog -->
+    <div class="modal-overlay" id="newFileDialog" style="display:none;" onclick="if(event.target===this)closeNewFileDialog()">
+        <div class="new-file-dialog">
+            <h3>📄 新建文件</h3>
+            <input type="text" id="newFilePath" placeholder="输入文件路径，如 /tmp/config.json" 
+                   onkeydown="if(event.key==='Enter')createNewFile()">
+            <div class="dialog-hint">文件将在设备上创建。支持输入完整路径，目录不存在会自动创建。</div>
+            <div class="dialog-actions">
+                <button class="btn btn-sm" onclick="closeNewFileDialog()">取消</button>
+                <button class="btn btn-sm btn-primary" onclick="createNewFile()">创建</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Script Output Modal -->
     <div class="modal-overlay" id="scriptModal">
         <div class="modal">
@@ -1526,6 +2229,57 @@
             <div class="modal-footer">
                 <button class="btn" onclick="closeModal()">关闭</button>
                 <button class="btn btn-primary" onclick="copyOutput()">📋 复制输出</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal" style="max-width: 520px;">
+            <div class="modal-header">
+                <div class="modal-title">⚙️ 设置</div>
+                <button class="modal-close" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">WebSocket 服务器地址</label>
+                    <input type="text" id="settingsWsUrl" placeholder="ws://192.168.1.100:8765" 
+                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none; font-family: 'JetBrains Mono', monospace;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">留空则自动检测（当前页面地址:8765）</div>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">认证 Token</label>
+                    <input type="text" id="settingsAuthToken" placeholder="your-auth-token" 
+                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none; font-family: 'JetBrains Mono', monospace;">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">最大重连次数</label>
+                        <input type="number" id="settingsMaxReconnect" min="1" max="50" value="10"
+                               style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">监控刷新间隔 (秒)</label>
+                        <input type="number" id="settingsRefreshInterval" min="1" max="60" value="5"
+                               style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
+                        <input type="checkbox" id="settingsAutoSelect" checked style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+                        自动选择第一个在线设备
+                    </label>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
+                        <input type="checkbox" id="settingsShowTimestamp" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+                        终端显示时间戳
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="resetSettings()">恢复默认</button>
+                <button class="btn btn-primary" onclick="saveSettings()">💾 保存设置</button>
             </div>
         </div>
     </div>
@@ -1551,6 +2305,14 @@
             DOWNLOAD_PACKAGE: 0x24,
             CMD_REQUEST: 0x30,
             CMD_RESPONSE: 0x31,
+            FILE_UPLOAD_START: 0x40,
+            FILE_UPLOAD_DATA: 0x41,
+            FILE_UPLOAD_ACK: 0x42,
+            FILE_UPLOAD_COMPLETE: 0x43,
+            FILE_DOWNLOAD_START: 0x44,
+            FILE_DOWNLOAD_DATA: 0x45,
+            FILE_DOWNLOAD_ACK: 0x46,
+            FILE_TRANSFER_STATUS: 0x47,
             DEVICE_LIST: 0x50
         };
 
@@ -1571,6 +2333,13 @@
         let initialReconnectDelay = 1000; // 1 second
         let maxReconnectDelay = 30000; // 30 seconds
         let messageQueue = [];
+
+        // xterm.js 终端实例
+        let term = null;
+        let fitAddon = null;
+        let searchAddon = null;
+        let webLinksAddon = null;
+        let terminalInitialized = false;
 
         // ============================================
         // Toast
@@ -1611,15 +2380,7 @@
                 ws = null;
             }
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            let wsUrl;
-            
-            if (window.location.hostname.includes('github.dev')) {
-                const wsHostname = window.location.hostname.replace(/-\d+(\.app\.github\.dev)$/, '-8765$1');
-                wsUrl = `${protocol}//${wsHostname}/`;
-            } else {
-                wsUrl = `${protocol}//${window.location.hostname}:8765`;
-            }
+            const wsUrl = getWsUrl();
             
             console.log('Connecting to WebSocket:', wsUrl);
             ws = new WebSocket(wsUrl);
@@ -1817,6 +2578,15 @@
                 case MSG_TYPES.DOWNLOAD_PACKAGE:
                     handleDownloadPackage(data);
                     break;
+                case MSG_TYPES.FILE_UPLOAD_ACK:
+                    handleFileUploadAck(data);
+                    break;
+                case MSG_TYPES.FILE_UPLOAD_COMPLETE:
+                    handleFileUploadComplete(data);
+                    break;
+                case MSG_TYPES.FILE_TRANSFER_STATUS:
+                    handleFileTransferStatus(data);
+                    break;
                 default:
                     console.log('Unknown message type:', type, data);
             }
@@ -1830,8 +2600,19 @@
             devices = Array.isArray(newDevices) ? newDevices : [];
             renderDeviceList();
             
-            // Auto-select first device if WebSocket is connected and no device is currently selected
-            if (devices.length > 0 && !currentDevice && isConnected && !isReconnecting) {
+            // 检查当前设备是否还在线
+            if (currentDevice) {
+                const stillOnline = devices.some(d => d.device_id === currentDevice.device_id);
+                if (!stillOnline) {
+                    showToast(`设备 ${currentDevice.device_id} 已离线`, 'warning');
+                    disconnectDevice();
+                }
+            }
+            
+            // 自动选择设备
+            const settings = loadSettings();
+            const autoSelect = settings.autoSelectDevice !== false;
+            if (autoSelect && devices.length > 0 && !currentDevice && isConnected && !isReconnecting) {
                 console.log('Auto-selecting first device:', devices[0].device_id);
                 setTimeout(() => selectDevice(devices[0].device_id), 100);
             }
@@ -1958,145 +2739,172 @@
         }
 
         // ============================================
-        // Terminal
+        // Terminal - xterm.js Implementation
         // ============================================
-         function connectTerminal() {
-             try {
-                 if (!currentDevice) {
-                     showToast('请先选择一个设备', 'warning');
-                     return;
-                 }
-                 
-                 // Close existing session if any
-                 if (ptySessionId) {
-                     try {
-                         sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
-                     } catch (e) {
-                         console.warn('Error closing existing PTY session:', e);
-                     }
-                     ptySessionId = null; // Clear old session ID
-                 }
-                 
-                 const newSessionId = Date.now();
-                 console.log('Creating PTY session:', newSessionId);
-                 
-                 // Clear terminal output before connecting
-                 clearTerminal();
-                 
-                 // Add connecting message to terminal
-                 appendTerminalOutput('正在连接终端...\n');
-                 
-                 // Set the session ID before sending the request
-                 ptySessionId = newSessionId;
-                 
-                 const success = sendMessage(MSG_TYPES.PTY_CREATE, {
-                     session_id: newSessionId,
-                     rows: 24,
-                     cols: 80
-                 });
-                 
-                 if (success) {
-                     // Set timeout for connection response
-                     setTimeout(() => {
-                         // Check if we received a response for this session
-                         const output = safeGetElement('terminalOutput');
-                         if (ptySessionId === newSessionId && output && !output.textContent.includes('终端已连接') && !output.textContent.includes('错误:')) {
-                             appendTerminalOutput('连接超时，请重试\n');
-                             showToast('终端连接超时，请重试', 'warning');
-                             // Clear the session ID if connection timed out
-                             if (ptySessionId === newSessionId) {
-                                 ptySessionId = null;
-                             }
-                         }
-                     }, 8000); // Increased timeout to 8 seconds
-                 } else {
-                     appendTerminalOutput('发送连接请求失败\n');
-                     showToast('发送终端连接请求失败', 'error');
-                     ptySessionId = null; // Clear session ID if send failed
-                 }
-             } catch (error) {
-                 console.error('Error in connectTerminal:', error);
-                 appendTerminalOutput(`连接失败: ${error.message}\n`);
-                 showToast(`终端连接出错: ${error.message}`, 'error');
-                 ptySessionId = null; // Ensure session ID is cleared on error
-             }
-         }
+        function initTerminal() {
+            if (terminalInitialized) return;
 
-        function reconnectTerminal() {
-            clearTerminal();
-            reconnectWebSocket();
+            const terminalContainer = document.getElementById('terminalXtermWrapper');
+            if (!terminalContainer) return;
+
+            // 1. Initialize xterm.js
+            term = new Terminal({
+                cursorBlink: true,
+                cursorStyle: 'bar',
+                fontSize: 14,
+                fontFamily: '"JetBrains Mono", "Cascadia Code", "Menlo", "Consolas", "Courier New", monospace',
+                theme: {
+                    background: '#0d0d12',
+                    foreground: '#f0f0f5',
+                    cursor: '#6366f1',
+                    selectionBackground: 'rgba(99, 102, 241, 0.3)',
+                    black: '#16161e',
+                    red: '#ef4444',
+                    green: '#10b981',
+                    yellow: '#f59e0b',
+                    blue: '#6366f1',
+                    magenta: '#8b5cf6',
+                    cyan: '#06b6d4',
+                    white: '#f0f0f5',
+                    brightBlack: '#6e6e80',
+                    brightRed: '#fca5a5',
+                    brightGreen: '#6ee7b7',
+                    brightYellow: '#fcd34d',
+                    brightBlue: '#a5b4fc',
+                    brightMagenta: '#c4b5fd',
+                    brightCyan: '#67e8f9',
+                    brightWhite: '#ffffff'
+                },
+                allowProposedApi: true,
+                convertEol: true // Convert \n to \r\n
+            });
+
+            // 2. Load Addons
+            fitAddon = new FitAddon.FitAddon();
+            searchAddon = new SearchAddon.SearchAddon();
+            webLinksAddon = new WebLinksAddon.WebLinksAddon();
+
+            term.loadAddon(fitAddon);
+            term.loadAddon(searchAddon);
+            term.loadAddon(webLinksAddon);
+
+            // 3. Open Terminal
+            term.open(terminalContainer);
+            fitAddon.fit();
+
+            // 4. Handle Input (Send to Backend)
+            term.onData(data => {
+                if (!ptySessionId) return;
+                // Encode data to base64 before sending
+                const base64Data = btoa(data);
+                sendMessage(MSG_TYPES.PTY_DATA, {
+                    session_id: ptySessionId,
+                    data: base64Data
+                });
+            });
+
+            // 5. Handle Resize
+            term.onResize(size => {
+                if (!ptySessionId) return;
+                sendMessage(MSG_TYPES.PTY_RESIZE, {
+                    session_id: ptySessionId,
+                    rows: size.rows,
+                    cols: size.cols
+                });
+                // Update status bar
+                const sizeEl = document.getElementById('terminalSize');
+                if (sizeEl) sizeEl.textContent = `${size.cols}x${size.rows}`;
+            });
+
+            // 6. Window Resize Observer
+            window.addEventListener('resize', () => {
+                if (currentTab === 'terminal') {
+                    fitAddon.fit();
+                }
+            });
+            
+            // Remove old input elements if they exist (cleanup)
+            const oldInput = document.getElementById('terminalInput');
+            if (oldInput) oldInput.style.display = 'none';
+
+            terminalInitialized = true;
+            term.writeln('\x1b[1;34mWelcome to Buildroot Agent Terminal\x1b[0m');
+            term.writeln('Initializing...');
         }
 
-        function reconnectWebSocket() {
-            // Reset reconnection state
-            isReconnecting = false;
-            reconnectAttempts = 0;
-            
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-            
-            showToast('手动重新连接...', 'info');
-            connectWebSocket();
-        }
+        function connectTerminal() {
+            try {
+                // Ensure terminal is initialized
+                if (!terminalInitialized) {
+                    initTerminal();
+                }
 
-         function processMessageQueue() {
-             if (messageQueue.length > 0) {
-                 console.log(`Processing ${messageQueue.length} queued messages`);
-                 const now = Date.now();
-                 const maxAge = 30000; // 30 seconds max age for queued messages
-                 
-                 // Filter out old messages
-                 const validMessages = messageQueue.filter(msg => 
-                     now - msg.timestamp < maxAge
-                 );
-                 
-                 if (validMessages.length !== messageQueue.length) {
-                     console.log(`Discarded ${messageQueue.length - validMessages.length} expired messages`);
-                 }
-                 
-                 messageQueue = [];
-                 
-                 // Process messages one by one with small delay to avoid overwhelming the connection
-                 validMessages.forEach((msg, index) => {
-                     setTimeout(() => {
-                         // Send the message directly without queueing again
-                         if (currentDevice && currentDevice.device_id) {
-                             msg.data.device_id = currentDevice.device_id;
-                         }
-                         
-                         try {
-                             const json = JSON.stringify(msg.data);
-                             const bytes = new TextEncoder().encode(json);
-                             const message = new Uint8Array(1 + bytes.length);
-                             message[0] = msg.type;
-                             message.set(bytes, 1);
-                             ws.send(message);
-                             console.log('Sent queued message:', msg.type, msg.data);
-                         } catch (error) {
-                             console.error('Error sending queued message:', error);
-                         }
-                     }, index * 10); // Small delay between messages to prevent overwhelming
-                 });
-             }
-         }
+                if (!currentDevice) {
+                    showToast('请先选择一个设备', 'warning');
+                    term.writeln('\x1b[1;33mPlease select a device first.\x1b[0m');
+                    return;
+                }
+                
+                // Close existing session if any
+                if (ptySessionId) {
+                    try {
+                        sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
+                    } catch (e) {
+                        console.warn('Error closing existing PTY session:', e);
+                    }
+                    ptySessionId = null;
+                }
+                
+                const newSessionId = Date.now();
+                console.log('Creating PTY session:', newSessionId);
+                
+                term.reset();
+                term.writeln(`\x1b[1;32mConnecting to ${currentDevice.name || currentDevice.device_id}...\x1b[0m`);
+                
+                // Set the session ID before sending the request
+                ptySessionId = newSessionId;
+                
+                // Calculate initial dimensions
+                const dims = fitAddon.proposeDimensions();
+                const rows = dims ? dims.rows : 24;
+                const cols = dims ? dims.cols : 80;
 
-        function stopAutoReconnect() {
-            isReconnecting = false;
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
+                const success = sendMessage(MSG_TYPES.PTY_CREATE, {
+                    session_id: newSessionId,
+                    rows: rows,
+                    cols: cols
+                });
+                
+                if (success) {
+                    updateTerminalStatus('connecting');
+                    // Set timeout for connection response
+                    setTimeout(() => {
+                        if (ptySessionId === newSessionId) {
+                            // Check status manually or just let the user know if it seems stuck
+                            // But usually handlePtyCreateResponse will handle it
+                        }
+                    }, 8000);
+                } else {
+                    term.writeln('\x1b[1;31mFailed to send connection request.\x1b[0m');
+                    showToast('发送终端连接请求失败', 'error');
+                    ptySessionId = null;
+                    updateTerminalStatus('disconnected');
+                }
+            } catch (error) {
+                console.error('Error in connectTerminal:', error);
+                if (term) term.writeln(`\r\n\x1b[1;31mConnection Error: ${error.message}\x1b[0m`);
+                showToast(`终端连接出错: ${error.message}`, 'error');
+                ptySessionId = null;
+                updateTerminalStatus('disconnected');
             }
-            showToast('已停止自动重连', 'info');
-            updateConnectionStatus(false);
         }
 
         function handleTerminalData(data) {
-            if (data.data) {
+            if (data.data && term) {
                 try {
+                    // Decode base64 from backend
                     const text = atob(data.data);
-                    appendTerminalOutput(text);
+                    term.write(text);
                 } catch (e) {
                     console.error('Error decoding terminal data:', e);
                 }
@@ -2106,47 +2914,23 @@
         function handlePtyCreateResponse(data) {
             console.log('PTY create response:', data);
             
-            // Check if this is a successful response
-            if (data.success === true) {
+            if (data.success === true || data.status === 'created' || data.status === 'success') {
                 showToast('终端连接成功', 'success');
-                appendTerminalOutput('终端已连接，可以开始输入命令...\n');
+                updateTerminalStatus('connected');
+                term.focus();
+                // Resize once connected to ensure sync
+                fitAddon.fit();
                 return;
             }
             
-            // Check if this is an explicit error response
-            if (data.success === false || data.error || data.message?.toLowerCase().includes('error')) {
+            // Error handling
+            if (data.success === false || data.error) {
                 const errorMsg = data.error || data.message || '终端连接失败';
-                console.error('PTY create failed:', errorMsg);
-                
-                // Provide more specific error messages based on error type
-                let userFriendlyMsg = errorMsg;
-                if (errorMsg.includes('timeout') || errorMsg.includes('超时')) {
-                    userFriendlyMsg = '连接超时，请重试';
-                } else if (errorMsg.includes('permission') || errorMsg.includes('权限')) {
-                    userFriendlyMsg = '权限不足，无法创建终端';
-                } else if (errorMsg.includes('not found') || errorMsg.includes('不存在')) {
-                    userFriendlyMsg = '终端服务不可用';
-                }
-                
-                showToast(`终端连接失败: ${userFriendlyMsg}`, 'error');
-                appendTerminalOutput(`错误: ${userFriendlyMsg}\n`);
-                return;
+                term.writeln(`\r\n\x1b[1;31mConnection Failed: ${errorMsg}\x1b[0m`);
+                showToast(`终端连接失败: ${errorMsg}`, 'error');
+                updateTerminalStatus('disconnected');
+                ptySessionId = null;
             }
-            
-            // Handle case where we get a response that indicates successful creation
-            // (e.g., response with status field or other positive indicators)
-            if (data.status === 'created' || data.status === 'success' || data.session_id) {
-                showToast('终端连接成功', 'success');
-                appendTerminalOutput('终端已连接，可以开始输入命令...\n');
-                return;
-            }
-            
-            // If we get here, it means we received a response that doesn't clearly indicate success or failure
-            // This could be a status update from the device rather than a response to our request
-            // In this case, assume success if no explicit error is present
-            console.log('Received PTY_CREATE message, assuming success (no explicit error)');
-            showToast('终端连接成功', 'success');
-            appendTerminalOutput('终端已连接，可以开始输入命令...\n');
         }
 
         function handlePtyClose(data) {
@@ -2154,69 +2938,180 @@
             const sessionId = data.session_id || data.id;
             
             if (ptySessionId && ptySessionId === sessionId) {
-                // This is our session being closed
                 ptySessionId = null;
-                appendTerminalOutput('终端会话已关闭\n');
+                term.writeln('\r\n\x1b[1;33mTerminal session closed.\x1b[0m');
                 showToast('终端会话已关闭', 'info');
+                updateTerminalStatus('disconnected');
             }
             
-            // Handle server-initiated close with error
             if (data.error || data.reason) {
                 const reason = data.error || data.reason;
-                appendTerminalOutput(`终端关闭: ${reason}\n`);
-                showToast(`终端关闭: ${reason}`, 'warning');
-            }
-        }
-
-        function handleTerminalInput(e) {
-            try {
-                if (e.key === 'Enter') {
-                    const input = safeGetElement('terminalInput');
-                    if (!input) return;
-                    
-                    const cmd = input.value;
-                    if (!cmd.trim()) return;
-                    
-                    input.value = '';
-                    appendTerminalOutput(`# ${cmd}\n`);
-                    
-                    if (ptySessionId) {
-                        try {
-                            const success = sendMessage(MSG_TYPES.PTY_DATA, {
-                                session_id: ptySessionId,
-                                data: btoa(cmd + '\n')
-                            });
-                            if (!success) {
-                                appendTerminalOutput('错误: 终端未连接，无法发送命令\n');
-                            }
-                        } catch (sendError) {
-                            console.error('Error sending terminal data:', sendError);
-                            appendTerminalOutput(`发送命令时出错: ${sendError.message}\n`);
-                        }
-                    } else {
-                        appendTerminalOutput('错误: 终端会话未建立\n');
-                        showToast('终端会话未建立，请先连接终端', 'warning');
-                    }
-                }
-            } catch (error) {
-                console.error('Error in handleTerminalInput:', error);
-                showToast(`处理终端输入时出错: ${error.message}`, 'error');
+                term.writeln(`\r\n\x1b[1;31mClosed: ${reason}\x1b[0m`);
             }
         }
 
         function appendTerminalOutput(text) {
-            const output = safeGetElement('terminalOutput');
-            if (output) {
-                output.textContent += text;
-                output.scrollTop = output.scrollHeight;
+            // 兼容层：将文本写入终端
+            if (term) {
+                term.write(text);
+            } else {
+                // 如果终端未初始化，暂时无法输出
+                console.warn('Terminal not initialized, cannot write:', text);
             }
         }
 
         function clearTerminal() {
-            const output = safeGetElement('terminalOutput');
-            if (output) {
-                output.textContent = '';
+            if (term) {
+                term.clear();
             }
+        }
+
+        function reconnectTerminal() {
+            if (term) term.clear();
+            reconnectWebSocket();
+        }
+
+        function updateTerminalStatus(status) {
+            const dot = document.getElementById('terminalStatusDot');
+            const text = document.getElementById('terminalStatusText');
+            if (!dot || !text) return;
+
+            if (status === 'connected') {
+                dot.className = 'terminal-status-dot connected';
+                text.textContent = '已连接';
+                text.style.color = 'var(--accent-success)';
+            } else if (status === 'connecting') {
+                dot.className = 'terminal-status-dot';
+                dot.style.background = 'var(--accent-warning)';
+                dot.style.boxShadow = '0 0 6px var(--accent-warning)';
+                text.textContent = '连接中...';
+                text.style.color = 'var(--accent-warning)';
+            } else {
+                dot.className = 'terminal-status-dot';
+                dot.style.background = 'var(--text-muted)';
+                dot.style.boxShadow = 'none';
+                text.textContent = '未连接';
+                text.style.color = 'var(--text-muted)';
+            }
+        }
+
+        // ============================================
+        // Terminal Search
+        // ============================================
+        function terminalSearchToggle() {
+            const bar = document.getElementById('terminalSearchBar');
+            const input = document.getElementById('terminalSearchInput');
+            if (bar) {
+                bar.classList.toggle('visible');
+                if (bar.classList.contains('visible') && input) {
+                    input.focus();
+                } else if (term) {
+                    searchAddon.clearDecoration();
+                    term.focus();
+                }
+            }
+        }
+
+        function terminalSearchNext() {
+            const input = document.getElementById('terminalSearchInput');
+            if (input && searchAddon) {
+                searchAddon.findNext(input.value, {
+                    decorations: {
+                        matchBackground: '#3d3d5c',
+                        matchBorder: '#6366f1',
+                        matchOverviewRuler: '#6366f1',
+                        activeMatchBackground: '#6366f1',
+                        activeMatchBorder: '#ffffff',
+                        activeMatchColorOverviewRuler: '#ffffff'
+                    }
+                });
+            }
+        }
+
+        function terminalSearchPrev() {
+            const input = document.getElementById('terminalSearchInput');
+            if (input && searchAddon) {
+                searchAddon.findPrevious(input.value, {
+                    decorations: {
+                        matchBackground: '#3d3d5c',
+                        matchBorder: '#6366f1',
+                        matchOverviewRuler: '#6366f1',
+                        activeMatchBackground: '#6366f1',
+                        activeMatchBorder: '#ffffff',
+                        activeMatchColorOverviewRuler: '#ffffff'
+                    }
+                });
+            }
+        }
+
+        function handleTerminalSearchKey(e) {
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    terminalSearchPrev();
+                } else {
+                    terminalSearchNext();
+                }
+            } else if (e.key === 'Escape') {
+                terminalSearchToggle();
+            }
+        }
+
+        // ============================================
+        // WebSocket Helpers (Preserved & Reorganized)
+        // ============================================
+        function reconnectWebSocket() {
+            isReconnecting = false;
+            reconnectAttempts = 0;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            showToast('手动重新连接...', 'info');
+            connectWebSocket();
+        }
+
+        function processMessageQueue() {
+            if (messageQueue.length > 0) {
+                console.log(`Processing ${messageQueue.length} queued messages`);
+                const now = Date.now();
+                const maxAge = 30000;
+                
+                const validMessages = messageQueue.filter(msg => now - msg.timestamp < maxAge);
+                
+                if (validMessages.length !== messageQueue.length) {
+                    console.log(`Discarded ${messageQueue.length - validMessages.length} expired messages`);
+                }
+                
+                messageQueue = [];
+                
+                validMessages.forEach((msg, index) => {
+                    setTimeout(() => {
+                        if (currentDevice && currentDevice.device_id) {
+                            msg.data.device_id = currentDevice.device_id;
+                        }
+                        try {
+                            const json = JSON.stringify(msg.data);
+                            const bytes = new TextEncoder().encode(json);
+                            const message = new Uint8Array(1 + bytes.length);
+                            message[0] = msg.type;
+                            message.set(bytes, 1);
+                            ws.send(message);
+                        } catch (error) {
+                            console.error('Error sending queued message:', error);
+                        }
+                    }, index * 10);
+                });
+            }
+        }
+
+        function stopAutoReconnect() {
+            isReconnecting = false;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            showToast('已停止自动重连', 'info');
+            updateConnectionStatus(false);
         }
 
         // ============================================
@@ -2593,6 +3488,16 @@
 
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
+
+            // 如果当前编辑器有未保存修改，提示确认
+            if (isEditorActive && isEditorModified) {
+                if (!confirm('当前文件已修改但未保存，确定切换？')) return;
+            }
+            // 退出编辑模式
+            if (isEditorActive) exitEditor();
+
+            // 设置当前编辑文件信息
+            editorCurrentFile = { path, name, size };
             
             const preview = safeGetElement('filePreview');
             const placeholder = safeGetElement('filePreviewPlaceholder');
@@ -2602,6 +3507,10 @@
             
             if (placeholder) placeholder.style.display = 'none';
             if (preview) preview.style.display = 'flex';
+
+            // 根据文件是否可编辑显示/隐藏编辑按钮
+            const btnEdit = document.getElementById('btnEditFile');
+            if (btnEdit) btnEdit.style.display = isFileEditable(name) ? 'inline-flex' : 'none';
             if (previewName) previewName.textContent = name;
             if (previewSize) previewSize.textContent = formatBytes(size);
             
@@ -2617,11 +3526,19 @@
             }
             
             if (imageExts.includes(ext)) {
-                // For images, try to display via download URL
+                // 图片预览
                 if (previewContent) {
                     previewContent.classList.add('image');
-                    previewContent.innerHTML = '<div style="color: var(--text-muted);">图片预览功能开发中</div>';
+                    previewContent.innerHTML = '<div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px;">\n                        <div style="font-size: 48px;">🖼️</div>\n                        <div>正在加载图片...</div>\n                        <button class="btn btn-sm" onclick="downloadSelectedFile()">⬇️ 下载图片</button>\n                    </div>';
                 }
+                
+                // 发送图片下载请求
+                pendingFilePreview = { path, name, ext };
+                sendMessage(MSG_TYPES.FILE_REQUEST, {
+                    action: 'download',
+                    filepath: path,
+                    request_id: 'preview-img-' + Date.now()
+                });
             } else if (textExts.includes(ext) || codeExts.includes(ext) || size < 51200) { // Text/code files or files < 50KB
                 // Request file content from server
                 if (previewContent) {
@@ -2676,16 +3593,24 @@
             
             if (data.content) {
                 try {
-                    // Decode base64 content
-                    const content = atob(data.content);
-                    
-                    // Apply syntax highlighting for code files
-                    const codeExts = ['js', 'py', 'sh', 'json', 'xml', 'html', 'css', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'php', 'rb', 'lua'];
-                    if (codeExts.includes(ext)) {
-                        previewContent.innerHTML = `<pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;"><code>${escapeHtml(content)}</code></pre>`;
+                    // 图片数据
+                    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+                    if (imageExts.includes(ext)) {
+                        const mimeType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
+                        const imgSrc = `data:${mimeType};base64,${data.content}`;
+                        previewContent.innerHTML = `<img src="${imgSrc}" alt="${name}" style="max-width: 100%; max-height: 100%; object-fit: contain;" onclick="window.open('${imgSrc}', '_blank')" title="点击打开大图">`;
                     } else {
-                        // Plain text
-                        previewContent.textContent = content;
+                        // Decode base64 content
+                        const content = atob(data.content);
+                        
+                        // Apply syntax highlighting for code files
+                        const codeExts = ['js', 'py', 'sh', 'json', 'xml', 'html', 'css', 'c', 'cpp', 'h', 'java', 'go', 'rs', 'php', 'rb', 'lua'];
+                        if (codeExts.includes(ext)) {
+                            previewContent.innerHTML = `<pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;"><code>${escapeHtml(content)}</code></pre>`;
+                        } else {
+                            // Plain text
+                            previewContent.textContent = content;
+                        }
                     }
                 } catch (e) {
                     console.error('Error decoding file content:', e);
@@ -2713,9 +3638,1165 @@
         }
 
         function closePreview() {
+            // 如果在编辑模式且有修改，提示确认
+            if (isEditorActive && isEditorModified) {
+                if (!confirm('文件已修改但未保存，确定关闭？')) return;
+            }
+            exitEditor();
             document.getElementById('filePreview').style.display = 'none';
             document.getElementById('filePreviewPlaceholder').style.display = 'flex';
-            // Don't clear selection, just close preview
+        }
+
+        // ============================================
+        // File Editor - 在线编辑器
+        // ============================================
+        let isEditorActive = false;
+        let isEditorModified = false;
+        let editorOriginalContent = '';
+        let editorCurrentFile = null; // { path, name, size }
+        let editorWordWrap = false;
+        let editorUndoStack = [];
+        let editorRedoStack = [];
+        let editorLastSavedContent = '';
+        let syntaxHighlightEnabled = true;
+
+        // 多标签编辑状态
+        // openEditorTabs: Map<path, { path, name, size, content, originalContent, modified, undoStack, redoStack, scrollTop, cursorStart, cursorEnd, lineCount }>
+        const openEditorTabs = new Map();
+        let activeEditorTabPath = null;
+        
+        // 当前活动标签页的编辑器内容
+        let currentEditorContent = '';
+
+        // 可编辑的文件扩展名
+        const EDITABLE_EXTENSIONS = new Set([
+            'txt', 'log', 'md', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts',
+            'py', 'sh', 'bash', 'zsh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml',
+            'properties', 'env', 'rc', 'profile',
+            'c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua',
+            'swift', 'kt', 'sql', 'makefile', 'dockerfile', 'cmake',
+            'service', 'timer', 'mount', 'rules', 'csv', 'tsv'
+        ]);
+
+        function isFileEditable(filename) {
+            if (!filename) return false;
+            const name = filename.toLowerCase();
+            // 无扩展名的常见可编辑文件
+            const editableNames = ['makefile', 'dockerfile', 'vagrantfile', 'gemfile', 'rakefile', '.gitignore', '.env', '.bashrc', '.profile', '.vimrc'];
+            if (editableNames.includes(name)) return true;
+            const ext = name.split('.').pop();
+            return EDITABLE_EXTENSIONS.has(ext);
+        }
+
+        function getFileType(filename) {
+            if (!filename) return 'plaintext';
+            const ext = filename.split('.').pop().toLowerCase();
+            const typeMap = {
+                'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'sh': 'shell',
+                'bash': 'shell', 'zsh': 'shell', 'json': 'json', 'xml': 'xml',
+                'html': 'html', 'htm': 'html', 'css': 'css', 'md': 'markdown',
+                'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml', 'ini': 'ini',
+                'conf': 'config', 'cfg': 'config', 'c': 'c', 'cpp': 'c++',
+                'h': 'c-header', 'java': 'java', 'go': 'go', 'rs': 'rust',
+                'rb': 'ruby', 'php': 'php', 'lua': 'lua', 'sql': 'sql',
+                'log': 'log', 'txt': 'plaintext'
+            };
+            return typeMap[ext] || 'plaintext';
+        }
+
+        function toggleEditor() {
+            if (isEditorActive) {
+                exitEditor();
+            } else {
+                enterEditor();
+            }
+        }
+
+        function enterEditor() {
+            if (!editorCurrentFile) {
+                showToast('没有打开的文件', 'warning');
+                return;
+            }
+
+            if (!isFileEditable(editorCurrentFile.name)) {
+                showToast('该文件类型不支持编辑', 'warning');
+                return;
+            }
+
+            // 文件大小限制 (编辑器限制 1MB)
+            if (editorCurrentFile.size > 1024 * 1024) {
+                showToast('文件过大，不支持在线编辑 (最大 1MB)', 'warning');
+                return;
+            }
+
+            // 检查是否已经在标签页中打开
+            const tabPath = editorCurrentFile.path;
+            if (openEditorTabs.has(tabPath)) {
+                switchToTab(tabPath);
+                return;
+            }
+
+            isEditorActive = true;
+            isEditorModified = false;
+
+            // 获取当前预览内容作为编辑器初始内容
+            const previewContent = document.getElementById('previewContent');
+            let content = '';
+            if (previewContent) {
+                const codeEl = previewContent.querySelector('code');
+                if (codeEl) {
+                    content = codeEl.textContent;
+                } else if (previewContent.tagName === 'DIV' && !previewContent.classList.contains('image')) {
+                    content = previewContent.textContent;
+                }
+            }
+
+            // 创建新的标签页
+            const newTab = {
+                path: tabPath,
+                name: editorCurrentFile.name,
+                size: editorCurrentFile.size,
+                content: content,
+                originalContent: content,
+                modified: false,
+                undoStack: [],
+                redoStack: [],
+                scrollTop: 0,
+                cursorStart: 0,
+                cursorEnd: 0
+            };
+            openEditorTabs.set(tabPath, newTab);
+
+            editorOriginalContent = content;
+            editorLastSavedContent = content;
+            editorUndoStack = [];
+            editorRedoStack = [];
+            activeEditorTabPath = tabPath;
+
+            // 切换 UI
+            document.getElementById('previewContent').style.display = 'none';
+            document.getElementById('fileEditorContainer').style.display = 'flex';
+            document.getElementById('btnEditFile').style.display = 'none';
+            document.getElementById('btnSaveFile').style.display = 'inline-flex';
+            document.getElementById('btnCancelEdit').style.display = 'inline-flex';
+            document.getElementById('editorModifiedBadge').style.display = 'none';
+
+            // 设置编辑器内容
+            const textarea = document.getElementById('editorTextarea');
+            textarea.value = content;
+            textarea.focus();
+
+            // 更新文件类型显示
+            document.getElementById('editorFileType').textContent = getFileType(editorCurrentFile.name);
+
+            // 渲染行号和标签栏
+            updateLineNumbers();
+            updateEditorCursorInfo();
+            renderEditorTabs();
+
+            showToast('已进入编辑模式', 'info');
+        }
+
+        // ============================================
+        // Multi-Tab Editing - 多标签编辑
+        // ============================================
+        function renderEditorTabs() {
+            const tabsBar = document.getElementById('editorTabsBar');
+            if (!tabsBar) return;
+
+            let html = '';
+            openEditorTabs.forEach((tab, path) => {
+                const isActive = path === activeEditorTabPath;
+                const icon = getFileIcon(tab.name);
+                const displayName = tab.name.length > 25 ? tab.name.substring(0, 22) + '...' : tab.name;
+                
+                html += `<div class="editor-tab ${isActive ? 'active' : ''}" data-path="${path}" onclick="switchToTab('${path}')">
+                    <span>${icon}</span>
+                    <span class="tab-name">${displayName}</span>
+                    ${tab.modified ? '<span class="tab-modified"></span>' : ''}
+                    <span class="tab-close" onclick="event.stopPropagation(); closeEditorTab('${path}')">×</span>
+                </div>`;
+            });
+
+            tabsBar.innerHTML = html;
+        }
+
+        function switchToTab(path) {
+            if (!openEditorTabs.has(path)) return;
+
+            // 保存当前标签页状态
+            if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
+                const currentTab = openEditorTabs.get(activeEditorTabPath);
+                const textarea = document.getElementById('editorTextarea');
+                if (textarea) {
+                    currentTab.content = textarea.value;
+                    currentTab.scrollTop = textarea.scrollTop;
+                    currentTab.cursorStart = textarea.selectionStart;
+                    currentTab.cursorEnd = textarea.selectionEnd;
+                }
+            }
+
+            // 切换到新标签页
+            activeEditorTabPath = path;
+            const newTab = openEditorTabs.get(path);
+
+            // 更新编辑器状态
+            editorOriginalContent = newTab.originalContent;
+            editorUndoStack = newTab.undoStack || [];
+            editorRedoStack = newTab.redoStack || [];
+            isEditorModified = newTab.modified;
+            editorCurrentFile = { path: newTab.path, name: newTab.name, size: newTab.size };
+
+            // 设置编辑器内容
+            const textarea = document.getElementById('editorTextarea');
+            textarea.value = newTab.content;
+            textarea.scrollTop = newTab.scrollTop;
+            textarea.selectionStart = newTab.cursorStart;
+            textarea.selectionEnd = newTab.cursorEnd;
+
+            // 更新 UI
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+            document.getElementById('editorFileType').textContent = getFileType(newTab.name);
+            document.getElementById('previewFilename').textContent = newTab.name;
+            document.getElementById('previewFilesize').textContent = formatBytes(newTab.size);
+
+            // 渲染行号和标签
+            updateLineNumbers();
+            updateEditorCursorInfo();
+            renderEditorTabs();
+
+            // 更新语法高亮
+            if (syntaxHighlightEnabled) {
+                highlightSyntax();
+            }
+        }
+
+        function closeEditorTab(path) {
+            if (!openEditorTabs.has(path)) return;
+
+            const tab = openEditorTabs.get(path);
+            
+            // 如果有修改，提示确认
+            if (tab.modified) {
+                if (!confirm(`文件 ${tab.name} 已修改，确定关闭？`)) return;
+            }
+
+            openEditorTabs.delete(path);
+
+            // 如果关闭的是当前标签页
+            if (path === activeEditorTabPath) {
+                // 如果还有其他标签页，切换到第一个
+                const remainingTabs = Array.from(openEditorTabs.keys());
+                if (remainingTabs.length > 0) {
+                    switchToTab(remainingTabs[0]);
+                } else {
+                    // 没有标签页了，退出编辑模式
+                    exitEditor();
+                    openEditorTabs.clear();
+                    activeEditorTabPath = null;
+                    renderEditorTabs();
+                }
+            } else {
+                renderEditorTabs();
+            }
+        }
+
+        function closeAllTabs(exceptPath = null) {
+            const tabsToClose = [];
+            openEditorTabs.forEach((tab, path) => {
+                if (path !== exceptPath) {
+                    tabsToClose.push(path);
+                }
+            });
+            
+            tabsToClose.forEach(path => closeEditorTab(path));
+        }
+
+        function exitEditor() {
+            isEditorActive = false;
+            isEditorModified = false;
+
+            document.getElementById('previewContent').style.display = 'block';
+            const editorContainer = document.getElementById('fileEditorContainer');
+            if (editorContainer) editorContainer.style.display = 'none';
+
+            const btnEdit = document.getElementById('btnEditFile');
+            if (btnEdit) btnEdit.style.display = 'inline-flex';
+            const btnSave = document.getElementById('btnSaveFile');
+            if (btnSave) btnSave.style.display = 'none';
+            const btnCancel = document.getElementById('btnCancelEdit');
+            if (btnCancel) btnCancel.style.display = 'none';
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = 'none';
+
+            closeFindBar();
+
+            // 清除语法高亮
+            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
+            if (highlightBackdrop) {
+                highlightBackdrop.innerHTML = '';
+                highlightBackdrop.textContent = textarea.value || '';
+            }
+        }
+
+        function cancelEdit() {
+            if (isEditorModified) {
+                if (!confirm('放弃所有修改？')) return;
+            }
+            exitEditor();
+        }
+
+        function onEditorInput() {
+            const textarea = document.getElementById('editorTextarea');
+            const content = textarea.value;
+
+            // 更新当前标签页的内容
+            if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
+                const tab = openEditorTabs.get(activeEditorTabPath);
+                tab.content = content;
+                tab.modified = content !== tab.originalContent;
+                tab.undoStack = editorUndoStack;
+                tab.redoStack = editorRedoStack;
+            }
+
+            // 检测是否有修改
+            isEditorModified = content !== editorOriginalContent;
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+
+            // 更新行号
+            updateLineNumbers();
+
+            // 如果启用语法高亮，应用高亮
+            if (syntaxHighlightEnabled && isEditorActive) {
+                highlightSyntax();
+            }
+
+            // 记录撤销历史（节流）
+            clearTimeout(onEditorInput._timer);
+            onEditorInput._timer = setTimeout(() => {
+                if (editorUndoStack.length === 0 || editorUndoStack[editorUndoStack.length - 1] !== content) {
+                    editorUndoStack.push(content);
+                    if (editorUndoStack.length > 100) editorUndoStack.shift();
+                    editorRedoStack = [];
+                }
+            }, 300);
+
+            // 更新标签栏显示修改状态
+            renderEditorTabs();
+        }
+
+        function updateLineNumbers() {
+            const textarea = document.getElementById('editorTextarea');
+            const lineNumbers = document.getElementById('editorLineNumbers');
+            if (!textarea || !lineNumbers) return;
+
+            const lines = textarea.value.split('\n');
+            const count = lines.length;
+            let html = '';
+            for (let i = 1; i <= count; i++) {
+                html += i + '\n';
+            }
+            lineNumbers.textContent = html;
+        }
+
+        function syncEditorScroll() {
+            const textarea = document.getElementById('editorTextarea');
+            const lineNumbers = document.getElementById('editorLineNumbers');
+            if (textarea && lineNumbers) {
+                lineNumbers.scrollTop = textarea.scrollTop;
+            }
+        }
+
+        function updateEditorCursorInfo() {
+            const textarea = document.getElementById('editorTextarea');
+            const info = document.getElementById('editorLineInfo');
+            if (!textarea || !info) return;
+
+            const pos = textarea.selectionStart;
+            const text = textarea.value.substring(0, pos);
+            const lines = text.split('\n');
+            const line = lines.length;
+            const col = lines[lines.length - 1].length + 1;
+
+            const selLen = Math.abs(textarea.selectionEnd - textarea.selectionStart);
+            if (selLen > 0) {
+                info.textContent = `行 ${line}, 列 ${col} (选中 ${selLen} 字符)`;
+            } else {
+                info.textContent = `行 ${line}, 列 ${col}`;
+            }
+        }
+
+        function handleEditorKeydown(event) {
+            const textarea = event.target;
+
+            // Tab 键插入制表符
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+
+                if (event.shiftKey) {
+                    // Shift+Tab: 减少缩进
+                    const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+                    const lineText = textarea.value.substring(lineStart, end);
+                    const dedented = lineText.replace(/^(\t|    )/gm, '');
+                    const diff = lineText.length - dedented.length;
+                    textarea.value = textarea.value.substring(0, lineStart) + dedented + textarea.value.substring(end);
+                    textarea.selectionStart = Math.max(lineStart, start - (diff > 0 ? Math.min(diff, 4) : 0));
+                    textarea.selectionEnd = end - diff;
+                } else if (start !== end) {
+                    // 多行选中时缩进
+                    const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+                    const selectedText = textarea.value.substring(lineStart, end);
+                    const indented = selectedText.replace(/^/gm, '    ');
+                    const diff = indented.length - selectedText.length;
+                    textarea.value = textarea.value.substring(0, lineStart) + indented + textarea.value.substring(end);
+                    textarea.selectionStart = start + 4;
+                    textarea.selectionEnd = end + diff;
+                } else {
+                    // 单行插入 4 空格
+                    textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+                    textarea.selectionStart = textarea.selectionEnd = start + 4;
+                }
+                onEditorInput();
+                return;
+            }
+
+            // Ctrl+S: 保存
+            if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                event.preventDefault();
+                saveFileToDevice();
+                return;
+            }
+
+            // Ctrl+Z: 撤销
+            if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+                event.preventDefault();
+                editorUndo();
+                return;
+            }
+
+            // Ctrl+Y / Ctrl+Shift+Z: 重做
+            if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+                event.preventDefault();
+                editorRedo();
+                return;
+            }
+
+            // Ctrl+F: 查找
+            if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+                event.preventDefault();
+                editorFind();
+                return;
+            }
+
+            // Ctrl+G: 跳转到行
+            if ((event.ctrlKey || event.metaKey) && event.key === 'g') {
+                event.preventDefault();
+                gotoLine();
+                return;
+            }
+
+            // Ctrl+W: 关闭标签
+            if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
+                event.preventDefault();
+                closeEditorTab(activeEditorTabPath);
+                return;
+            }
+
+            // Ctrl+D: 复制行
+            if ((event.ctrlKey || event.metaKey) && event.key === 'd') {
+                event.preventDefault();
+                duplicateLine();
+                return;
+            }
+
+            // Ctrl+Shift+P: 命令面板
+            if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'P') {
+                event.preventDefault();
+                showCommandPalette();
+                return;
+            }
+
+            // Enter: 自动缩进
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const start = textarea.selectionStart;
+                const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+                const currentLine = textarea.value.substring(lineStart, start);
+                const indent = currentLine.match(/^(\s*)/)[1];
+
+                // 如果行尾是 { 或 : 则额外缩进
+                const trimmed = currentLine.trimEnd();
+                let extraIndent = '';
+                if (trimmed.endsWith('{') || trimmed.endsWith(':') || trimmed.endsWith('(')) {
+                    extraIndent = '    ';
+                }
+
+                const insertion = '\n' + indent + extraIndent;
+                textarea.value = textarea.value.substring(0, start) + insertion + textarea.value.substring(textarea.selectionEnd);
+                textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+                onEditorInput();
+                return;
+            }
+
+            // 自动配对括号/引号
+            const pairs = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
+            if (pairs[event.key] && textarea.selectionStart === textarea.selectionEnd) {
+                const start = textarea.selectionStart;
+                const charAfter = textarea.value[start];
+
+                // 如果是引号且前一个字符是字母/数字，不自动配对
+                if ((event.key === '"' || event.key === "'" || event.key === '`') && start > 0) {
+                    const charBefore = textarea.value[start - 1];
+                    if (/\w/.test(charBefore)) return;
+                }
+
+                // 如果下一个字符就是配对字符，跳过
+                if (charAfter === pairs[event.key] && (event.key === '"' || event.key === "'" || event.key === '`')) {
+                    event.preventDefault();
+                    textarea.selectionStart = textarea.selectionEnd = start + 1;
+                    return;
+                }
+
+                event.preventDefault();
+                textarea.value = textarea.value.substring(0, start) + event.key + pairs[event.key] + textarea.value.substring(start);
+                textarea.selectionStart = textarea.selectionEnd = start + 1;
+                onEditorInput();
+                return;
+            }
+
+            // Backspace: 删除配对括号
+            if (event.key === 'Backspace') {
+                const start = textarea.selectionStart;
+                if (start > 0 && textarea.selectionStart === textarea.selectionEnd) {
+                    const charBefore = textarea.value[start - 1];
+                    const charAfter = textarea.value[start];
+                    if (pairs[charBefore] && pairs[charBefore] === charAfter) {
+                        event.preventDefault();
+                        textarea.value = textarea.value.substring(0, start - 1) + textarea.value.substring(start + 1);
+                        textarea.selectionStart = textarea.selectionEnd = start - 1;
+                        onEditorInput();
+                        return;
+                    }
+                }
+            }
+        }
+
+        function editorUndo() {
+            if (editorUndoStack.length <= 1) return;
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const current = editorUndoStack.pop();
+            editorRedoStack.push(current);
+            const prev = editorUndoStack[editorUndoStack.length - 1];
+            textarea.value = prev;
+            updateLineNumbers();
+            isEditorModified = prev !== editorOriginalContent;
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+        }
+
+        function editorRedo() {
+            if (editorRedoStack.length === 0) return;
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const next = editorRedoStack.pop();
+            editorUndoStack.push(next);
+            textarea.value = next;
+            updateLineNumbers();
+            isEditorModified = next !== editorOriginalContent;
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+        }
+
+        function editorFind() {
+            const findBar = document.getElementById('editorFindBar');
+            if (!findBar) return;
+
+            if (findBar.style.display === 'none') {
+                findBar.style.display = 'block';
+                const findInput = document.getElementById('editorFindInput');
+                if (findInput) {
+                    // 如果有选中文本，填入查找框
+                    const textarea = document.getElementById('editorTextarea');
+                    if (textarea) {
+                        const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+                        if (selected && selected.length < 100) {
+                            findInput.value = selected;
+                        }
+                    }
+                    findInput.focus();
+                    findInput.select();
+                }
+            } else {
+                closeFindBar();
+            }
+        }
+
+        function closeFindBar() {
+            const findBar = document.getElementById('editorFindBar');
+            if (findBar) findBar.style.display = 'none';
+        }
+
+        function editorFindNext(advance) {
+            const findInput = document.getElementById('editorFindInput');
+            const textarea = document.getElementById('editorTextarea');
+            const countEl = document.getElementById('editorFindCount');
+            if (!findInput || !textarea) return;
+
+            const query = findInput.value;
+            if (!query) {
+                if (countEl) countEl.textContent = '0 个结果';
+                return;
+            }
+
+            const content = textarea.value;
+            const lowerContent = content.toLowerCase();
+            const lowerQuery = query.toLowerCase();
+
+            // 计算匹配数
+            let count = 0;
+            let idx = 0;
+            while ((idx = lowerContent.indexOf(lowerQuery, idx)) !== -1) {
+                count++;
+                idx += lowerQuery.length;
+            }
+            if (countEl) countEl.textContent = `${count} 个结果`;
+
+            if (count === 0) return;
+
+            // 查找下一个
+            const startPos = advance ? textarea.selectionEnd : textarea.selectionStart;
+            let nextIdx = lowerContent.indexOf(lowerQuery, startPos);
+            if (nextIdx === -1) {
+                nextIdx = lowerContent.indexOf(lowerQuery, 0); // 从头开始
+            }
+
+            if (nextIdx !== -1) {
+                textarea.selectionStart = nextIdx;
+                textarea.selectionEnd = nextIdx + query.length;
+                textarea.focus();
+
+                // 滚动到可见位置
+                const linesBefore = content.substring(0, nextIdx).split('\n').length;
+                const lineHeight = 20.8; // 13px * 1.6
+                textarea.scrollTop = Math.max(0, (linesBefore - 5) * lineHeight);
+            }
+        }
+
+        function editorReplace() {
+            const textarea = document.getElementById('editorTextarea');
+            const findInput = document.getElementById('editorFindInput');
+            const replaceInput = document.getElementById('editorReplaceInput');
+            if (!textarea || !findInput || !replaceInput) return;
+
+            const query = findInput.value;
+            const replacement = replaceInput.value;
+            if (!query) return;
+
+            // 替换当前选中
+            const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+            if (selected.toLowerCase() === query.toLowerCase()) {
+                const start = textarea.selectionStart;
+                textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(textarea.selectionEnd);
+                textarea.selectionStart = start;
+                textarea.selectionEnd = start + replacement.length;
+                onEditorInput();
+            }
+
+            // 查找下一个
+            editorFindNext(true);
+        }
+
+        function editorReplaceAll() {
+            const textarea = document.getElementById('editorTextarea');
+            const findInput = document.getElementById('editorFindInput');
+            const replaceInput = document.getElementById('editorReplaceInput');
+            const countEl = document.getElementById('editorFindCount');
+            if (!textarea || !findInput || !replaceInput) return;
+
+            const query = findInput.value;
+            const replacement = replaceInput.value;
+            if (!query) return;
+
+            // 全部替换（大小写不敏感）
+            const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            const newContent = textarea.value.replace(regex, replacement);
+            const count = (textarea.value.match(regex) || []).length;
+
+            textarea.value = newContent;
+            onEditorInput();
+
+            if (countEl) countEl.textContent = `已替换 ${count} 处`;
+            showToast(`已替换 ${count} 处`, 'success');
+        }
+
+        function editorWrapToggle() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            editorWordWrap = !editorWordWrap;
+            textarea.classList.toggle('wrap', editorWordWrap);
+            
+            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
+            if (highlightBackdrop) {
+                highlightBackdrop.classList.toggle('wrap', editorWordWrap);
+            }
+            
+            showToast(editorWordWrap ? '自动换行: 开' : '自动换行: 关', 'info');
+        }
+
+        function toggleSyntaxHighlight() {
+            syntaxHighlightEnabled = !syntaxHighlightEnabled;
+            const btn = document.getElementById('btnSyntaxHighlight');
+            if (btn) {
+                btn.style.opacity = syntaxHighlightEnabled ? '1' : '0.5';
+            }
+            showToast(syntaxHighlightEnabled ? '语法高亮: 开' : '语法高亮: 关', 'info');
+            
+            if (syntaxHighlightEnabled && isEditorActive) {
+                highlightSyntax();
+            } else {
+                const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
+                if (highlightBackdrop) {
+                    highlightBackdrop.innerHTML = '';
+                    highlightBackdrop.textContent = textarea.value || '';
+                }
+            }
+        }
+
+        // ============================================
+        // Syntax Highlighting - 语法高亮
+        // ============================================
+        const SYNTAX_PATTERNS = {
+            javascript: [
+                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
+                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
+                { regex: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|class|extends|super|import|export|from|default|async|await|yield|typeof|instanceof|in|of)\b/g, class: 'syn-keyword' },
+                { regex: /\b(true|false|null|undefined|NaN|Infinity)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, class: 'syn-string' },
+                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
+                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
+            ],
+            typescript: [
+                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
+                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
+                { regex: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|class|extends|super|import|export|from|default|async|await|yield|typeof|instanceof|in|of|interface|type|enum|implements|private|public|protected|readonly|abstract|as)\b/g, class: 'syn-keyword' },
+                { regex: /\b(true|false|null|undefined|NaN|Infinity)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, class: 'syn-string' },
+                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
+                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
+            ],
+            python: [
+                { regex: /(#.*$)/gm, class: 'syn-comment' },
+                { regex: /("""[\s\S]*?"""|'''[\s\S]*?''')/g, class: 'syn-string' },
+                { regex: /\b(def|class|return|if|elif|else|for|while|try|except|finally|raise|with|as|import|from|export|yield|lambda|and|or|not|in|is|None|True|False|pass|break|continue|assert|global|nonlocal|async|await)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
+                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
+            ],
+            shell: [
+                { regex: /(#.*$)/gm, class: 'syn-comment' },
+                { regex: /\b(if|then|else|elif|fi|for|do|done|while|case|esac|function|return|local|export|readonly|declare|unset|readonly|echo|cd|pwd|ls|cat|grep|sed|awk|find|mkdir|rmdir|rm|cp|mv|chmod|chown|ln|tar|gzip|gunzip)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+                { regex: /\$\{?[\w]+\}?/g, class: 'syn-variable' },
+                { regex: /(?:^|\s)(\d+)(?=\s|$)/gm, class: 'syn-number' },
+            ],
+            json: [
+                { regex: /("(?:[^"\\]|\\.)*")(\s*:)/g, class: 'syn-attr' },
+                { regex: /:(\s*)("(?:[^"\\]|\\.)*")/g, class: 'syn-string' },
+                { regex: /\b(true|false|null)\b/g, class: 'syn-keyword' },
+                { regex: /\b(-?\d+\.?\d*)\b/g, class: 'syn-number' },
+            ],
+            xml: [
+                { regex: /(<\?[\s\S]*?\?>|<!--[\s\S]*?-->)/g, class: 'syn-comment' },
+                { regex: /(&[\w]+;)/g, class: 'syn-operator' },
+                { regex: /(<\/?[\w:]+[\s>])/g, class: 'syn-tag' },
+                { regex: /(<[\w:]+)/g, class: 'syn-tag' },
+                { regex: /(<\/[\w:]+>)/g, class: 'syn-tag' },
+                { regex: /([\w-]+)(=)/g, class: 'syn-attr' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+            ],
+            html: [
+                { regex: /(<\?[\s\S]*?\?>|<!--[\s\S]*?-->)/g, class: 'syn-comment' },
+                { regex: /(&[\w]+;)/g, class: 'syn-operator' },
+                { regex: /(<\/?[a-zA-Z][a-zA-Z0-9]*[\s>])/g, class: 'syn-tag' },
+                { regex: /(<\/?[a-zA-Z]+)/g, class: 'syn-tag' },
+                { regex: /(<\/?[a-zA-Z][a-zA-Z0-9]*>)/g, class: 'syn-tag' },
+                { regex: /([\w-]+)(=)/g, class: 'syn-attr' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+            ],
+            css: [
+                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
+                { regex: /([\w-]+)(\s*:)/g, class: 'syn-attr' },
+                { regex: /(:)(\s*[^;{}]+)/g, class: 'syn-string' },
+                { regex: /(@[\w-]+)/g, class: 'syn-keyword' },
+                { regex: /\b(\d+\.?\d*)(px|em|rem|%|vh|vw|s|ms)?\b/g, class: 'syn-number' },
+                { regex: /([.#]?[\w-]+)(\s*{)/g, class: 'syn-type' },
+            ],
+            markdown: [
+                { regex: /^(#{1,6}\s.*$)/gm, class: 'syn-keyword' },
+                { regex: /(\*\*.*?\*\*|__.*?__)/g, class: 'syn-type' },
+                { regex: /(\*.*?\*|_.*?_)/g, class: 'syn-string' },
+                { regex: /(`[^`]+`)/g, class: 'syn-variable' },
+                { regex: /(```[\s\S]*?```)/g, class: 'syn-comment' },
+                { regex: /(\[.*?\]\(.*?\))/g, class: 'syn-function' },
+            ],
+            c: [
+                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
+                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
+                { regex: /\b(if|else|for|while|do|switch|case|break|continue|return|goto|sizeof|typedef|struct|union|enum|extern|static|const|volatile|register|signed|unsigned|void|char|short|int|long|float|double)\b/g, class: 'syn-keyword' },
+                { regex: /\b(true|false|TRUE|FALSE|NULL)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+                { regex: /\b(\d+\.?\d*[uUlLfF]?)\b/g, class: 'syn-number' },
+                { regex: /\b([A-Z][a-zA-Z0-9_]*)\b/g, class: 'syn-type' },
+            ],
+            'c++': [
+                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
+                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
+                { regex: /\b(if|else|for|while|do|switch|case|break|continue|return|goto|sizeof|typedef|struct|union|enum|extern|static|const|volatile|register|signed|unsigned|void|char|short|int|long|float|double|bool|class|namespace|using|template|typename|virtual|override|final|public|private|protected|friend|inline|explicit|operator|delete|new|this|throw|try|catch)\b/g, class: 'syn-keyword' },
+                { regex: /\b(true|false|TRUE|FALSE|NULL)\b/g, class: 'syn-keyword' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+                { regex: /\b(\d+\.?\d*[uUlLfF]?)\b/g, class: 'syn-number' },
+                { regex: /\b([A-Z][a-zA-Z0-9_]*)\b/g, class: 'syn-type' },
+            ],
+            config: [
+                { regex: /(#.*$)/gm, class: 'syn-comment' },
+                { regex: /(;.*$)/gm, class: 'syn-comment' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
+                { regex: /\b(true|false|yes|no|on|off|1|0)\b/g, class: 'syn-keyword' },
+                { regex: /([\w.-]+)(\s*[=:])/g, class: 'syn-attr' },
+            ],
+        };
+
+        function highlightSyntax() {
+            const textarea = document.getElementById('editorTextarea');
+            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
+            if (!textarea || !highlightBackdrop) return;
+
+            const content = textarea.value;
+            const fileType = getFileType(editorCurrentFile ? editorCurrentFile.name : '');
+
+            // 获取语言模式
+            let patterns = SYNTAX_PATTERNS[fileType] || [];
+            
+            // 处理特殊字符
+            let html = escapeHtml(content);
+            
+            // 应用语法高亮模式（注意：避免重复高亮）
+            let highlighted = html;
+            patterns.forEach(pattern => {
+                highlighted = highlighted.replace(pattern.regex, (match) => {
+                    return `<span class="${pattern.class}">${match}</span>`;
+                });
+            });
+
+            highlightBackdrop.innerHTML = highlighted;
+            
+            // 同步滚动
+            highlightBackdrop.style.wordWrap = editorWordWrap ? 'break-word' : 'normal';
+            highlightBackdrop.scrollTop = textarea.scrollTop;
+            highlightBackdrop.scrollLeft = textarea.scrollLeft;
+        }
+
+        // ============================================
+        // File Save - 保存文件到设备
+        // ============================================
+        let pendingFileSave = null;
+
+        function saveFileToDevice() {
+            if (!currentDevice || !editorCurrentFile) {
+                showToast('无法保存：没有选中设备或文件', 'warning');
+                return;
+            }
+
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const content = textarea.value;
+
+            // 没有修改
+            if (content === editorOriginalContent) {
+                showToast('文件没有修改', 'info');
+                return;
+            }
+
+            const btnSave = document.getElementById('btnSaveFile');
+            if (btnSave) {
+                btnSave.disabled = true;
+                btnSave.textContent = '⏳ 保存中...';
+            }
+
+            pendingFileSave = {
+                path: editorCurrentFile.path,
+                name: editorCurrentFile.name,
+                content: content
+            };
+
+            // 发送文件写入请求
+            const encoded = btoa(unescape(encodeURIComponent(content)));
+            sendMessage(MSG_TYPES.FILE_REQUEST, {
+                action: 'write',
+                filepath: editorCurrentFile.path,
+                content: encoded,
+                encoding: 'utf-8',
+                request_id: 'save-' + Date.now()
+            });
+
+            // 超时处理
+            setTimeout(() => {
+                if (pendingFileSave && pendingFileSave.path === editorCurrentFile?.path) {
+                    // 假设保存成功（服务端可能没有回复确认）
+                    onFileSaveSuccess();
+                }
+            }, 3000);
+        }
+
+        function onFileSaveSuccess() {
+            pendingFileSave = null;
+
+            const btnSave = document.getElementById('btnSaveFile');
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.textContent = '💾 保存';
+            }
+
+            const textarea = document.getElementById('editorTextarea');
+            if (textarea) {
+                editorOriginalContent = textarea.value;
+                editorLastSavedContent = textarea.value;
+            }
+
+            isEditorModified = false;
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = 'none';
+
+            // 更新当前标签页的状态
+            if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
+                const tab = openEditorTabs.get(activeEditorTabPath);
+                tab.originalContent = textarea.value;
+                tab.modified = false;
+                renderEditorTabs();
+            }
+
+            showToast(`已保存: ${editorCurrentFile?.name || '文件'}`, 'success');
+        }
+
+        // ============================================
+        // Command Palette - 命令面板
+        // ============================================
+        const EDITOR_COMMANDS = [
+            { id: 'save', label: '保存文件', icon: '💾', shortcut: 'Ctrl+S', action: () => saveFileToDevice() },
+            { id: 'undo', label: '撤销', icon: '↩️', shortcut: 'Ctrl+Z', action: () => editorUndo() },
+            { id: 'redo', label: '重做', icon: '↪️', shortcut: 'Ctrl+Y', action: () => editorRedo() },
+            { id: 'find', label: '查找', icon: '🔍', shortcut: 'Ctrl+F', action: () => editorFind() },
+            { id: 'replace', label: '查找替换', icon: '🔄', shortcut: '', action: () => { editorFind(); document.getElementById('editorReplaceInput').focus(); } },
+            { id: 'wrap', label: '自动换行', icon: '↔️', shortcut: '', action: () => editorWrapToggle() },
+            { id: 'highlight', label: '语法高亮', icon: '🎨', shortcut: '', action: () => toggleSyntaxHighlight() },
+            { id: 'format', label: '格式化 JSON', icon: '📋', shortcut: '', action: () => formatJSON() },
+            { id: 'trim', label: '去除空行', icon: '🧹', shortcut: '', action: () => trimEmptyLines() },
+            { id: 'sort', label: '排序行', icon: '📊', shortcut: '', action: () => sortLines() },
+            { id: 'duplicate', label: '重复行', icon: '📋', shortcut: 'Ctrl+D', action: () => duplicateLine() },
+            { id: 'delete', label: '删除行', icon: '🗑️', shortcut: 'Ctrl+D', action: () => deleteLine() },
+            { id: 'goto', label: '跳转到行', icon: '↗️', shortcut: 'Ctrl+G', action: () => gotoLine() },
+            { id: 'close-tab', label: '关闭标签', icon: '✕', shortcut: 'Ctrl+W', action: () => closeEditorTab(activeEditorTabPath) },
+            { id: 'close-others', label: '关闭其他标签', icon: '✕', shortcut: '', action: () => closeAllTabs(activeEditorTabPath) },
+        ];
+
+        let commandPaletteSelectedIndex = 0;
+        let filteredCommands = [];
+
+        function showCommandPalette() {
+            if (!isEditorActive) {
+                showToast('请先进入编辑模式', 'warning');
+                return;
+            }
+
+            const overlay = document.getElementById('commandPaletteOverlay');
+            const input = document.getElementById('commandPaletteInput');
+            overlay.classList.add('active');
+            input.value = '';
+            input.focus();
+            commandPaletteSelectedIndex = 0;
+            filterCommands();
+        }
+
+        function closeCommandPalette() {
+            const overlay = document.getElementById('commandPaletteOverlay');
+            overlay.classList.remove('active');
+        }
+
+        function filterCommands() {
+            const input = document.getElementById('commandPaletteInput');
+            const query = input.value.toLowerCase().trim();
+            const list = document.getElementById('commandPaletteList');
+
+            if (!query) {
+                filteredCommands = [...EDITOR_COMMANDS];
+            } else {
+                filteredCommands = EDITOR_COMMANDS.filter(cmd => 
+                    cmd.label.toLowerCase().includes(query) || cmd.id.includes(query)
+                );
+            }
+
+            commandPaletteSelectedIndex = 0;
+            renderCommandPalette(list);
+        }
+
+        function renderCommandPalette(list) {
+            if (!list) return;
+
+            let html = '';
+            filteredCommands.forEach((cmd, idx) => {
+                const isSelected = idx === commandPaletteSelectedIndex;
+                html += `<div class="command-palette-item ${isSelected ? 'selected' : ''}" 
+                         data-index="${idx}" onclick="executeCommand(${idx})">
+                    <span class="cmd-label">
+                        <span style="width: 24px;">${cmd.icon}</span>
+                        <span>${cmd.label}</span>
+                    </span>
+                    ${cmd.shortcut ? `<span class="cmd-shortcut">${cmd.shortcut}</span>` : ''}
+                </div>`;
+            });
+
+            list.innerHTML = html || '<div style="padding: 20px; text-align: center; color: var(--text-muted);">没有找到命令</div>';
+        }
+
+        function executeCommand(index) {
+            if (index >= 0 && index < filteredCommands.length) {
+                const cmd = filteredCommands[index];
+                closeCommandPalette();
+                cmd.action();
+            }
+        }
+
+        function handleCommandPaletteKey(event) {
+            if (event.key === 'Escape') {
+                closeCommandPalette();
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                commandPaletteSelectedIndex = Math.min(commandPaletteSelectedIndex + 1, filteredCommands.length - 1);
+                renderCommandPalette(document.getElementById('commandPaletteList'));
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                commandPaletteSelectedIndex = Math.max(commandPaletteSelectedIndex - 1, 0);
+                renderCommandPalette(document.getElementById('commandPaletteList'));
+            } else if (event.key === 'Enter') {
+                event.preventDefault();
+                executeCommand(commandPaletteSelectedIndex);
+            }
+        }
+
+        // ============================================
+        // Editor Helper Functions - 编辑器辅助功能
+        // ============================================
+        function formatJSON() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            try {
+                const content = textarea.value.trim();
+                const parsed = JSON.parse(content);
+                const formatted = JSON.stringify(parsed, null, 4);
+                textarea.value = formatted;
+                onEditorInput();
+                showToast('JSON 格式化成功', 'success');
+            } catch (e) {
+                showToast('JSON 格式化失败: ' + e.message, 'error');
+            }
+        }
+
+        function trimEmptyLines() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const lines = textarea.value.split('\n');
+            const trimmed = lines.filter(line => line.trim() !== '');
+            textarea.value = trimmed.join('\n');
+            onEditorInput();
+            showToast(`已去除 ${lines.length - trimmed.length} 行空行`, 'info');
+        }
+
+        function sortLines() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const lines = textarea.value.split('\n');
+            const sorted = [...lines].sort((a, b) => a.localeCompare(b));
+            textarea.value = sorted.join('\n');
+            onEditorInput();
+            showToast('已按字母顺序排序', 'info');
+        }
+
+        function duplicateLine() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const start = textarea.selectionStart;
+            const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+            const lineEnd = textarea.value.indexOf('\n', start);
+            const end = lineEnd === -1 ? textarea.value.length : lineEnd;
+
+            const line = textarea.value.substring(lineStart, end);
+            textarea.value = textarea.value.substring(0, end) + '\n' + line + textarea.value.substring(end);
+            
+            textarea.selectionStart = textarea.selectionEnd = end + 1;
+            onEditorInput();
+        }
+
+        function deleteLine() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const start = textarea.selectionStart;
+            const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
+            const lineEnd = textarea.value.indexOf('\n', start);
+            const end = lineEnd === -1 ? textarea.value.length : lineEnd + 1;
+
+            textarea.value = textarea.value.substring(0, lineStart) + textarea.value.substring(end);
+            
+            textarea.selectionStart = textarea.selectionEnd = lineStart;
+            onEditorInput();
+        }
+
+        function gotoLine() {
+            const textarea = document.getElementById('editorTextarea');
+            if (!textarea) return;
+
+            const line = prompt('跳转到行号:', '1');
+            if (!line) return;
+
+            const lineNum = parseInt(line);
+            if (isNaN(lineNum) || lineNum < 1) {
+                showToast('无效的行号', 'error');
+                return;
+            }
+
+            const lines = textarea.value.split('\n');
+            if (lineNum > lines.length) {
+                showToast(`行号超出范围 (共 ${lines.length} 行)`, 'error');
+                return;
+            }
+
+            // 计算位置
+            let pos = 0;
+            for (let i = 0; i < lineNum - 1; i++) {
+                pos += lines[i].length + 1;
+            }
+
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = pos;
+
+            // 滚动到可见位置
+            const lineHeight = 20.8;
+            textarea.scrollTop = Math.max(0, (lineNum - 5) * lineHeight);
+            
+            updateEditorCursorInfo();
         }
 
         function downloadSelectedFile() {
@@ -2761,17 +4842,378 @@
             });
         }
 
+        // ============================================
+        // File Upload - 分片上传、进度显示、断点续传
+        // ============================================
+        let activeUploads = {}; // 活跃的上传任务
+
         function uploadFile() {
+            if (!currentDevice) {
+                showToast('请先选择设备', 'warning');
+                return;
+            }
+
             const input = document.createElement('input');
             input.type = 'file';
+            input.multiple = true;
             input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    showToast(`准备上传: ${file.name}`, 'info');
-                    // TODO: Implement file upload
-                }
+                const files = Array.from(e.target.files);
+                if (files.length === 0) return;
+
+                files.forEach(file => {
+                    startFileUpload(file, currentPath || '/tmp');
+                });
             };
             input.click();
+        }
+
+        async function startFileUpload(file, targetDir) {
+            const uploadId = 'upload-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+
+            // 计算文件 MD5（小文件才算，大文件跳过）
+            let checksum = '';
+            if (file.size < 10 * 1024 * 1024) { // < 10MB
+                try {
+                    const buffer = await file.arrayBuffer();
+                    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+                    checksum = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+                } catch (e) {
+                    console.warn('无法计算文件哈希:', e);
+                }
+            }
+
+            // 创建上传任务
+            activeUploads[uploadId] = {
+                file: file,
+                filename: file.name,
+                fileSize: file.size,
+                targetDir: targetDir,
+                transferId: null,
+                chunkSize: 32 * 1024, // 默认 32KB，服务端会返回建议值
+                totalChunks: 0,
+                sentChunks: new Set(),
+                ackedChunks: new Set(),
+                checksum: checksum,
+                startTime: Date.now(),
+                status: 'starting', // starting, uploading, completing, done, error
+                retryCount: 0,
+                maxRetries: 3
+            };
+
+            // 显示上传进度 UI
+            showUploadProgress(uploadId);
+
+            // 发送上传开始请求
+            sendMessage(MSG_TYPES.FILE_UPLOAD_START, {
+                filename: file.name,
+                file_size: file.size,
+                checksum: checksum,
+                target_dir: targetDir,
+                upload_id: uploadId
+            });
+
+            showToast(`开始上传: ${file.name} (${formatBytes(file.size)})`, 'info');
+        }
+
+        function handleFileUploadAck(data) {
+            console.log('Upload ACK:', data);
+
+            // 找到对应的上传任务
+            let upload = null;
+            let uploadId = null;
+
+            if (data.transfer_id) {
+                // 通过 transfer_id 匹配
+                for (const [id, u] of Object.entries(activeUploads)) {
+                    if (u.transferId === data.transfer_id || u.status === 'starting') {
+                        upload = u;
+                        uploadId = id;
+                        break;
+                    }
+                }
+            }
+
+            if (data.chunk_index !== undefined && data.transfer_id) {
+                // 这是分片确认
+                for (const [id, u] of Object.entries(activeUploads)) {
+                    if (u.transferId === data.transfer_id) {
+                        upload = u;
+                        uploadId = id;
+                        break;
+                    }
+                }
+
+                if (upload && data.success) {
+                    upload.ackedChunks.add(data.chunk_index);
+                    updateUploadProgress(uploadId);
+
+                    // 检查是否所有分片都已确认
+                    if (upload.ackedChunks.size >= upload.totalChunks) {
+                        completeUpload(uploadId);
+                    }
+                } else if (upload && !data.success) {
+                    console.warn(`分片 ${data.chunk_index} 上传失败: ${data.message}`);
+                    // 重试该分片
+                    retryChunk(uploadId, data.chunk_index);
+                }
+                return;
+            }
+
+            if (!upload) return;
+
+            // 初始化上传参数
+            if (data.transfer_id) {
+                upload.transferId = data.transfer_id;
+            }
+            if (data.chunk_size) {
+                upload.chunkSize = data.chunk_size;
+            }
+            upload.totalChunks = data.total_chunks || Math.ceil(upload.fileSize / upload.chunkSize);
+
+            // 处理断点续传
+            if (data.resume && data.received_chunks) {
+                data.received_chunks.forEach(idx => upload.ackedChunks.add(idx));
+                showToast(`断点续传: 已有 ${upload.ackedChunks.size}/${upload.totalChunks} 分片`, 'info');
+            }
+
+            upload.status = 'uploading';
+            updateUploadProgress(uploadId);
+
+            // 开始发送分片
+            sendFileChunks(uploadId);
+        }
+
+        async function sendFileChunks(uploadId) {
+            const upload = activeUploads[uploadId];
+            if (!upload || upload.status !== 'uploading') return;
+
+            const concurrency = 3; // 并发发送数
+            let pending = 0;
+
+            for (let i = 0; i < upload.totalChunks; i++) {
+                if (upload.ackedChunks.has(i) || upload.sentChunks.has(i)) continue;
+
+                // 等待并发槽位
+                while (pending >= concurrency) {
+                    await new Promise(r => setTimeout(r, 50));
+                    if (upload.status !== 'uploading') return;
+                }
+
+                pending++;
+                upload.sentChunks.add(i);
+
+                // 读取分片数据
+                const start = i * upload.chunkSize;
+                const end = Math.min(start + upload.chunkSize, upload.fileSize);
+                const chunk = upload.file.slice(start, end);
+
+                try {
+                    const arrayBuffer = await chunk.arrayBuffer();
+                    const base64Data = arrayBufferToBase64(arrayBuffer);
+
+                    sendMessage(MSG_TYPES.FILE_UPLOAD_DATA, {
+                        transfer_id: upload.transferId,
+                        chunk_index: i,
+                        chunk_data: base64Data
+                    });
+                } catch (e) {
+                    console.error(`发送分片 ${i} 失败:`, e);
+                    upload.sentChunks.delete(i);
+                }
+
+                pending--;
+                updateUploadProgress(uploadId);
+            }
+        }
+
+        function retryChunk(uploadId, chunkIndex) {
+            const upload = activeUploads[uploadId];
+            if (!upload) return;
+
+            upload.sentChunks.delete(chunkIndex);
+
+            if (upload.retryCount < upload.maxRetries * upload.totalChunks) {
+                upload.retryCount++;
+                setTimeout(() => {
+                    if (upload.status === 'uploading') {
+                        sendFileChunks(uploadId);
+                    }
+                }, 1000);
+            } else {
+                upload.status = 'error';
+                updateUploadProgress(uploadId);
+                showToast(`上传失败: ${upload.filename}，重试次数已用尽`, 'error');
+            }
+        }
+
+        function completeUpload(uploadId) {
+            const upload = activeUploads[uploadId];
+            if (!upload || upload.status === 'completing' || upload.status === 'done') return;
+
+            upload.status = 'completing';
+
+            sendMessage(MSG_TYPES.FILE_UPLOAD_COMPLETE, {
+                transfer_id: upload.transferId
+            });
+        }
+
+        function handleFileUploadComplete(data) {
+            console.log('Upload complete response:', data);
+
+            for (const [uploadId, upload] of Object.entries(activeUploads)) {
+                if (upload.transferId === data.transfer_id) {
+                    if (data.success) {
+                        upload.status = 'done';
+                        const elapsed = ((Date.now() - upload.startTime) / 1000).toFixed(1);
+                        const speed = formatBytes(upload.fileSize / (elapsed || 1)) + '/s';
+                        showToast(`上传完成: ${upload.filename} (${elapsed}s, ${speed})`, 'success');
+
+                        // 刷新文件列表
+                        setTimeout(() => {
+                            refreshFiles(upload.targetDir);
+                            refreshFileTree();
+                        }, 500);
+                    } else {
+                        upload.status = 'error';
+                        showToast(`上传失败: ${upload.filename} - ${data.error || '未知错误'}`, 'error');
+                    }
+                    updateUploadProgress(uploadId);
+
+                    // 5秒后清理完成的任务
+                    setTimeout(() => {
+                        removeUploadProgress(uploadId);
+                        delete activeUploads[uploadId];
+                    }, 5000);
+                    break;
+                }
+            }
+        }
+
+        function handleFileTransferStatus(data) {
+            console.log('Transfer status:', data);
+            // 服务端推送的传输进度（可用于同步多端状态）
+            for (const [uploadId, upload] of Object.entries(activeUploads)) {
+                if (upload.transferId === data.transfer_id) {
+                    if (data.progress !== undefined) {
+                        updateUploadProgress(uploadId);
+                    }
+                    break;
+                }
+            }
+        }
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        // ============================================
+        // Upload Progress UI
+        // ============================================
+        function showUploadProgress(uploadId) {
+            let container = document.getElementById('uploadProgressContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'uploadProgressContainer';
+                container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 1500; display: flex; flex-direction: column; gap: 8px; max-width: 360px;';
+                document.body.appendChild(container);
+            }
+
+            const upload = activeUploads[uploadId];
+            if (!upload) return;
+
+            const item = document.createElement('div');
+            item.id = `upload-progress-${uploadId}`;
+            item.style.cssText = 'background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px 16px; box-shadow: var(--shadow-lg); min-width: 300px;';
+            item.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+                        <span>📤</span>
+                        <span style="font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${upload.filename}</span>
+                    </div>
+                    <button onclick="cancelUpload('${uploadId}')" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 4px;">✕</button>
+                </div>
+                <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; margin-bottom: 6px;">
+                    <div id="upload-bar-${uploadId}" style="height: 100%; background: var(--accent-primary); border-radius: 3px; transition: width 0.3s ease; width: 0%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                    <span id="upload-status-${uploadId}">准备中...</span>
+                    <span id="upload-percent-${uploadId}">0%</span>
+                </div>
+            `;
+            container.appendChild(item);
+        }
+
+        function updateUploadProgress(uploadId) {
+            const upload = activeUploads[uploadId];
+            if (!upload) return;
+
+            const bar = document.getElementById(`upload-bar-${uploadId}`);
+            const status = document.getElementById(`upload-status-${uploadId}`);
+            const percent = document.getElementById(`upload-percent-${uploadId}`);
+
+            if (!bar || !status || !percent) return;
+
+            const progress = upload.totalChunks > 0 ? (upload.ackedChunks.size / upload.totalChunks) * 100 : 0;
+            bar.style.width = progress + '%';
+            percent.textContent = progress.toFixed(0) + '%';
+
+            const elapsed = (Date.now() - upload.startTime) / 1000;
+            const bytesUploaded = upload.ackedChunks.size * upload.chunkSize;
+            const speed = elapsed > 0 ? formatBytes(bytesUploaded / elapsed) + '/s' : '--';
+
+            switch (upload.status) {
+                case 'starting':
+                    status.textContent = '准备中...';
+                    break;
+                case 'uploading':
+                    status.textContent = `${formatBytes(bytesUploaded)} / ${formatBytes(upload.fileSize)} · ${speed}`;
+                    break;
+                case 'completing':
+                    status.textContent = '校验中...';
+                    bar.style.background = 'var(--accent-warning)';
+                    break;
+                case 'done':
+                    status.textContent = '上传完成 ✓';
+                    bar.style.background = 'var(--accent-success)';
+                    bar.style.width = '100%';
+                    percent.textContent = '100%';
+                    break;
+                case 'error':
+                    status.textContent = '上传失败 ✕';
+                    bar.style.background = 'var(--accent-error)';
+                    break;
+            }
+        }
+
+        function removeUploadProgress(uploadId) {
+            const item = document.getElementById(`upload-progress-${uploadId}`);
+            if (item) {
+                item.style.transition = 'opacity 0.3s, transform 0.3s';
+                item.style.opacity = '0';
+                item.style.transform = 'translateX(100%)';
+                setTimeout(() => item.remove(), 300);
+            }
+
+            // 清理空容器
+            const container = document.getElementById('uploadProgressContainer');
+            if (container && container.children.length === 0) {
+                container.remove();
+            }
+        }
+
+        function cancelUpload(uploadId) {
+            const upload = activeUploads[uploadId];
+            if (upload) {
+                upload.status = 'error';
+                showToast(`已取消上传: ${upload.filename}`, 'info');
+            }
+            removeUploadProgress(uploadId);
+            delete activeUploads[uploadId];
         }
 
         function downloadFile(path) {
@@ -2821,6 +5263,7 @@
 
             // Memory
             const memTotal = data.mem_total || 1;
+            processMemTotal = memTotal; // 保存给进程列表计算内存百分比
             const memUsed = data.mem_used || 0;
             const memPercent = (memUsed / memTotal) * 100;
             const metricMemEl = safeGetElement('metricMem');
@@ -2888,33 +5331,143 @@
             
             // Update process list if available
             if (data.processes && Array.isArray(data.processes)) {
-                updateProcessList(data.processes);
+                updateProcessList(data.processes, data.proc_total || data.processes.length);
             }
         }
 
-        function updateProcessList(processes) {
+        // ============================================
+        // Process List - Enhanced
+        // ============================================
+        let cachedProcesses = [];
+        let processSortKey = 'cpu';
+        let processSortAsc = false;
+        let processMemTotal = 1; // 用于计算内存百分比
+
+        const stateLabels = {
+            'R': '运行',
+            'S': '睡眠',
+            'D': '等待',
+            'Z': '僵尸',
+            'T': '停止',
+            'I': '空闲',
+            't': '跟踪',
+            'X': '死亡'
+        };
+
+        function updateProcessList(processes, totalCount) {
+            cachedProcesses = processes || [];
+            // 获取当前内存总量用于百分比计算
+            const memEl = safeGetElement('metricMemUsed');
+            if (memEl) {
+                // mem_total 在 updateSystemStatus 中已更新
+            }
+
+            // 更新计数
+            const badge = safeGetElement('processCountBadge');
+            if (badge) badge.textContent = totalCount || cachedProcesses.length;
+
+            renderProcessList();
+        }
+
+        function renderProcessList() {
             const container = safeGetElement('processList');
-            if (!container) {
-                console.warn('processList element not found, cannot update');
+            if (!container) return;
+
+            let list = [...cachedProcesses];
+
+            // 搜索过滤
+            const searchEl = safeGetElement('processSearch');
+            const keyword = searchEl ? searchEl.value.trim().toLowerCase() : '';
+            if (keyword) {
+                list = list.filter(p =>
+                    (p.name || '').toLowerCase().includes(keyword) ||
+                    String(p.pid || '').includes(keyword)
+                );
+            }
+
+            // 排序
+            list.sort((a, b) => {
+                let va, vb;
+                switch (processSortKey) {
+                    case 'pid': va = a.pid || 0; vb = b.pid || 0; break;
+                    case 'name': va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase();
+                        return processSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+                    case 'cpu': va = a.cpu || 0; vb = b.cpu || 0; break;
+                    case 'mem': va = a.mem || 0; vb = b.mem || 0; break;
+                    case 'state': va = a.state || ''; vb = b.state || '';
+                        return processSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+                    default: va = a.cpu || 0; vb = b.cpu || 0;
+                }
+                return processSortAsc ? va - vb : vb - va;
+            });
+
+            if (list.length === 0) {
+                container.innerHTML = keyword
+                    ? '<div class="process-empty"><div class="process-empty-icon">🔍</div><div class="process-empty-text">未找到匹配的进程</div><div class="process-empty-hint">尝试其他关键词</div></div>'
+                    : '<div class="process-empty"><div class="process-empty-icon">📊</div><div class="process-empty-text">等待进程数据</div><div class="process-empty-hint">设备连接后将自动采集进程信息</div></div>';
                 return;
             }
-            if (!processes || processes.length === 0) {
-                container.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-muted);">暂无进程数据</div>';
-                return;
-            }
-            
-            // Sort by CPU usage descending
-            const sortedProcesses = [...processes].sort((a, b) => (b.cpu || 0) - (a.cpu || 0)).slice(0, 20);
-            
-            container.innerHTML = sortedProcesses.map(p => `
-                <div class="process-row">
+
+            // 获取内存总量(KB)用于百分比
+            const memTotalKB = (parseFloat(safeGetElement('metricMemUsed')?.closest('.metric-card')?.querySelector('#metricMem')?.dataset?.totalKb) || 0);
+
+            container.innerHTML = list.map(p => {
+                const cpu = p.cpu || 0;
+                const memKB = p.mem || 0;
+                const cpuClass = cpu > 50 ? 'high' : cpu > 20 ? 'medium' : '';
+                const memPercent = processMemTotal > 0 ? Math.min((memKB / (processMemTotal * 1024)) * 100, 100) : 0;
+                const memClass = memPercent > 50 ? 'high' : '';
+                const state = p.state || 'S';
+                const stateLabel = stateLabels[state] || state;
+
+                return `<div class="process-row">
                     <span class="process-pid">${p.pid || '--'}</span>
                     <span class="process-name" title="${p.name || ''}">${p.name || '--'}</span>
-                    <span class="process-cpu">${(p.cpu || 0).toFixed(1)}%</span>
-                    <span class="process-mem">${formatBytes((p.mem || 0) * 1024)}</span>
-                    <span style="color: var(--text-muted);">${p.time || '--'}</span>
-                </div>
-            `).join('');
+                    <span class="process-metric-cell">
+                        <span class="process-metric-value">${cpu.toFixed(1)}%</span>
+                        <span class="process-metric-bar"><span class="process-metric-bar-fill cpu-bar ${cpuClass}" style="width:${Math.min(cpu, 100)}%"></span></span>
+                    </span>
+                    <span class="process-metric-cell">
+                        <span class="process-metric-value">${formatBytes(memKB * 1024)}</span>
+                        <span class="process-metric-bar"><span class="process-metric-bar-fill mem-bar ${memClass}" style="width:${memPercent.toFixed(1)}%"></span></span>
+                    </span>
+                    <span class="process-state"><span class="process-state-dot state-${state}"></span><span class="process-state-text">${stateLabel}</span></span>
+                    <span class="process-time">${p.time || '--'}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function sortProcesses(key) {
+            if (processSortKey === key) {
+                processSortAsc = !processSortAsc;
+            } else {
+                processSortKey = key;
+                processSortAsc = false; // 默认降序
+                if (key === 'name' || key === 'pid') processSortAsc = true; // 名称和PID默认升序
+            }
+
+            // 更新表头样式
+            ['Pid', 'Name', 'Cpu', 'Mem', 'State'].forEach(k => {
+                const el = safeGetElement('sort' + k);
+                const icon = safeGetElement('sortIcon' + k);
+                if (el) el.classList.remove('sort-active');
+                if (icon) { icon.classList.remove('active'); icon.textContent = '↕'; }
+            });
+
+            const activeKey = key.charAt(0).toUpperCase() + key.slice(1);
+            const activeEl = safeGetElement('sort' + activeKey);
+            const activeIcon = safeGetElement('sortIcon' + activeKey);
+            if (activeEl) activeEl.classList.add('sort-active');
+            if (activeIcon) {
+                activeIcon.classList.add('active');
+                activeIcon.textContent = processSortAsc ? '↑' : '↓';
+            }
+
+            renderProcessList();
+        }
+
+        function filterProcessList() {
+            renderProcessList();
         }
 
         // ============================================
@@ -3088,11 +5641,7 @@
         // ============================================
         function showView(view) {
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            document.querySelector(`[data-view="${view}"]`)?.classList.add('active');
-
-            if (view === 'devices') {
-                disconnectDevice();
-            }
+            // Implementation for view switching if needed
         }
 
         function switchTab(tab) {
@@ -3104,7 +5653,16 @@
             document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
             document.getElementById(`tab-${tab}`)?.classList.add('active');
 
-            if (tab === 'files') {
+            if (tab === 'terminal') {
+                if (!terminalInitialized) {
+                    setTimeout(() => initTerminal(), 50);
+                } else {
+                    setTimeout(() => {
+                        if (fitAddon) fitAddon.fit();
+                        if (term) term.focus();
+                    }, 50);
+                }
+            } else if (tab === 'files') {
                 refreshFiles();
             } else if (tab === 'monitor') {
                 // Immediate refresh when switching to monitor tab
@@ -3130,7 +5688,119 @@
         }
 
         function showSettings() {
-            showToast('设置功能开发中...', 'info');
+            loadSettingsToForm();
+            document.getElementById('settingsModal').classList.add('active');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+
+        function loadSettingsToForm() {
+            const settings = loadSettings();
+            const wsUrlEl = document.getElementById('settingsWsUrl');
+            const tokenEl = document.getElementById('settingsAuthToken');
+            const maxReconnectEl = document.getElementById('settingsMaxReconnect');
+            const refreshIntervalEl = document.getElementById('settingsRefreshInterval');
+            const autoSelectEl = document.getElementById('settingsAutoSelect');
+            const showTimestampEl = document.getElementById('settingsShowTimestamp');
+
+            if (wsUrlEl) wsUrlEl.value = settings.wsUrl || '';
+            if (tokenEl) tokenEl.value = settings.authToken || '';
+            if (maxReconnectEl) maxReconnectEl.value = settings.maxReconnectAttempts || 10;
+            if (refreshIntervalEl) refreshIntervalEl.value = (settings.monitorRefreshInterval || 5000) / 1000;
+            if (autoSelectEl) autoSelectEl.checked = settings.autoSelectDevice !== false;
+            if (showTimestampEl) showTimestampEl.checked = settings.showTimestamp || false;
+        }
+
+        function saveSettings() {
+            const wsUrl = document.getElementById('settingsWsUrl')?.value.trim() || '';
+            const authToken = document.getElementById('settingsAuthToken')?.value.trim() || '';
+            const maxReconnect = parseInt(document.getElementById('settingsMaxReconnect')?.value) || 10;
+            const refreshInterval = (parseFloat(document.getElementById('settingsRefreshInterval')?.value) || 5) * 1000;
+            const autoSelect = document.getElementById('settingsAutoSelect')?.checked !== false;
+            const showTimestamp = document.getElementById('settingsShowTimestamp')?.checked || false;
+
+            const settings = {
+                wsUrl: wsUrl,
+                authToken: authToken,
+                maxReconnectAttempts: maxReconnect,
+                monitorRefreshInterval: refreshInterval,
+                autoSelectDevice: autoSelect,
+                showTimestamp: showTimestamp
+            };
+
+            try {
+                localStorage.setItem('buildroot-agent-settings', JSON.stringify(settings));
+            } catch (e) {
+                console.warn('无法保存设置到 localStorage:', e);
+            }
+
+            // 应用设置
+            applySettings(settings);
+
+            closeSettings();
+            showToast('设置已保存', 'success');
+
+            // 如果 WebSocket 地址变了，重新连接
+            if (wsUrl !== (loadSettings()._previousWsUrl || '')) {
+                reconnectWebSocket();
+            }
+        }
+
+        function loadSettings() {
+            try {
+                const saved = localStorage.getItem('buildroot-agent-settings');
+                return saved ? JSON.parse(saved) : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function applySettings(settings) {
+            if (!settings) settings = loadSettings();
+
+            maxReconnectAttempts = settings.maxReconnectAttempts || 10;
+
+            // 更新监控刷新间隔
+            const newInterval = settings.monitorRefreshInterval || 5000;
+            if (newInterval !== MONITOR_REFRESH_INTERVAL) {
+                // 需要重启定时器
+                if (monitorRefreshInterval) {
+                    clearInterval(monitorRefreshInterval);
+                    monitorRefreshInterval = setInterval(() => {
+                        if (currentTab === 'monitor' && currentDevice && isMonitorAutoRefreshEnabled) {
+                            refreshSystemStatus();
+                        }
+                    }, newInterval);
+                }
+            }
+        }
+
+        function resetSettings() {
+            try {
+                localStorage.removeItem('buildroot-agent-settings');
+            } catch (e) {}
+            loadSettingsToForm();
+            showToast('已恢复默认设置', 'info');
+        }
+
+        function getWsUrl() {
+            const settings = loadSettings();
+            if (settings.wsUrl) {
+                return settings.wsUrl;
+            }
+
+            // 自动检测
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            if (window.location.hostname.includes('github.dev')) {
+                const wsHostname = window.location.hostname.replace(/-\d+(\.app\.github\.dev)$/, '-8765$1');
+                return `${protocol}//${wsHostname}/`;
+            } else if (window.location.hostname && window.location.hostname !== '') {
+                return `${protocol}//${window.location.hostname}:8765`;
+            } else {
+                return `${protocol}//localhost:8765`;
+            }
         }
 
         // ============================================
@@ -3198,7 +5868,60 @@
         // Init
         // ============================================
         document.addEventListener('DOMContentLoaded', () => {
+            // 加载并应用保存的设置
+            applySettings();
             connectWebSocket();
+
+            // 文件拖拽上传
+            const filesTab = document.getElementById('tab-files');
+            if (filesTab) {
+                filesTab.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    filesTab.style.outline = '2px dashed var(--accent-primary)';
+                    filesTab.style.outlineOffset = '-4px';
+                });
+
+                filesTab.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    filesTab.style.outline = 'none';
+                });
+
+                filesTab.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    filesTab.style.outline = 'none';
+
+                    if (!currentDevice) {
+                        showToast('请先选择设备', 'warning');
+                        return;
+                    }
+
+                    const files = Array.from(e.dataTransfer.files);
+                    if (files.length > 0) {
+                        files.forEach(file => {
+                            startFileUpload(file, currentPath || '/tmp');
+                        });
+                        showToast(`开始上传 ${files.length} 个文件`, 'info');
+                    }
+                });
+            }
+
+            // 全局快捷键
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+K: 搜索设备
+                if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                    e.preventDefault();
+                    const searchInput = document.getElementById('deviceSearch');
+                    if (searchInput) searchInput.focus();
+                }
+                // Escape: 关闭模态框
+                if (e.key === 'Escape') {
+                    closeModal();
+                    closeSettings();
+                }
+            });
         });
     </script>
 </body>
