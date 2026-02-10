@@ -4,3 +4,5 @@ bin
 buildroot-package
 __pycache__
 package
+node_modules
+dist
