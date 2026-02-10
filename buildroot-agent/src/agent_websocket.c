@@ -171,7 +171,7 @@ static void *ws_service_thread(void *arg)
     while (client->thread_running) {
         if (client->context) {
             /* 高频处理WebSocket事件以避免任何延迟 */
-            lws_service(client->context, 1);
+            lws_service(client->context, 0);  /* 无延迟处理 */ 
         }
         
         /* 检查是否需要重连 */
@@ -314,6 +314,15 @@ int ws_connect(agent_context_t *ctx)
     ctx_info.gid = -1;
     ctx_info.uid = -1;
     
+    /* 性能优化配置 */
+    ctx_info.timeout_secs = 0;  /* 禁用超时，保持连接活跃 */
+    ctx_info.timeout_secs_ah_idle = 0;  /* 禁用连接超时 */
+    ctx_info.keepalive_timeout = 60;  /* 设置心跳超时为60秒 */
+    ctx_info.max_http_header_pool = 64;  /* 增加HTTP头缓冲区 */
+    ctx_info.options |= LWS_SERVER_OPTION_DISABLE_IPV6;  /* 禁用IPv6以减少开销 */
+    /* 注意：不要使用 LWS_SERVER_OPTION_LIBEVENT，会要求加载 evlib_event 插件 */
+    /* 默认的 poll 事件循环对客户端场景完全够用 */
+    
     if (use_ssl) {
         ctx_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
     }
@@ -455,7 +464,14 @@ int ws_send_message(agent_context_t *ctx, msg_type_t type, const char *data, siz
 
     pthread_mutex_unlock(&client->send_lock);
 
-    if (client->wsi) lws_callback_on_writable(client->wsi);
+    /* 立即触发写回调以减少延迟 */
+    if (client->wsi) {
+        lws_callback_on_writable(client->wsi);
+        /* 再次触发以确保消息被尽快处理 */
+        if (client->context) {
+            lws_cancel_service(client->context);
+        }
+    }
 
     return 0;
 }

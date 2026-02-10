@@ -16,7 +16,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+
 #include <pthread.h>
+
+#include <dirent.h>
+
 #include "agent.h"
 
 /* 上一次的CPU时间，用于计算CPU使用率 */
@@ -251,7 +255,360 @@ static void get_kernel_version(char *version, size_t len)
     }
 }
 
+/* 进程信息结构 */
+
+typedef struct {
+
+    int pid;
+
+    char name[64];
+
+    char state;         /* R/S/D/Z/T */
+
+    float cpu;          /* CPU使用率% */
+
+    unsigned long mem;  /* 内存 KB */
+
+    unsigned long utime;
+
+    unsigned long stime;
+
+    unsigned long long starttime;
+
+    char time_str[16];  /* 运行时间字符串 */
+
+} proc_info_t;
+
+
+
+/* 上一次进程CPU时间缓存 (用于计算CPU%) */
+
+#define MAX_PROC_CACHE 256
+
+static struct {
+
+    int pid;
+
+    unsigned long utime;
+
+    unsigned long stime;
+
+} prev_proc_times[MAX_PROC_CACHE];
+
+static int prev_proc_count = 0;
+
+static unsigned long long prev_total_cpu = 0;
+
+
+
+/* 获取进程列表 (返回进程数量) */
+
+static int get_process_list(proc_info_t *procs, int max_procs)
+
+{
+
+    DIR *dir = opendir("/proc");
+
+    if (!dir) return 0;
+
+
+
+    /* 先读取当前总CPU时间 */
+
+    unsigned long long total_cpu = 0;
+
+    {
+
+        FILE *fp = fopen("/proc/stat", "r");
+
+        if (fp) {
+
+            char line[256];
+
+            if (fgets(line, sizeof(line), fp)) {
+
+                unsigned long long u, n, s, i, io, ir, si, st;
+
+                sscanf(line, "cpu %llu %llu %llu %llu %llu %llu %llu %llu",
+
+                       &u, &n, &s, &i, &io, &ir, &si, &st);
+
+                total_cpu = u + n + s + i + io + ir + si + st;
+
+            }
+
+            fclose(fp);
+
+        }
+
+    }
+
+
+
+    unsigned long long cpu_diff = total_cpu - prev_total_cpu;
+
+    if (cpu_diff == 0) cpu_diff = 1;
+
+
+
+    /* 获取系统运行时间(秒) */
+
+    float uptime_sec = 0;
+
+    {
+
+        FILE *fp = fopen("/proc/uptime", "r");
+
+        if (fp) {
+
+            fscanf(fp, "%f", &uptime_sec);
+
+            fclose(fp);
+
+        }
+
+    }
+
+
+
+    long clk_tck = sysconf(_SC_CLK_TCK);
+
+    if (clk_tck <= 0) clk_tck = 100;
+
+
+
+    int count = 0;
+
+    struct dirent *entry;
+
+
+
+    while ((entry = readdir(dir)) != NULL && count < max_procs) {
+
+        /* 只处理数字目录名(即PID) */
+
+        int pid = atoi(entry->d_name);
+
+        if (pid <= 0) continue;
+
+
+
+        char path[128];
+
+        snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+
+
+
+        FILE *fp = fopen(path, "r");
+
+        if (!fp) continue;
+
+
+
+        char line[512];
+
+        if (!fgets(line, sizeof(line), fp)) {
+
+            fclose(fp);
+
+            continue;
+
+        }
+
+        fclose(fp);
+
+
+
+        /* 解析 /proc/[pid]/stat */
+
+        /* 格式: pid (comm) state ppid ... utime stime ... starttime ... rss ... */
+
+        char *comm_start = strchr(line, '(');
+
+        char *comm_end = strrchr(line, ')');
+
+        if (!comm_start || !comm_end) continue;
+
+
+
+        proc_info_t *p = &procs[count];
+
+        p->pid = pid;
+
+
+
+        /* 提取进程名 */
+
+        int name_len = comm_end - comm_start - 1;
+
+        if (name_len > 63) name_len = 63;
+
+        strncpy(p->name, comm_start + 1, name_len);
+
+        p->name[name_len] = '\0';
+
+
+
+        /* 解析comm后面的字段 */
+
+        char *rest = comm_end + 2; /* 跳过 ") " */
+
+        char state;
+
+        int ppid;
+
+        unsigned long utime, stime;
+
+        long rss;
+
+        unsigned long long starttime;
+
+
+
+        /* state(1) ppid(2) pgrp(3) session(4) tty_nr(5) tpgid(6) flags(7)
+
+           minflt(8) cminflt(9) majflt(10) cmajflt(11) utime(12) stime(13)
+
+           cutime(14) cstime(15) priority(16) nice(17) num_threads(18)
+
+           itrealvalue(19) starttime(20) vsize(21) rss(22) */
+
+        int n = sscanf(rest,
+
+            "%c %d %*d %*d %*d %*d %*u "
+
+            "%*u %*u %*u %*u %lu %lu "
+
+            "%*d %*d %*d %*d %*d "
+
+            "%*d %llu %*u %ld",
+
+            &state, &ppid, &utime, &stime, &starttime, &rss);
+
+
+
+        if (n < 6) continue;
+
+
+
+        p->state = state;
+
+        p->utime = utime;
+
+        p->stime = stime;
+
+        p->starttime = starttime;
+
+        p->mem = (rss * 4); /* 页面大小通常4KB */
+
+
+
+        /* 计算CPU使用率: 与上次采样的差值 */
+
+        p->cpu = 0.0;
+
+        for (int i = 0; i < prev_proc_count; i++) {
+
+            if (prev_proc_times[i].pid == pid) {
+
+                unsigned long d_utime = utime - prev_proc_times[i].utime;
+
+                unsigned long d_stime = stime - prev_proc_times[i].stime;
+
+                p->cpu = 100.0 * (float)(d_utime + d_stime) / (float)cpu_diff;
+
+                if (p->cpu > 100.0) p->cpu = 100.0;
+
+                if (p->cpu < 0.0) p->cpu = 0.0;
+
+                break;
+
+            }
+
+        }
+
+
+
+        /* 计算运行时间字符串 */
+
+        float proc_uptime = uptime_sec - ((float)starttime / (float)clk_tck);
+
+        if (proc_uptime < 0) proc_uptime = 0;
+
+        int hours = (int)(proc_uptime / 3600);
+
+        int mins = (int)((proc_uptime - hours * 3600) / 60);
+
+        int secs = (int)(proc_uptime) % 60;
+
+        if (hours > 0) {
+
+            snprintf(p->time_str, sizeof(p->time_str), "%d:%02d:%02d", hours, mins, secs);
+
+        } else {
+
+            snprintf(p->time_str, sizeof(p->time_str), "%d:%02d", mins, secs);
+
+        }
+
+
+
+        count++;
+
+    }
+
+    closedir(dir);
+
+
+
+    /* 更新缓存 */
+
+    prev_proc_count = count < MAX_PROC_CACHE ? count : MAX_PROC_CACHE;
+
+    for (int i = 0; i < prev_proc_count; i++) {
+
+        prev_proc_times[i].pid = procs[i].pid;
+
+        prev_proc_times[i].utime = procs[i].utime;
+
+        prev_proc_times[i].stime = procs[i].stime;
+
+    }
+
+    prev_total_cpu = total_cpu;
+
+
+
+    /* 按CPU使用率降序排序 */
+
+    for (int i = 0; i < count - 1; i++) {
+
+        for (int j = i + 1; j < count; j++) {
+
+            if (procs[j].cpu > procs[i].cpu) {
+
+                proc_info_t tmp = procs[i];
+
+                procs[i] = procs[j];
+
+                procs[j] = tmp;
+
+            }
+
+        }
+
+    }
+
+
+
+    return count;
+
+}
+
+
+
 /* 采集系统状态 */
+
 int status_collect(system_status_t *status)
 {
     if (!status) return -1;
@@ -298,60 +655,101 @@ int status_collect(system_status_t *status)
     return 0;
 }
 
-/* 将状态转换为JSON */
-char *status_to_json(system_status_t *status)
-{
-    if (!status) return NULL;
-    
-    char *json = malloc(3072);  // Increased size for new fields
-    if (!json) return NULL;
-    
-    snprintf(json, 3072,
-        "{"
-        "\"cpu_usage\":%.2f,"
-        "\"cpu_cores\":%d,"
-        "\"cpu_user\":%.2f,"
-        "\"cpu_system\":%.2f,"
-        "\"mem_total\":%.2f,"
-        "\"mem_used\":%.2f,"
-        "\"mem_free\":%.2f,"
-        "\"disk_total\":%.2f,"
-        "\"disk_used\":%.2f,"
-        "\"load_1min\":%.2f,"
-        "\"load_5min\":%.2f,"
-        "\"load_15min\":%.2f,"
-        "\"uptime\":%u,"
-        "\"net_rx_bytes\":%d,"
-        "\"net_tx_bytes\":%d,"
-        "\"hostname\":\"%s\","
-        "\"kernel_version\":\"%s\","
-        "\"ip_addr\":\"%s\","
-        "\"mac_addr\":\"%s\","
-        "\"timestamp\":%" PRIu64 ""
-        "}",
-        status->cpu_usage,
-        status->cpu_cores,
-        status->cpu_user,
-        status->cpu_system,
-        status->mem_total,
-        status->mem_used,
-        status->mem_free,
-        status->disk_total,
-        status->disk_used,
-        status->load_1min,
-        status->load_5min,
-        status->load_15min,
-        status->uptime,
-        status->net_rx_bytes,
-        status->net_tx_bytes,
-        status->hostname,
-        status->kernel_version,
-        status->ip_addr,
-        status->mac_addr,
-        get_timestamp_ms()
-    );
-    
-    return json;
+/* 将状态转换为JSON (含进程列表) */
+char *status_to_json(system_status_t *status)
+{
+    if (!status) return NULL;
+    
+    /* 采集进程列表 */
+    #define MAX_PROCS 128
+    #define TOP_N 30
+    static proc_info_t procs[MAX_PROCS];
+    int proc_count = get_process_list(procs, MAX_PROCS);
+    int top_count = proc_count < TOP_N ? proc_count : TOP_N;
+    
+    /* 计算所需缓冲区大小: 基础字段~1K + 每个进程~150字节 */
+    size_t json_size = 2048 + (top_count * 160);
+    char *json = malloc(json_size);
+    if (!json) return NULL;
+    
+    int offset = snprintf(json, json_size,
+        "{"
+        "\"cpu_usage\":%.2f,"
+        "\"cpu_cores\":%d,"
+        "\"cpu_user\":%.2f,"
+        "\"cpu_system\":%.2f,"
+        "\"mem_total\":%.2f,"
+        "\"mem_used\":%.2f,"
+        "\"mem_free\":%.2f,"
+        "\"disk_total\":%.2f,"
+        "\"disk_used\":%.2f,"
+        "\"load_1min\":%.2f,"
+        "\"load_5min\":%.2f,"
+        "\"load_15min\":%.2f,"
+        "\"uptime\":%u,"
+        "\"net_rx_bytes\":%d,"
+        "\"net_tx_bytes\":%d,"
+        "\"hostname\":\"%s\","
+        "\"kernel_version\":\"%s\","
+        "\"ip_addr\":\"%s\","
+        "\"mac_addr\":\"%s\","
+        "\"timestamp\":%" PRIu64 ","
+        "\"proc_total\":%d,"
+        "\"processes\":[",
+        status->cpu_usage,
+        status->cpu_cores,
+        status->cpu_user,
+        status->cpu_system,
+        status->mem_total,
+        status->mem_used,
+        status->mem_free,
+        status->disk_total,
+        status->disk_used,
+        status->load_1min,
+        status->load_5min,
+        status->load_15min,
+        status->uptime,
+        status->net_rx_bytes,
+        status->net_tx_bytes,
+        status->hostname,
+        status->kernel_version,
+        status->ip_addr,
+        status->mac_addr,
+        get_timestamp_ms(),
+        proc_count
+    );
+    
+    /* 追加进程列表 JSON */
+    for (int i = 0; i < top_count && offset < (int)json_size - 200; i++) {
+        /* 转义进程名中的特殊字符 */
+        char safe_name[128];
+        int si = 0;
+        for (int j = 0; procs[i].name[j] && si < 120; j++) {
+            char c = procs[i].name[j];
+            if (c == '"' || c == '\\') {
+                safe_name[si++] = '\\';
+            }
+            safe_name[si++] = c;
+        }
+        safe_name[si] = '\0';
+        
+        offset += snprintf(json + offset, json_size - offset,
+            "%s{\"pid\":%d,\"name\":\"%s\",\"state\":\"%c\","
+            "\"cpu\":%.1f,\"mem\":%lu,\"time\":\"%s\"}",
+            i > 0 ? "," : "",
+            procs[i].pid,
+            safe_name,
+            procs[i].state,
+            procs[i].cpu,
+            procs[i].mem,
+            procs[i].time_str
+        );
+    }
+    
+    /* 闭合 JSON */
+    snprintf(json + offset, json_size - offset, "]}");
+    
+    return json;
 }
 
 /* 状态上报线程 */
