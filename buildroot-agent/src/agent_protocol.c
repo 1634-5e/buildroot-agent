@@ -127,6 +127,175 @@ static char *json_get_string(const char *json, const char *key)
     return result;
 }
 
+/* Shell argument escaping to prevent command injection */
+static void escape_shell_arg(const char *src, char *dst, size_t dst_size) {
+    if (!src || !dst || dst_size == 0) return;
+    
+    if (dst_size < 3) {
+        dst[0] = '\0';
+        return;
+    }
+    
+    size_t src_len = strlen(src);
+    size_t dst_idx = 0;
+    
+    // Simple approach: wrap in single quotes and handle single quotes inside
+    dst[dst_idx++] = '\'';
+    
+    for (size_t i = 0; i < src_len && dst_idx < dst_size - 3; i++) {
+        if (src[i] == '\'') {
+            // Close the quote, add escaped quote, start new quote
+            dst[dst_idx++] = '\'';
+            if (dst_idx < dst_size - 3) dst[dst_idx++] = '\\';
+            if (dst_idx < dst_size - 3) dst[dst_idx++] = '\'';
+            if (dst_idx < dst_size - 3) dst[dst_idx++] = '\'';
+        } else {
+            dst[dst_idx++] = src[i];
+        }
+    }
+    
+    if (dst_idx < dst_size - 1) {
+        dst[dst_idx++] = '\'';
+    }
+    dst[dst_idx] = '\0';
+}
+
+/* Parse a JSON array of strings into a dynamically allocated array */
+static char **parse_json_string_array(const char *json, const char *key, int *count) {
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    
+    char *pos = strstr(json, search);
+    if (!pos) {
+        *count = 0;
+        return NULL;
+    }
+    
+    pos += strlen(search);
+    while (*pos && isspace(*pos)) pos++;
+    
+    if (*pos != '[') {
+        *count = 0;
+        return NULL;
+    }
+    pos++; // Skip '['
+    
+    // First pass: count the number of strings
+    int string_count = 0;
+    char *parse_pos = pos;
+    
+    while (*parse_pos && *parse_pos != ']') {
+        // Skip whitespace
+        while (*parse_pos && isspace(*parse_pos)) parse_pos++;
+        
+        if (*parse_pos == '"') {
+            string_count++;
+            parse_pos++; // Skip opening quote
+            
+            // Find closing quote
+            while (*parse_pos && *parse_pos != '"') {
+                if (*parse_pos == '\\' && *(parse_pos + 1)) {
+                    parse_pos += 2; // Skip escaped character
+                } else {
+                    parse_pos++;
+                }
+            }
+            if (*parse_pos == '"') parse_pos++;
+        }
+        
+        // Skip to next element (comma or closing bracket)
+        while (*parse_pos && *parse_pos != ',' && *parse_pos != ']') parse_pos++;
+        if (*parse_pos == ',') parse_pos++;
+    }
+    
+    if (string_count == 0) {
+        *count = 0;
+        return NULL;
+    }
+    
+    // Allocate array for string pointers
+    char **result = malloc(sizeof(char*) * string_count);
+    if (!result) {
+        *count = 0;
+        return NULL;
+    }
+    
+    // Reset and parse the strings
+    parse_pos = pos;
+    int index = 0;
+    
+    while (*parse_pos && index < string_count && *parse_pos != ']') {
+        // Skip whitespace
+        while (*parse_pos && isspace(*parse_pos)) parse_pos++;
+        
+        if (*parse_pos == '"') {
+            parse_pos++; // Skip opening quote
+            char *start = parse_pos;
+            size_t len = 0;
+            
+            // Find closing quote
+            while (*parse_pos && *parse_pos != '"') {
+                if (*parse_pos == '\\' && *(parse_pos + 1)) {
+                    len++;
+                    parse_pos += 2; // Skip escaped character
+                } else {
+                    len++;
+                    parse_pos++;
+                }
+            }
+            
+            // Allocate and copy string, handling escaped characters
+            char *str = malloc(len + 1);
+            if (str) {
+                char *dst = str;
+                parse_pos = start;
+                
+                while (*parse_pos && *parse_pos != '"') {
+                    if (*parse_pos == '\\' && *(parse_pos + 1)) {
+                        char next = *(parse_pos + 1);
+                        switch (next) {
+                            case 'n': *dst++ = '\n'; break;
+                            case 'r': *dst++ = '\r'; break;
+                            case 't': *dst++ = '\t'; break;
+                            case 'b': *dst++ = '\b'; break;
+                            case 'f': *dst++ = '\f'; break;
+                            case '\\': *dst++ = '\\'; break;
+                            case '"': *dst++ = '"'; break;
+                            default: *dst++ = next; break;
+                        }
+                        parse_pos += 2;
+                    } else {
+                        *dst++ = *parse_pos++;
+                    }
+                }
+                *dst = '\0';
+                result[index++] = str;
+            }
+            
+            if (*parse_pos == '"') parse_pos++;
+        }
+        
+        // Skip to next element (comma or closing bracket)
+        while (*parse_pos && *parse_pos != ',' && *parse_pos != ']') parse_pos++;
+        if (*parse_pos == ',') parse_pos++;
+    }
+    
+    *count = index;
+    return result;
+}
+
+/* Free the string array allocated by parse_json_string_array */
+static void free_string_array(char **array, int count) {
+    if (!array) return;
+    
+    for (int i = 0; i < count; i++) {
+        if (array[i]) {
+            free(array[i]);
+        }
+    }
+    free(array);
+}
+
 static int json_get_int(const char *json, const char *key, int default_val)
 {
     char search[128];
@@ -472,31 +641,16 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
     char *path = json_get_string(data, "path");
     char *format = json_get_string(data, "format");
     char *request_id = json_get_string(data, "request_id");
-
-    if (!path) {
-        LOG_ERROR("打包请求: 缺少path参数");
+    
+    // Check for the new "paths" array parameter for multiple files
+    int paths_count = 0;
+    char **paths_array = parse_json_string_array(data, "paths", &paths_count);
+    
+    if (!path && !paths_array) {
+        LOG_ERROR("打包请求: 缺少path参数或paths参数");
         goto cleanup;
     }
     
-    LOG_INFO("打包请求 [%s]: path=%s, format=%s", request_id ? request_id : "unknown", path, format ? format : "zip");
-
-    /* 规范化路径 */
-    char normalized_check[2048];
-    normalize_path(path, normalized_check, sizeof(normalized_check));
-    
-    /* 检查文件/目录是否存在 */
-    struct stat st;
-    if (stat(normalized_check, &st) != 0) {
-        LOG_ERROR("路径不存在: %s", normalized_check);
-        goto cleanup;
-    }
-
-    /* 提取相对路径进行压缩（去掉前导/) */
-    const char *rel_path = normalized_check;
-    if (rel_path[0] == '/' && rel_path[1] != '\0') {
-        rel_path = normalized_check + 1;
-    }
-
     /* 生成临时归档文件 */
     char tmpfile[256];
     snprintf(tmpfile, sizeof(tmpfile), "/tmp/agent_pkg_%d_%llu", getpid(), (unsigned long long)get_timestamp_ms());
@@ -505,19 +659,146 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
     
     if (format && strcmp(format, "tar.gz") == 0) {
         snprintf(archive, sizeof(archive), "%s.tar.gz", tmpfile);
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "tar -czf '%s' -C / '%s' 2>&1", archive, rel_path);
+        char cmd[4096]; // Increased size for multiple files
+        
+        if (paths_array && paths_count > 0) {
+            // Handle multiple files
+            strcpy(cmd, "cd / && tar -czf '");
+            strcat(cmd, archive);
+            strcat(cmd, "' ");
+            
+            // Add each file to the command
+            for (int i = 0; i < paths_count; i++) {
+                const char *file_str = paths_array[i];
+                if (file_str) {
+                    // Normalize the path to prevent directory traversal
+                    char normalized_path[2048];
+                    normalize_path(file_str, normalized_path, sizeof(normalized_path));
+                    
+                    // Add to command ensuring proper escaping
+                    char escaped_path[2048];
+                    escape_shell_arg(normalized_path + 1, escaped_path, sizeof(escaped_path)); // Skip leading '/'
+                    
+                    // Check if file exists
+                    struct stat st;
+                    if (stat(normalized_path, &st) == 0) {
+                        strcat(cmd, "'");
+                        strcat(cmd, escaped_path);
+                        strcat(cmd, "' ");
+                        LOG_INFO("Adding to archive: %s", normalized_path);
+                    } else {
+                        LOG_WARN("File does not exist, skipping: %s", normalized_path);
+                    }
+                }
+            }
+            
+            strcat(cmd, "2>&1");
+        } else if (path) {
+            // Handle single file (original logic)
+            char normalized_check[2048];
+            normalize_path(path, normalized_check, sizeof(normalized_check));
+            
+            /* 检查文件/目录是否存在 */
+            struct stat st;
+            if (stat(normalized_check, &st) != 0) {
+                LOG_ERROR("路径不存在: %s", normalized_check);
+                goto cleanup;
+            }
+
+            /* 提取相对路径进行压缩（去掉前导/) */
+            const char *rel_path = normalized_check;
+            if (rel_path[0] == '/' && rel_path[1] != '\0') {
+                rel_path = normalized_check + 1;
+            }
+            
+            // For both files and directories, change to the parent directory first to preserve structure
+            char parent_dir[2048];
+            char item_name[512];
+            strncpy(parent_dir, normalized_check, sizeof(parent_dir) - 1);
+            parent_dir[sizeof(parent_dir) - 1] = '\0';
+            
+            // Extract the item name (last component)
+            char *last_slash = strrchr(parent_dir, '/');
+            if (last_slash && *(last_slash + 1) != '\0') {
+                strcpy(item_name, last_slash + 1);
+                *last_slash = '\0';  // Split parent dir
+                // If parent_dir is empty after split, it was an absolute path like /filename
+                if (parent_dir[0] == '\0') {
+                    snprintf(cmd, sizeof(cmd), "cd / && tar -czf '%s' '%s' 2>&1", archive, item_name);
+                } else {
+                    snprintf(cmd, sizeof(cmd), "cd '%s' && tar -czf '%s' '%s' 2>&1", 
+                            parent_dir, archive, item_name);
+                }
+            } else {
+                // No slash found, so it's relative to root
+                snprintf(cmd, sizeof(cmd), "cd / && tar -czf '%s' '%s' 2>&1", archive, normalized_check + 1);
+            }
+        } else {
+            LOG_ERROR("打包请求: 无法处理路径参数");
+            goto cleanup;
+        }
+        
         LOG_DEBUG("执行压缩: %s", cmd);
         ret = system(cmd);
         if (ret != 0) {
             LOG_ERROR("tar命令失败: ret=%d, errno=%d", ret, errno);
+            LOG_ERROR("命令: %s", cmd);
         } else {
             LOG_INFO("tar压缩完成");
         }
     } else {
         snprintf(archive, sizeof(archive), "%s.zip", tmpfile);
-        char cmd[1024];
-        snprintf(cmd, sizeof(cmd), "cd / && zip -rq '%s' '%s' 2>&1", archive, rel_path);
+        char cmd[4096]; // Increased size for multiple files
+        
+        if (paths_array && paths_count > 0) {
+            // Handle multiple files for zip
+            strcpy(cmd, "cd / && zip -rq '");
+            strcat(cmd, archive);
+            strcat(cmd, "' ");
+            
+            // Add each file to the command
+            for (int i = 0; i < paths_count; i++) {
+                const char *file_str = paths_array[i];
+                if (file_str) {
+                    // Normalize the path to prevent directory traversal
+                    char normalized_path[2048];
+                    normalize_path(file_str, normalized_path, sizeof(normalized_path));
+                    
+                    // Add to command ensuring proper escaping
+                    char escaped_path[2048];
+                    escape_shell_arg(normalized_path + 1, escaped_path, sizeof(escaped_path)); // Skip leading '/'
+                    
+                    // Check if file exists
+                    struct stat st;
+                    if (stat(normalized_path, &st) == 0) {
+                        strcat(cmd, "'");
+                        strcat(cmd, escaped_path);
+                        strcat(cmd, "' ");
+                        LOG_INFO("Adding to archive: %s", normalized_path);
+                    } else {
+                        LOG_WARN("File does not exist, skipping: %s", normalized_path);
+                    }
+                }
+            }
+            
+            strcat(cmd, "2>&1");
+        } else if (path) {
+            // Handle single file (original logic)
+            char normalized_check[2048];
+            normalize_path(path, normalized_check, sizeof(normalized_check));
+            
+            /* 提取相对路径 */
+            const char *rel_path = normalized_check;
+            if (rel_path[0] == '/' && rel_path[1] != '\0') {
+                rel_path = normalized_check + 1;
+            }
+            
+            snprintf(cmd, sizeof(cmd), "cd / && zip -rq '%s' '%s' 2>&1", archive, rel_path);
+        } else {
+            LOG_ERROR("打包请求: 无法处理路径参数");
+            goto cleanup;
+        }
+        
         LOG_DEBUG("执行压缩: %s", cmd);
         ret = system(cmd);
         if (ret != 0) {
@@ -547,6 +828,7 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
         goto cleanup;
     }
 
+    // Read file into memory buffer (current approach - can be optimized for streaming later)
     unsigned char *buf = malloc(fsize);
     if (!buf) {
         LOG_ERROR("内存分配失败: %ld bytes", fsize);
@@ -603,7 +885,10 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
         LOG_DEBUG("删除临时文件: %s", archive);
     }
 
-cleanup:
+ cleanup:
+    if (paths_array) {
+        free_string_array(paths_array, paths_count);
+    }
     if (path) free(path);
     if (format) free(format);
     if (request_id) free(request_id);

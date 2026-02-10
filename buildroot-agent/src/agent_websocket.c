@@ -128,11 +128,14 @@ static int ws_callback(struct lws *wsi, enum lws_callback_reasons reason,
             free(node->data);
             free(node);
 
-            client->has_pending_send = (client->msg_head != NULL);
-            if (client->has_pending_send && client->wsi) {
-                lws_callback_on_writable(client->wsi);
-            }
-            pthread_cond_signal(&client->send_cond);
+         client->has_pending_send = (client->msg_head != NULL);
+         if (client->has_pending_send && client->wsi) {
+             lws_callback_on_writable(client->wsi);
+         } else if (!client->has_pending_send) {
+             // If no pending messages, ensure we clear any write flag
+             client->has_pending_send = false;
+         }
+         pthread_cond_signal(&client->send_cond);
         } else {
             client->has_pending_send = false;
             pthread_cond_signal(&client->send_cond);

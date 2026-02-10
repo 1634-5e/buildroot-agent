@@ -22,22 +22,30 @@
 /* 上一次的CPU时间，用于计算CPU使用率 */
 static unsigned long long prev_total = 0;
 static unsigned long long prev_idle = 0;
+static unsigned long long prev_user = 0;
+static unsigned long long prev_system = 0;
 
 /* 上一次的网络统计 */
 static long prev_rx_bytes = 0;
 static long prev_tx_bytes = 0;
 
-/* 读取CPU使用率 */
-static float get_cpu_usage(void)
+/* 读取CPU使用率和详细信息 */
+static float get_cpu_usage(float *cpu_user, float *cpu_system)
 {
     FILE *fp = fopen("/proc/stat", "r");
-    if (!fp) return 0.0;
+    if (!fp) {
+        *cpu_user = 0.0;
+        *cpu_system = 0.0;
+        return 0.0;
+    }
     
     char line[256];
     unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
     
     if (fgets(line, sizeof(line), fp) == NULL) {
         fclose(fp);
+        *cpu_user = 0.0;
+        *cpu_system = 0.0;
         return 0.0;
     }
     fclose(fp);
@@ -47,20 +55,36 @@ static float get_cpu_usage(void)
     
     unsigned long long total = user + nice + system + idle + iowait + irq + softirq + steal;
     unsigned long long idle_time = idle + iowait;
+    unsigned long long user_time = user + nice;
+    unsigned long long system_time = system + irq + softirq;
     
     float cpu_usage = 0.0;
+    float cpu_user_usage = 0.0;
+    float cpu_system_usage = 0.0;
     
     if (prev_total > 0) {
         unsigned long long total_diff = total - prev_total;
         unsigned long long idle_diff = idle_time - prev_idle;
+        unsigned long long user_diff = user_time - prev_user;
+        unsigned long long system_diff = system_time - prev_system;
         
         if (total_diff > 0) {
             cpu_usage = 100.0 * (1.0 - (float)idle_diff / (float)total_diff);
+        }
+        
+        if (total_diff > 0) {
+            cpu_user_usage = 100.0 * (float)user_diff / (float)total_diff;
+            cpu_system_usage = 100.0 * (float)system_diff / (float)total_diff;
         }
     }
     
     prev_total = total;
     prev_idle = idle_time;
+    prev_user = user_time;
+    prev_system = system_time;
+    
+    *cpu_user = cpu_user_usage;
+    *cpu_system = cpu_system_usage;
     
     return cpu_usage;
 }
@@ -234,8 +258,14 @@ int status_collect(system_status_t *status)
     
     memset(status, 0, sizeof(system_status_t));
     
-    /* CPU使用率 */
-    status->cpu_usage = get_cpu_usage();
+    /* CPU使用率 (获取详细信息) */
+    float cpu_user, cpu_system;
+    status->cpu_usage = get_cpu_usage(&cpu_user, &cpu_system);
+    status->cpu_user = cpu_user;
+    status->cpu_system = cpu_system;
+    
+    /* CPU核心数 */
+    status->cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
     
     /* 内存信息 */
     get_memory_info(&status->mem_total, &status->mem_used, &status->mem_free);
@@ -273,12 +303,15 @@ char *status_to_json(system_status_t *status)
 {
     if (!status) return NULL;
     
-    char *json = malloc(2048);
+    char *json = malloc(3072);  // Increased size for new fields
     if (!json) return NULL;
     
-    snprintf(json, 2048,
+    snprintf(json, 3072,
         "{"
         "\"cpu_usage\":%.2f,"
+        "\"cpu_cores\":%d,"
+        "\"cpu_user\":%.2f,"
+        "\"cpu_system\":%.2f,"
         "\"mem_total\":%.2f,"
         "\"mem_used\":%.2f,"
         "\"mem_free\":%.2f,"
@@ -297,6 +330,9 @@ char *status_to_json(system_status_t *status)
         "\"timestamp\":%" PRIu64 ""
         "}",
         status->cpu_usage,
+        status->cpu_cores,
+        status->cpu_user,
+        status->cpu_system,
         status->mem_total,
         status->mem_used,
         status->mem_free,

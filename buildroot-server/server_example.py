@@ -471,14 +471,28 @@ class MessageHandler:
     ) -> bool:
         """安全发送消息"""
         try:
+            # 检查连接状态
+            if not hasattr(websocket, "state") or websocket.state.name != "OPEN":
+                logger.debug("WebSocket连接未开启，跳过发送")
+                return False
+
             if hasattr(websocket, "send") and callable(
                 getattr(websocket, "send", None)
             ):
                 await websocket.send(message)
                 return True
+            else:
+                logger.warning("WebSocket对象没有send方法")
+                return False
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(f"WebSocket连接已关闭: code={e.code}, reason={e.reason}")
+            return False
+        except websockets.exceptions.ConnectionClosedError as e:
+            logger.warning(f"WebSocket连接错误关闭: code={e.code}, reason={e.reason}")
+            return False
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
-        return False
+            return False
 
     async def handle_heartbeat(self, device_id: str, data: dict) -> None:
         """处理心跳"""
@@ -784,6 +798,16 @@ class MessageHandler:
             logger.debug(f"收到认证消息 [{device_id}]（已认证）")
         elif msg_type == MessageType.DEVICE_LIST:
             logger.info(f"设备列表查询 [{device_id}]: {json_data}")
+            # Send current device list to the requesting client
+            device_list = self.conn_mgr.get_all_devices()
+            response = self.create_message(
+                MessageType.DEVICE_LIST,
+                {"devices": device_list, "count": len(device_list)},
+            )
+            if hasattr(websocket, "send") and callable(
+                getattr(websocket, "send", None)
+            ):
+                await websocket.send(response)
         else:
             logger.warning(f"未知消息类型: 0x{msg_type:02X}")
 
@@ -798,6 +822,12 @@ class MessageHandler:
 
             for console in list(self.conn_mgr.web_consoles):
                 try:
+                    # 检查WebSocket连接状态
+                    if hasattr(console, "state") and console.state.name != "OPEN":
+                        logger.debug("Web控制台连接未开启，移除连接")
+                        to_remove.append(console)
+                        continue
+
                     if hasattr(console, "send") and callable(
                         getattr(console, "send", None)
                     ):
@@ -805,6 +835,16 @@ class MessageHandler:
                     else:
                         logger.warning("Web控制台没有send方法")
                         to_remove.append(console)
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.warning(
+                        f"Web控制台连接已关闭: code={e.code}, reason={e.reason}"
+                    )
+                    to_remove.append(console)
+                except websockets.exceptions.ConnectionClosedError as e:
+                    logger.warning(
+                        f"Web控制台连接错误: code={e.code}, reason={e.reason}"
+                    )
+                    to_remove.append(console)
                 except Exception as e:
                     logger.warning(f"向web控制台发送失败: {e}")
                     to_remove.append(console)
@@ -822,6 +862,16 @@ class MessageHandler:
 
         try:
             websocket = self.conn_mgr.get_device(device_id)
+            if not websocket:
+                logger.error(f"设备WebSocket为空: {device_id}")
+                return False
+
+            # 检查连接状态
+            if hasattr(websocket, "state") and websocket.state.name != "OPEN":
+                logger.warning(f"设备WebSocket连接未开启: {device_id}")
+                self.conn_mgr.remove_device(device_id)
+                return False
+
             if not hasattr(websocket, "send") or not callable(
                 getattr(websocket, "send", None)
             ):
@@ -831,6 +881,12 @@ class MessageHandler:
             message = self.create_message(msg_type, data)
             await websocket.send(message)
             return True
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(
+                f"设备WebSocket连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
+            )
+            self.conn_mgr.remove_device(device_id)
+            return False
         except Exception as e:
             logger.error(f"发送失败: {e}")
             return False
@@ -1048,7 +1104,7 @@ class CloudServer:
             MessageType.SCRIPT_RECV,
             {
                 "script_id": "test-script",
-                "content": '#!/bin/sh\necho "Hello from cloud!"\ndate\nuname -a\nfree -m\n',
+                "content": '#!/bin/bash\necho "Hello from cloud!"\ndate\nuname -a\nfree -m\n',
                 "execute": True,
             },
         )

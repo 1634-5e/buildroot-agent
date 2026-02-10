@@ -56,6 +56,9 @@ typedef enum {
 /* 系统状态结构 */
 typedef struct {
     float cpu_usage;            /* CPU使用率 */
+    int cpu_cores;              /* CPU核心数 */
+    float cpu_user;             /* 用户态CPU使用率 */
+    float cpu_system;           /* 系统态CPU使用率 */
     float mem_total;            /* 总内存 (MB) */
     float mem_used;             /* 已用内存 (MB) */
     float mem_free;             /* 空闲内存 (MB) */
