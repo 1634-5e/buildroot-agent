@@ -122,26 +122,26 @@ export function DeviceList({ devices, selectedDevice, onDeviceSelect, onReconnec
                  </div>
                </div>
 
-               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border">
-                 <div className="text-center">
-                   <div className="text-sm font-semibold text-accent-primary">
-                     {device.cpu !== undefined ? `${device.cpu}%` : '--'}
-                   </div>
-                   <div className="text-[11px] text-text-muted">CPU</div>
-                 </div>
-                 <div className="text-center">
-                   <div className="text-sm font-semibold text-accent-primary">
-                     {device.memory !== undefined ? `${device.memory}%` : '--'}
-                   </div>
-                   <div className="text-[11px] text-text-muted">内存</div>
-                 </div>
-                 <div className="text-center">
-                   <div className="text-sm font-semibold text-accent-primary">
-                     {device.disk !== undefined ? `${device.disk}%` : '--'}
-                   </div>
-                   <div className="text-[11px] text-text-muted">磁盘</div>
-                 </div>
-               </div>
+                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border">
+                  <div className="text-center truncate px-1">
+                    <div className="text-sm font-semibold text-accent-primary">
+                      {device.cpu !== undefined ? `${device.cpu}%` : '--'}
+                    </div>
+                    <div className="text-[11px] text-text-muted">CPU</div>
+                  </div>
+                  <div className="text-center truncate px-1">
+                    <div className="text-sm font-semibold text-accent-primary">
+                      {device.memory !== undefined ? `${device.memory}%` : '--'}
+                    </div>
+                    <div className="text-[11px] text-text-muted">内存</div>
+                  </div>
+                  <div className="text-center truncate px-1">
+                    <div className="text-sm font-semibold text-accent-primary">
+                      {device.disk !== undefined ? `${device.disk}%` : '--'}
+                    </div>
+                    <div className="text-[11px] text-text-muted">磁盘</div>
+                  </div>
+                </div>
              </div>
            ))
          )}

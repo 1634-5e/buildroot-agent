@@ -1,49 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { Search, X, RotateCcw } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
-import { useWebSocket, usePTYData } from '@/contexts/WebSocketContext';
+import { useWebSocket, usePTYData } from '@/hooks/useWebSocket';
 import { MessageType } from '@/types';
 
 interface TerminalProps {
   deviceId: string | null;
-}
-
-// Base64 decode function for PTY data
-function base64Decode(base64: string): string {
-  try {
-    // Handle URL-safe base64
-    const normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = atob(normalized);
-    // Convert binary string to Uint8Array, then to text
-    const bytes = new Uint8Array(decoded.length);
-    for (let i = 0; i < decoded.length; i++) {
-      bytes[i] = decoded.charCodeAt(i);
-    }
-    return new TextDecoder('utf-8').decode(bytes);
-  } catch (e) {
-    console.error('Base64 decode error:', e);
-    return base64; // Return original if decode fails
-  }
-}
-
-// Base64 encode function for PTY data
-function base64Encode(str: string): string {
-  try {
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(str);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  } catch (e) {
-    console.error('Base64 encode error:', e);
-    return str; // Return original if encode fails
-  }
 }
 
 export function Terminal({ deviceId }: TerminalProps) {
@@ -51,32 +17,46 @@ export function Terminal({ deviceId }: TerminalProps) {
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
-  const sessionIdRef = useRef(1);
+  const sessionIdRef = useRef(0);
   const [connected, setConnected] = useState(false);
-  const [path] = useState('/root');
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchMatches, setSearchMatches] = useState(0);
+  const ptyInitializedRef = useRef(false);
 
   const { send } = useWebSocket();
 
-  // Handle PTY data from WebSocket
-  usePTYData(deviceId, (data) => {
-    if (termRef.current) {
-      // Data may be base64 encoded from agent
-      const decoded = base64Decode(data);
-      termRef.current.write(decoded);
-    }
-  });
+  const initTerminal = useCallback(() => {
+    if (!terminalRef.current || termRef.current) return;
 
-  useEffect(() => {
-    if (!terminalRef.current || !deviceId) return;
-
+    console.log('[Terminal] Initializing xterm.js...');
+    
     const term = new XTerm({
-      fontFamily: '"JetBrains Mono", monospace',
+      fontFamily: '"JetBrains Mono", "Fira Code", Consolas, monospace',
       fontSize: 14,
       cursorBlink: true,
       cursorStyle: 'block',
+      theme: {
+        background: '#1e1e2e',
+        foreground: '#cdd6f4',
+        cursor: '#f5e0dc',
+        black: '#45475a',
+        red: '#f38ba8',
+        green: '#a6e3a1',
+        yellow: '#f9e2af',
+        blue: '#89b4fa',
+        magenta: '#f5c2e7',
+        cyan: '#94e2d5',
+        white: '#bac2de',
+        brightBlack: '#585b70',
+        brightRed: '#eba0ac',
+        brightGreen: '#a6e3a1',
+        brightYellow: '#f9e2af',
+        brightBlue: '#89b4fa',
+        brightMagenta: '#f5c2e7',
+        brightCyan: '#94e2d5',
+        brightWhite: '#a6adc8',
+      },
     });
 
     const fitAddon = new FitAddon();
@@ -89,85 +69,146 @@ export function Terminal({ deviceId }: TerminalProps) {
 
     term.open(terminalRef.current);
 
-    // Delay fit to ensure DOM is ready
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       try {
         fitAddon.fit();
       } catch (e) {
-        console.warn('Failed to fit terminal:', e);
+        console.warn('[Terminal] Failed to fit terminal:', e);
       }
-    });
+    }, 100);
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
-    // Request PTY creation with session_id
-    console.log('Creating PTY for device:', deviceId);
-    send(MessageType.PTY_CREATE, {
-      deviceId: deviceId || '',
-      sessionId: sessionIdRef.current,
-      rows: term.rows,
-      cols: term.cols,
-    });
+    console.log('[Terminal] xterm.js initialized');
+  }, []);
 
-    term.onData((data: string) => {
+  const sendPTYData = useCallback((data: string) => {
+    if (!deviceId || !termRef.current || !ptyInitializedRef.current) return;
+    
+    try {
+      const encoded = btoa(unescape(encodeURIComponent(data)));
       send(MessageType.PTY_DATA, {
-        deviceId: deviceId || '',
+        deviceId,
         sessionId: sessionIdRef.current,
-        data: base64Encode(data),
+        data: encoded,
       });
+    } catch (e) {
+      console.error('[Terminal] Error encoding PTY data:', e);
+    }
+  }, [deviceId, send]);
+
+  const createPTYSession = useCallback(() => {
+    if (!deviceId || !termRef.current || !fitAddonRef.current) {
+      console.warn('[Terminal] Cannot create PTY: missing deviceId or terminal');
+      return;
+    }
+
+    sessionIdRef.current = Date.now();
+    ptyInitializedRef.current = true;
+    
+    console.log('[Terminal] Creating PTY session:', {
+      deviceId,
+      sessionId: sessionIdRef.current,
+      rows: termRef.current.rows,
+      cols: termRef.current.cols,
     });
 
-    term.onResize((size: { rows: number; cols: number }) => {
+    send(MessageType.PTY_CREATE, {
+      deviceId,
+      sessionId: sessionIdRef.current,
+      rows: termRef.current.rows,
+      cols: termRef.current.cols,
+    });
+  }, []);
+
+  useEffect(() => {
+    initTerminal();
+  }, [initTerminal]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (fitAddonRef.current) {
+        fitAddonRef.current.fit();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!termRef.current) return;
+
+    const onData = (data: string) => {
+      sendPTYData(data);
+    };
+
+    const onResize = (size: { rows: number; cols: number }) => {
+      if (!deviceId || !ptyInitializedRef.current) return;
+      
+      console.log('[Terminal] Resizing:', size);
       send(MessageType.PTY_RESIZE, {
-        deviceId: deviceId || '',
+        deviceId,
         sessionId: sessionIdRef.current,
         rows: size.rows,
         cols: size.cols,
       });
-    });
+    };
 
-    setConnected(true);
+    termRef.current.onData(onData);
+    termRef.current.onResize(onResize);
 
     return () => {
-      try {
-        term.dispose();
-        send(MessageType.PTY_CLOSE, {
-          deviceId: deviceId || '',
-          sessionId: sessionIdRef.current,
-        });
-      } catch (e) {
-        console.warn('Error disposing terminal:', e);
-      }
-      setConnected(false);
     };
   }, [deviceId, send]);
 
-  const handleSearch = () => {
-    if (!searchAddonRef.current) return;
-    const matches = searchAddonRef.current.findNext(searchTerm);
-    setSearchMatches(typeof matches === 'number' ? matches : 0);
-  };
-
-  const reconnectTerminal = () => {
-    if (deviceId && termRef.current && fitAddonRef.current) {
-      console.log('Reconnecting PTY for device:', deviceId);
-      sessionIdRef.current += 1; // Use new session ID
-      send(MessageType.PTY_CREATE, {
-        deviceId: deviceId || '',
-        sessionId: sessionIdRef.current,
-        rows: termRef.current.rows,
-        cols: termRef.current.cols,
-      });
-    }
-  };
-
-  const clearTerminal = () => {
+  usePTYData(deviceId, (data) => {
     if (termRef.current) {
-      termRef.current.clear();
+      termRef.current.write(data);
     }
-  };
+  });
+
+  useEffect(() => {
+    if (!deviceId) {
+      ptyInitializedRef.current = false;
+      setConnected(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setConnected(true);
+      createPTYSession();
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      if (ptyInitializedRef.current) {
+        send(MessageType.PTY_CLOSE, {
+          deviceId,
+          sessionId: sessionIdRef.current,
+        });
+      }
+    };
+  }, [deviceId]);
+
+  const handleSearch = useCallback(() => {
+    if (!searchAddonRef.current) return;
+    const result = searchAddonRef.current.findNext(searchTerm);
+    setSearchMatches(typeof result === 'number' ? result : 0);
+  }, []);
+
+  const reconnectTerminal = useCallback(() => {
+    ptyInitializedRef.current = false;
+    setConnected(false);
+    termRef.current?.clear();
+    createPTYSession();
+  }, []);
+
+  const clearTerminal = useCallback(() => {
+    termRef.current?.clear();
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-bg-primary rounded-lg border border-border overflow-hidden">
@@ -175,7 +216,7 @@ export function Terminal({ deviceId }: TerminalProps) {
         <div className="flex items-center gap-3 font-mono text-sm">
           <span className="text-text-muted">bash</span>
           <span className="text-text-muted">•</span>
-          <span className="text-accent-primary cursor-pointer">{path}</span>
+          <span className="text-accent-primary cursor-pointer">~</span>
         </div>
         <div className="flex gap-2">
           <button
@@ -194,6 +235,7 @@ export function Terminal({ deviceId }: TerminalProps) {
           <button
             onClick={reconnectTerminal}
             className="px-2.5 py-1.5 bg-bg-tertiary border border-border rounded text-text-secondary text-xs hover:bg-bg-elevated transition-colors"
+            title="重新连接"
           >
             <RotateCcw size={14} />
           </button>
@@ -236,7 +278,7 @@ export function Terminal({ deviceId }: TerminalProps) {
         </div>
       )}
 
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden bg-[#1e1e2e]">
         <div ref={terminalRef} className="h-full" />
       </div>
 

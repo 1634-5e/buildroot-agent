@@ -563,13 +563,13 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 
     char normalized_dir[2048];
     normalize_path(path, normalized_dir, sizeof(normalized_dir));
-    
+
     const char *dir = normalized_dir;
-    LOG_INFO("文件列表请求: %s (normalized: %s)", path ? path : "null", dir);
-    
+    LOG_INFO("文件列表请求: 原始路径='%s' (规范化后='%s'), request_id='%s'", path ? path : "null", dir, request_id ? request_id : "null");
+
     DIR *dp = opendir(dir);
     if (!dp) {
-        LOG_ERROR("无法打开目录: %s", dir);
+        LOG_ERROR("无法打开目录: %s (errno=%d: %s)", dir, errno, strerror(errno));
         /* 返回空响应 */
         char json[512];
         if (request_id) {
@@ -597,18 +597,18 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     char filepath[2048];
 
     while ((entry = readdir(dp)) != NULL && count < 1024) {
-        /* 跳过. 和 .. */
+        /* 跳过 . 和 .. */
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-        
+
         /* 构造完整路径 */
         if (strcmp(dir, "/") == 0) {
             snprintf(filepath, sizeof(filepath), "/%s", entry->d_name);
         } else {
             snprintf(filepath, sizeof(filepath), "%s/%s", dir, entry->d_name);
         }
-        
+
         if (stat(filepath, &st) == 0) {
             file_entry_t *e = &entries[count];
             strncpy(e->name, entry->d_name, sizeof(e->name) - 1);
@@ -623,7 +623,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 
     closedir(dp);
 
-    LOG_INFO("找到 %d 个文件/目录", count);
+    LOG_INFO("找到 %d 个文件/目录 (在目录: %s)", count, dir);
 
     /* 排序 */
     qsort(entries, count, sizeof(file_entry_t), compare_files);
@@ -649,37 +649,43 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
             goto cleanup;
         }
         
-        /* 估算剩余空间（需要为JSON头部和尾部预留空间） */
+         /* 估算剩余空间（需要为JSON头部和尾部预留空间） */
         const int reserved_space = 512;
         int available_space = JSON_BUF_SIZE - reserved_space;
-        
+
+        LOG_INFO("准备发送chunk %d/%d，请求路径='%s'，dir='%s'，文件数=%d",
+                  chunk_num, total_chunks, path, dir, files_in_chunk);
+
         int offset = snprintf(json, JSON_BUF_SIZE, "{\"path\":\"%s\",\"files\":[", dir);
-        
+
         /* 遍历这个chunk的所有文件 */
         int files_added = 0;
         for (int j = i; j < chunk_end && offset < available_space; j++) {
             char *esc_name = json_escape_string(entries[j].name, sizeof(entries[j].name));
             char *esc_path = json_escape_string(entries[j].path, sizeof(entries[j].path));
             
+            LOG_INFO("  文件[%d]: name='%s', path='%s'",
+                     j, entries[j].name, entries[j].path);
+            
             if (esc_name && esc_path) {
                 int len = snprintf(json + offset, JSON_BUF_SIZE - offset,
                     "%s{\"name\":\"%s\",\"path\":\"%s\",\"is_dir\":%d,\"size\":%lld}",
                     (j > i) ? "," : "", esc_name, esc_path, entries[j].is_dir, (long long)entries[j].size);
-                
+
                 /* 检查是否有足够的剩余空间 */
                 if (offset + len < available_space) {
                     offset += len;
                     files_added++;
                 } else {
                     /* 空间不足，停止添加 */
-                    LOG_WARN("Chunk %d 空间不足，只添加了 %d/%d 个文件 (offset=%d, space=%d)", 
+                    LOG_WARN("Chunk %d 空间不足，只添加了 %d/%d 个文件 (offset=%d, space=%d)",
                              chunk_num, files_added, files_in_chunk, offset, available_space);
                     if (esc_name) free(esc_name);
                     if (esc_path) free(esc_path);
                     break;
                 }
             }
-            
+
             if (esc_name) free(esc_name);
             if (esc_path) free(esc_path);
         }

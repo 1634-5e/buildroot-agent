@@ -36,6 +36,22 @@ interface AppState {
   setCurrentPath: (path: string) => void;
   fileList: FileInfo[];
   setFileList: (files: FileInfo[]) => void;
+  fileContent: string | null;
+  setFileContent: (content: string | null) => void;
+  fileChunks: Map<number, string>;
+  setFileChunks: (chunks: Map<number, string>) => void;
+  addFileChunk: (offset: number, data: string) => void;
+  clearFileChunks: () => void;
+  fileListChunks: Map<number, FileInfo[]>;
+  setFileListChunks: (chunks: Map<number, FileInfo[]>) => void;
+  addFileListChunk: (chunk: number, files: FileInfo[]) => void;
+  clearFileListChunks: () => void;
+  directoryCallbacks: Map<string, (chunk: number, total: number, files: FileInfo[]) => void>;
+  setDirectoryCallback: (path: string, callback: (chunk: number, total: number, files: FileInfo[]) => void) => void;
+  removeDirectoryCallback: (path: string) => void;
+  directoryData: Map<string, FileInfo[]>;
+  setDirectoryData: (path: string, files: FileInfo[]) => void;
+  clearDirectoryData: () => void;
 
   // Settings
   wsUrl: string;
@@ -79,10 +95,54 @@ export const useAppStore = create<AppState>()(
       setPtySessionId: (id) => set({ ptySessionId: id }),
 
       // Files
-      currentPath: '/root',
+      currentPath: '/',
       setCurrentPath: (path) => set({ currentPath: path }),
       fileList: [],
-      setFileList: (files) => set({ fileList: files }),
+      setFileList: (files) => {
+        console.log('store.setFileList: Setting file list with', files?.length || 0, 'files');
+        return set({ fileList: files });
+      },
+      fileContent: null,
+      setFileContent: (content) => set({ fileContent: content }),
+      fileChunks: new Map(),
+      setFileChunks: (chunks) => set({ fileChunks: chunks }),
+      addFileChunk: (offset, data) => set((state) => {
+        const newChunks = new Map(state.fileChunks);
+        newChunks.set(offset, data);
+        return { fileChunks: newChunks };
+      }),
+      clearFileChunks: () => set({ fileChunks: new Map() }),
+      fileListChunks: new Map(),
+      setFileListChunks: (chunks) => set({ fileListChunks: chunks }),
+      addFileListChunk: (chunk, files) => set((state) => {
+        const newChunks = new Map(state.fileListChunks);
+        newChunks.set(chunk, files);
+        console.log('store.addFileListChunk: Adding chunk', chunk, 'with', files.length, 'files');
+        console.log('store.addFileListChunk: Current chunks:', Array.from(newChunks.keys()));
+        return { fileListChunks: newChunks };
+      }),
+      clearFileListChunks: () => {
+        console.log('store.clearFileListChunks: Clearing file list chunks');
+        return set({ fileListChunks: new Map() });
+      },
+      directoryCallbacks: new Map(),
+      setDirectoryCallback: (path, callback) => set((state) => {
+        const newMap = new Map(state.directoryCallbacks);
+        newMap.set(path, callback);
+        return { directoryCallbacks: newMap };
+      }),
+      removeDirectoryCallback: (path) => set((state) => {
+        const newMap = new Map(state.directoryCallbacks);
+        newMap.delete(path);
+        return { directoryCallbacks: newMap };
+      }),
+      directoryData: new Map(),
+      setDirectoryData: (path, files) => set((state) => {
+        const newMap = new Map(state.directoryData);
+        newMap.set(path, files);
+        return { directoryData: newMap };
+      }),
+      clearDirectoryData: () => set({ directoryData: new Map() }),
 
       // Settings
       wsUrl: DEFAULT_WS_URL,

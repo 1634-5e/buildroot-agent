@@ -2,8 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { MessageType, FileInfo } from '@/types';
 
-// Global event emitter for PTY data
-const ptyDataEmitter = new EventTarget();
+const ptyDataCallbacks = new Map<string, (data: string) => void>();
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -12,18 +11,9 @@ export function useWebSocket() {
   const messageQueueRef = useRef<ArrayBuffer[]>([]);
   const isConnectingRef = useRef(false);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isCleanupRef = useRef(false);
 
-  const {
-    wsUrl,
-    setWsUrl,
-    currentDevice,
-    setIsConnected,
-    setDevices,
-    setSystemStatus,
-    setProcesses,
-    setFileList,
-    devices,
-  } = useAppStore();
+  const store = useAppStore();
 
   const handleDeviceList = useCallback((data: any) => {
     if (data?.devices && Array.isArray(data.devices)) {
@@ -41,14 +31,11 @@ export function useWebSocket() {
         uptime: d.uptime,
         connected_time: d.connected_time,
       }));
-      setDevices(mappedDevices);
-      console.log('Devices loaded:', mappedDevices);
+      store.setDevices(mappedDevices);
     }
-  }, [setDevices]);
+  }, [store]);
 
   const handleSystemStatus = useCallback((data: any) => {
-    console.log('System status received:', data);
-    
     const memTotal = data.mem_total ?? 0;
     const memUsed = data.mem_used ?? 0;
     const diskTotal = data.disk_total ?? 0;
@@ -86,13 +73,13 @@ export function useWebSocket() {
       mac: data.mac_addr || '',
     };
     
-    setSystemStatus(systemStatus);
+    store.setSystemStatus(systemStatus);
     
     if (data.processes && Array.isArray(data.processes)) {
-      setProcesses(data.processes);
+      store.setProcesses(data.processes);
     }
 
-    const updatedDevices = devices.map(d => {
+    const updatedDevices = store.devices.map(d => {
       const dId = d.device_id || d.id;
       if (dId === deviceId) {
         return {
@@ -107,144 +94,124 @@ export function useWebSocket() {
       }
       return d;
     });
-    setDevices(updatedDevices);
-  }, [setSystemStatus, setProcesses, setDevices, devices]);
+    store.setDevices(updatedDevices);
+  }, [store]);
 
   const handleFileList = useCallback((data: any) => {
-    console.log('File list received:', data);
-    console.log('Type of data:', typeof data);
-    console.log('data.files:', data?.files);
-    console.log('Is array:', Array.isArray(data?.files));
+    console.log('handleFileList called with:', data);
     
-    if (data && Array.isArray(data.files)) {
-      const fileList: FileInfo[] = data.files.map((file: any) => ({
-        path: file.path || file.name || '',
-        name: file.name || file.path || '',
-        size: file.size || 0,
-        isDirectory: file.isDirectory || file.type === 'directory',
-        modified: file.modified || file.mtime || undefined,
-        children: file.children || undefined,
-      }));
-      console.log('Setting file list:', fileList);
-      setFileList(fileList);
+    if (!data || !Array.isArray(data.files)) {
+      console.warn('Invalid file list data:', data);
+      return;
+    }
+
+    const path = data.path;
+    const chunk = data.chunk ?? 0;
+    const totalChunks = data.total_chunks ?? 1;
+
+    console.log(`File list chunk ${chunk + 1}/${totalChunks} for path: ${path}`);
+
+    const fileList: FileInfo[] = data.files.map((file: any) => ({
+      path: file.path || file.name || '',
+      name: file.name || file.path || '',
+      size: file.size || 0,
+      isDirectory: file.is_dir || file.isDirectory || file.type === 'directory',
+      modified: file.modified || file.mtime || undefined,
+      children: file.children || undefined,
+    }));
+
+    console.log('Mapped file list:', fileList);
+
+    if (path === '/') {
+      store.addFileListChunk(chunk, fileList);
+      console.log(`Added chunk ${chunk} to file list chunks`);
+
+      if (chunk + 1 >= totalChunks) {
+        const allChunks = store.fileListChunks;
+        const mergedFiles: FileInfo[] = [];
+
+        console.log('All chunks received, merging files...');
+        for (let i = 0; i < totalChunks; i++) {
+          if (allChunks.has(i)) {
+            const chunkData = allChunks.get(i)!;
+            mergedFiles.push(...chunkData);
+            console.log(`Merged chunk ${i} with ${chunkData.length} files`);
+          }
+        }
+
+        console.log(`Final merged file list: ${mergedFiles.length} files`);
+        store.setFileList(mergedFiles);
+        store.clearFileListChunks();
+      }
     } else {
-      console.warn('File list data is invalid or missing files array');
+      console.log(`Handling subdirectory: ${path}`);
+      const callback = store.directoryCallbacks.get(path);
+      if (callback) {
+        console.log(`Calling callback for ${path}`);
+        callback(chunk, totalChunks, fileList);
+      } else {
+        console.warn(`No callback found for path: ${path}`);
+      }
     }
-  }, [setFileList]);
+  }, [store]);
 
-  const handlePTYData = useCallback((data: any, deviceId: string) => {
-    const terminalData = data.data || data;
-    if (terminalData) {
-      const event = new CustomEvent('ptyData', {
-        detail: { deviceId, data: terminalData },
-      });
-      ptyDataEmitter.dispatchEvent(event);
-    }
-  }, []);
+  const handleFileData = useCallback((data: any) => {
+    if (!data) return;
 
-  const processMessage = useCallback(async (event: MessageEvent) => {
+    const chunkData = data.chunk_data || data.content || data.data;
+    
+    if (!chunkData) return;
+
     try {
-      if (event.data instanceof ArrayBuffer) {
-        const bytes = new Uint8Array(event.data);
-        if (bytes.length === 0) {
-          console.warn('Received empty message');
-          return;
-        }
+      const decoded = atob(chunkData);
+      store.addFileChunk(data.offset || 0, decoded);
 
-        const msgType = bytes[0];
-        const dataStr = new TextDecoder().decode(bytes.slice(1));
-        let data;
+      const chunks = store.fileChunks;
+      const sortedChunks = Array.from(chunks.entries())
+        .sort((a: [number, string], b: [number, string]) => a[0] - b[0]);
 
-        try {
-          data = dataStr ? JSON.parse(dataStr) : {};
-        } catch (parseErr) {
-          console.error('Error parsing message data:', parseErr, 'Data:', dataStr);
-          return;
-        }
-
-        console.log('Received message:', msgType, data);
-        handleMessage(msgType, data);
-        return;
-      }
-
-      if (event.data instanceof Blob) {
-        const buffer = await event.data.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        if (bytes.length === 0) {
-          console.warn('Received empty message');
-          return;
-        }
-
-        const msgType = bytes[0];
-        const dataStr = new TextDecoder().decode(bytes.slice(1));
-        let data;
-
-        try {
-          data = dataStr ? JSON.parse(dataStr) : {};
-        } catch (parseErr) {
-          console.error('Error parsing message data:', parseErr, 'Data:', dataStr);
-          return;
-        }
-
-        console.log('Received message:', msgType, data);
-        handleMessage(msgType, data);
-        return;
-      }
-
-      if (typeof event.data === 'string') {
-        console.warn('Received string message, expected binary:', event.data);
-        try {
-          const parsed = JSON.parse(event.data);
-          handleMessage(parsed.type || 0, parsed.data || {});
-        } catch (err) {
-          console.error('Failed to parse string message:', err);
-        }
-        return;
-      }
-
-      console.warn('Unknown message type:', typeof event.data, event.data);
-    } catch (error) {
-      console.error('Error processing WebSocket message:', error);
+      const combined = sortedChunks.map(([_, data]) => data).join('');
+      store.setFileContent(combined);
+    } catch (e) {
+      console.error('Error decoding base64 file data:', e);
     }
-  }, []);
+  }, [store]);
 
   const handleMessage = useCallback((msgType: number, data: any) => {
-    console.log('handleMessage called with msgType:', msgType, 'data:', data);
-    
     switch (msgType) {
       case MessageType.DEVICE_LIST:
-        console.log('Processing DEVICE_LIST');
         handleDeviceList(data);
         break;
       case MessageType.SYSTEM_STATUS:
-        console.log('Processing SYSTEM_STATUS');
         handleSystemStatus(data);
         break;
       case MessageType.FILE_LIST_RESPONSE:
-        console.log('Processing FILE_LIST_RESPONSE');
         handleFileList(data);
         break;
+      case MessageType.FILE_DATA:
+        handleFileData(data);
+        break;
+      case MessageType.PTY_DATA:
+        const dataDeviceId = data.device_id || data.deviceId;
+        if (dataDeviceId && ptyDataCallbacks.has(dataDeviceId)) {
+          const ptyData = data.data;
+          if (ptyData) {
+            try {
+              const decoded = decodeURIComponent(escape(atob(ptyData)));
+              ptyDataCallbacks.get(dataDeviceId)?.(decoded);
+            } catch (e) {
+              ptyDataCallbacks.get(dataDeviceId)?.(ptyData);
+            }
+          }
+        }
+        break;
       case MessageType.AUTH_RESULT:
-        console.log('Processing AUTH_RESULT');
-        // Handle authentication result from server
         if (data && data.success === false) {
           console.error('Authentication failed:', data.message);
         }
         break;
-      case MessageType.PTY_DATA:
-        console.log('Processing PTY_DATA');
-        if (data && currentDevice) {
-          const dataDeviceId = data.device_id || data.deviceId;
-          const currentDeviceId = currentDevice.device_id || currentDevice.id;
-          if (dataDeviceId === currentDeviceId) {
-            handlePTYData(data, currentDeviceId);
-          }
-        }
-        break;
-      default:
-        console.log('Unhandled message type:', msgType, data);
     }
-  }, [handleDeviceList, handleSystemStatus, handleFileList, handlePTYData, currentDevice]);
+  }, [handleDeviceList, handleSystemStatus, handleFileList, handleFileData]);
 
   const sendBinary = useCallback((msgType: number, data: any = {}) => {
     const dataStr = JSON.stringify(data);
@@ -258,7 +225,6 @@ export function useWebSocket() {
       wsRef.current.send(buffer);
     } else {
       messageQueueRef.current.push(buffer.buffer);
-      console.log('Message queued (not connected):', msgType);
     }
   }, []);
 
@@ -267,7 +233,7 @@ export function useWebSocket() {
       clearInterval(heartbeatIntervalRef.current);
     }
     heartbeatIntervalRef.current = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
+      if (wsRef.current?.readyState === WebSocket.OPEN && !isCleanupRef.current) {
         sendBinary(MessageType.HEARTBEAT, {});
       }
     }, 30000);
@@ -280,106 +246,69 @@ export function useWebSocket() {
     }
   }, []);
 
-  const setupWebSocketConnection = useCallback((ws: WebSocket) => {
-    wsRef.current = ws;
+  const processMessage = useCallback(async (event: MessageEvent) => {
+    try {
+      if (event.data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(event.data);
+        if (bytes.length === 0) return;
 
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      isConnectingRef.current = false;
-      setIsConnected(true);
-      reconnectAttemptsRef.current = 0;
-      startHeartbeat();
+        const msgType = bytes[0];
+        const dataStr = new TextDecoder().decode(bytes.slice(1));
+        let data;
 
-      while (messageQueueRef.current.length > 0) {
-        const message = messageQueueRef.current.shift();
-        if (message && wsRef.current?.readyState === WebSocket.OPEN) {
-          try {
-            wsRef.current.send(message);
-            console.log('Sent queued message');
-          } catch (e) {
-            console.error('Error sending queued message:', e);
-          }
+        try {
+          data = dataStr ? JSON.parse(dataStr) : {};
+        } catch (parseErr) {
+          console.error('Error parsing message data:', parseErr);
+          return;
         }
-      }
 
-      console.log('Requesting device list...');
-      sendBinary(MessageType.DEVICE_LIST, { action: 'get_list' });
-    };
-
-    ws.onmessage = processMessage;
-
-    ws.onclose = (event: CloseEvent) => {
-      console.log('WebSocket disconnected', {
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
-      });
-      isConnectingRef.current = false;
-      setIsConnected(false);
-      stopHeartbeat();
-
-      if (event.code === 1000) {
-        console.log('WebSocket closed normally, not reconnecting');
+        handleMessage(msgType, data);
         return;
       }
 
-      const maxAttempts = useAppStore.getState().maxReconnectAttempts;
+      if (event.data instanceof Blob) {
+        const buffer = await event.data.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        if (bytes.length === 0) return;
 
-      if (event.code === 1005) {
-        console.log('Connection closed by server (1005), waiting for manual reconnect');
+        const msgType = bytes[0];
+        const dataStr = new TextDecoder().decode(bytes.slice(1));
+        let data;
+
+        try {
+          data = dataStr ? JSON.parse(dataStr) : {};
+        } catch (parseErr) {
+          console.error('Error parsing message data:', parseErr);
+          return;
+        }
+
+        handleMessage(msgType, data);
         return;
       }
-
-      if (reconnectAttemptsRef.current < maxAttempts) {
-        const delay = Math.min(
-          1000 * Math.pow(2, reconnectAttemptsRef.current),
-          30000
-        );
-
-        console.log(`Reconnecting in ${delay}ms... (attempt ${reconnectAttemptsRef.current + 1}/${maxAttempts})`);
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectAttemptsRef.current++;
-          // Trigger reconnection by changing wsUrl slightly
-          const currentUrl = useAppStore.getState().wsUrl;
-          const newUrl = currentUrl || '';
-          if (!currentUrl) {
-            // Force reconnect by setting and clearing wsUrl
-            setWsUrl('dummy');
-            setTimeout(() => setWsUrl(newUrl), 100);
-          }
-        }, delay);
-      } else {
-        console.log(`Max reconnect attempts (${maxAttempts}) reached`);
-      }
-    };
-
-    ws.onerror = (error: Event) => {
-      console.error('WebSocket error:', {
-        type: error.type,
-        target: (error.target as WebSocket)?.readyState,
-        url: (error.target as WebSocket)?.url,
-      });
-      isConnectingRef.current = false;
-      stopHeartbeat();
-    };
-  }, [processMessage, setIsConnected, startHeartbeat, stopHeartbeat, sendBinary]);
-
-  const connect = useCallback(() => {
-    if (isConnectingRef.current) {
-      console.log('Connection already in progress, skipping');
-      return;
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
     }
+  }, [handleMessage]);
+
+  const cleanupConnection = useCallback(() => {
+    if (isCleanupRef.current) return;
+    
+    stopHeartbeat();
 
     if (wsRef.current) {
       try {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onclose = null;
+        
         if (wsRef.current.readyState === WebSocket.OPEN ||
             wsRef.current.readyState === WebSocket.CONNECTING) {
-          console.log('Closing existing WebSocket connection');
           wsRef.current.close();
         }
       } catch (e) {
-        console.warn('Error closing existing WebSocket:', e);
+        console.warn('Error closing WebSocket:', e);
       }
       wsRef.current = null;
     }
@@ -389,91 +318,142 @@ export function useWebSocket() {
       reconnectTimeoutRef.current = null;
     }
 
-    reconnectAttemptsRef.current = 0;
+    isConnectingRef.current = false;
+    store.setIsConnected(false);
+  }, [stopHeartbeat, store]);
+
+  const connect = useCallback((urlOverride?: string) => {
+    if (isConnectingRef.current) return;
+    if (isCleanupRef.current) return;
+
+    cleanupConnection();
+
     isConnectingRef.current = true;
 
-    let url = wsUrl;
+    let url = urlOverride || store.wsUrl;
 
     if (!url) {
-      const hostname = 'localhost';
-      const port = '8765';
-      url = `ws://${hostname}:${port}`;
-      console.log('Using development WebSocket URL:', url);
+      url = 'ws://localhost:8765';
     }
 
     try {
       new URL(url);
     } catch (e) {
       console.error('Invalid WebSocket URL:', url, e);
-      setIsConnected(false);
+      store.setIsConnected(false);
       isConnectingRef.current = false;
       return;
     }
 
-    console.log(`Connecting to WebSocket: ${url}`);
-
     try {
       const ws = new WebSocket(url);
-      setupWebSocketConnection(ws);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (isCleanupRef.current) return;
+        
+        console.log('WebSocket connected');
+        isConnectingRef.current = false;
+        reconnectAttemptsRef.current = 0;
+        store.setIsConnected(true);
+        startHeartbeat();
+
+        while (messageQueueRef.current.length > 0) {
+          const message = messageQueueRef.current.shift();
+          if (message && wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+              wsRef.current.send(message);
+            } catch (e) {
+              console.error('Error sending queued message:', e);
+            }
+          }
+        }
+
+        sendBinary(MessageType.DEVICE_LIST, { action: 'get_list' });
+      };
+
+      ws.onmessage = processMessage;
+
+      ws.onclose = (event: CloseEvent) => {
+        if (isCleanupRef.current) return;
+        
+        console.log('WebSocket disconnected', { code: event.code, reason: event.reason });
+        isConnectingRef.current = false;
+        store.setIsConnected(false);
+        stopHeartbeat();
+
+        if (event.code === 1000) return;
+
+        const maxAttempts = store.maxReconnectAttempts;
+
+        if (event.code === 1005) return;
+
+        if (reconnectAttemptsRef.current < maxAttempts) {
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttemptsRef.current),
+            30000
+          );
+
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (!isCleanupRef.current) {
+              reconnectAttemptsRef.current++;
+              connect(url);
+            }
+          }, delay);
+        }
+      };
+
+      ws.onerror = (error: Event) => {
+        if (isCleanupRef.current) return;
+        
+        console.error('WebSocket error:', {
+          type: error.type,
+          readyState: (error.target as WebSocket)?.readyState,
+          url: (error.target as WebSocket)?.url,
+        });
+        isConnectingRef.current = false;
+        stopHeartbeat();
+      };
     } catch (e) {
       console.error('Failed to create WebSocket:', e);
-      setIsConnected(false);
+      store.setIsConnected(false);
       isConnectingRef.current = false;
     }
-  }, [wsUrl, setIsConnected, setupWebSocketConnection]);
+  }, [cleanupConnection, store, startHeartbeat, stopHeartbeat, sendBinary, processMessage]);
 
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    setIsConnected(false);
-  }, [setIsConnected]);
+    isCleanupRef.current = true;
+    cleanupConnection();
+  }, [cleanupConnection]);
 
   const send = useCallback((msgType: number, data: any = {}) => {
     sendBinary(msgType, data);
   }, [sendBinary]);
 
   useEffect(() => {
+    isCleanupRef.current = false;
     connect();
 
     return () => {
-      stopHeartbeat();
-
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.close();
-      }
-
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+      disconnect();
     };
-  }, [wsUrl, stopHeartbeat]);
+  }, [store.wsUrl]);
 
-  return { send, sendBinary, connect, disconnect };
+  useEffect(() => {
+    (window as any).currentWebSocket = wsRef.current;
+  });
+
+  return { send, sendBinary, connect, disconnect, wsRef };
 }
 
 export function usePTYData(deviceId: string | null, onData: (data: string) => void) {
   useEffect(() => {
     if (!deviceId) return;
 
-    const handler = (event: Event) => {
-      const customEvent = event as CustomEvent<{ deviceId: string; data: string }>;
-      if (customEvent.detail.deviceId === deviceId) {
-        onData(customEvent.detail.data);
-      }
-    };
-
-    ptyDataEmitter.addEventListener('ptyData', handler);
+    ptyDataCallbacks.set(deviceId, onData);
 
     return () => {
-      ptyDataEmitter.removeEventListener('ptyData', handler);
+      ptyDataCallbacks.delete(deviceId);
     };
   }, [deviceId, onData]);
 }
