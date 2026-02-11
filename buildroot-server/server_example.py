@@ -436,8 +436,13 @@ class MessageHandler:
             return None, None
         msg_type = data[0]
         try:
-            json_data = json.loads(data[1:].decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+            json_str = data[1:].decode("utf-8")
+            if json_str.strip():
+                json_data = json.loads(json_str)
+            else:
+                json_data = {}
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning(f"消息解析失败: {e}")
             json_data = {}
         return msg_type, json_data
 
@@ -588,6 +593,21 @@ class MessageHandler:
 
         await self.broadcast_to_web_consoles(
             MessageType.PTY_CREATE, {"device_id": device_id, **data}
+        )
+
+    async def handle_pty_resize(self, device_id: str, data: dict) -> None:
+        """处理PTY调整大小"""
+        session_id = data.get("session_id", -1)
+        rows = data.get("rows", 24)
+        cols = data.get("cols", 80)
+
+        logger.info(
+            f"PTY调整大小 [{device_id}]: session={session_id}, size={cols}x{rows}"
+        )
+
+        # Forward resize message to web consoles
+        await self.broadcast_to_web_consoles(
+            MessageType.PTY_RESIZE, {"device_id": device_id, **data}
         )
 
     async def handle_auth_result(self, device_id: str, data: dict) -> None:
@@ -751,6 +771,9 @@ class MessageHandler:
         """处理消息"""
         msg_type, json_data = self.parse_message(data)
 
+        # 确保json_data不为None
+        json_data = json_data or {}
+
         # 文件传输相关消息
         if msg_type == MessageType.FILE_UPLOAD_START:
             await self.handle_file_upload_start(device_id, json_data, websocket)
@@ -761,6 +784,16 @@ class MessageHandler:
         elif msg_type == MessageType.FILE_UPLOAD_COMPLETE:
             await self.handle_file_upload_complete(device_id, json_data, websocket)
             return
+        elif msg_type == MessageType.FILE_LIST_REQUEST:
+            # Forward file list request to device
+            if device_id and self.conn_mgr.is_device_connected(device_id):
+                await self.send_to_device(device_id, msg_type, json_data)
+            return
+        elif msg_type == MessageType.FILE_REQUEST:
+            # Forward file request to device
+            if device_id and self.conn_mgr.is_device_connected(device_id):
+                await self.send_to_device(device_id, msg_type, json_data)
+            return
 
         # 其他消息处理
         handlers = {
@@ -770,6 +803,7 @@ class MessageHandler:
             MessageType.SCRIPT_RESULT: self.handle_script_result,
             MessageType.PTY_CREATE: self.handle_pty_create,
             MessageType.PTY_DATA: self.handle_pty_data,
+            MessageType.PTY_RESIZE: self.handle_pty_resize,
             MessageType.PTY_CLOSE: self.handle_pty_close,
             MessageType.AUTH_RESULT: self.handle_auth_result,
         }
@@ -960,30 +994,58 @@ class CloudServer:
 
                 # 设备连接后的消息处理
                 if is_device and authenticated and device_id:
+                    if len(message) >= 1:
+                        msg_type = message[0]
+                        logger.info(f"收到设备消息 [0x{msg_type:02X}] 从 {device_id}")
                     await self.msg_handler.handle_message(websocket, device_id, message)
 
                 # Web控制台的消息处理
                 elif not is_device:
                     try:
                         json_data = json.loads(message[1:].decode("utf-8"))
-                        if "device_id" in json_data:
-                            device_id = json_data["device_id"]
+                        device_id = json_data.get("device_id")
+
+                        device_info = device_id if device_id else "所有设备"
+                        logger.info(
+                            f"Web控制台收到消息 [0x{msg_type:02X}] for device: {device_info}"
+                        )
+
+                        if device_id:
                             logger.info(
                                 f"Web控制台消息 [0x{msg_type:02X}] 转发到设备: {device_id}"
                             )
 
                             if self.conn_mgr.is_device_connected(device_id):
                                 target_ws = self.conn_mgr.get_device(device_id)
-                                if hasattr(target_ws, "send") and callable(
-                                    getattr(target_ws, "send", None)
+                                if (
+                                    target_ws
+                                    and hasattr(target_ws, "send")
+                                    and callable(getattr(target_ws, "send", None))
                                 ):
                                     new_message = bytes([msg_type]) + json.dumps(
                                         json_data
                                     ).encode("utf-8")
                                     await target_ws.send(new_message)
-                                    logger.debug("消息已发送到设备")
+                                    logger.info(
+                                        f"消息已发送到设备 {device_id}, 大小: {len(new_message)} bytes"
+                                    )
+                                else:
+                                    logger.warning(f"设备WebSocket无效: {device_id}")
                             else:
                                 logger.warning(f"设备不在线: {device_id}")
+                        else:
+                            # Handle messages without device_id (like DEVICE_LIST requests)
+                            if msg_type == MessageType.DEVICE_LIST:
+                                device_list = self.conn_mgr.get_all_devices()
+                                response = self.msg_handler.create_message(
+                                    MessageType.DEVICE_LIST,
+                                    {"devices": device_list, "count": len(device_list)},
+                                )
+                                if hasattr(websocket, "send") and callable(
+                                    getattr(websocket, "send", None)
+                                ):
+                                    await websocket.send(response)
+                                    logger.info("设备列表已发送到web控制台")
                     except Exception as e:
                         logger.error(f"Web控制台消息处理失败: {e}")
 
