@@ -1,8 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { MessageType, FileInfo } from '@/types';
-
-const ptyDataCallbacks = new Map<string, (data: string) => void>();
+import { getDirectoryCallback, getRegisteredPaths } from '@/utils/callbackRegistry';
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -123,34 +122,17 @@ export function useWebSocket() {
     console.log('Mapped file list:', fileList);
 
     if (path === '/') {
-      store.addFileListChunk(chunk, fileList);
-      console.log(`Added chunk ${chunk} to file list chunks`);
-
-      if (chunk + 1 >= totalChunks) {
-        const allChunks = store.fileListChunks;
-        const mergedFiles: FileInfo[] = [];
-
-        console.log('All chunks received, merging files...');
-        for (let i = 0; i < totalChunks; i++) {
-          if (allChunks.has(i)) {
-            const chunkData = allChunks.get(i)!;
-            mergedFiles.push(...chunkData);
-            console.log(`Merged chunk ${i} with ${chunkData.length} files`);
-          }
-        }
-
-        console.log(`Final merged file list: ${mergedFiles.length} files`);
-        store.setFileList(mergedFiles);
-        store.clearFileListChunks();
-      }
+      store.addFileListChunkAndMaybeSet(chunk, fileList, totalChunks);
     } else {
       console.log(`Handling subdirectory: ${path}`);
-      const callback = store.directoryCallbacks.get(path);
+      const callback = getDirectoryCallback(path);
       if (callback) {
         console.log(`Calling callback for ${path}`);
         callback(chunk, totalChunks, fileList);
       } else {
         console.warn(`No callback found for path: ${path}`);
+        console.warn('Available callbacks:', getRegisteredPaths());
+        console.warn('Requested path:', path);
       }
     }
   }, [store]);
@@ -191,20 +173,7 @@ export function useWebSocket() {
       case MessageType.FILE_DATA:
         handleFileData(data);
         break;
-      case MessageType.PTY_DATA:
-        const dataDeviceId = data.device_id || data.deviceId;
-        if (dataDeviceId && ptyDataCallbacks.has(dataDeviceId)) {
-          const ptyData = data.data;
-          if (ptyData) {
-            try {
-              const decoded = decodeURIComponent(escape(atob(ptyData)));
-              ptyDataCallbacks.get(dataDeviceId)?.(decoded);
-            } catch (e) {
-              ptyDataCallbacks.get(dataDeviceId)?.(ptyData);
-            }
-          }
-        }
-        break;
+
       case MessageType.AUTH_RESULT:
         if (data && data.success === false) {
           console.error('Authentication failed:', data.message);
@@ -444,16 +413,4 @@ export function useWebSocket() {
   });
 
   return { send, sendBinary, connect, disconnect, wsRef };
-}
-
-export function usePTYData(deviceId: string | null, onData: (data: string) => void) {
-  useEffect(() => {
-    if (!deviceId) return;
-
-    ptyDataCallbacks.set(deviceId, onData);
-
-    return () => {
-      ptyDataCallbacks.delete(deviceId);
-    };
-  }, [deviceId, onData]);
 }

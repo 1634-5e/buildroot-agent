@@ -103,12 +103,16 @@ static char *json_escape_string(const char *src, size_t max_len)
 static char *json_get_string(const char *json, const char *key)
 {
     char search[128];
-    snprintf(search, sizeof(search), "\"%s\":", key);
+    snprintf(search, sizeof(search), "\"%s\"", key);
     
     char *pos = strstr(json, search);
     if (!pos) return NULL;
     
     pos += strlen(search);
+    while (*pos && isspace(*pos)) pos++;
+    
+    if (*pos != ':') return NULL;
+    pos++;
     while (*pos && isspace(*pos)) pos++;
     
     if (*pos != '"') return NULL;
@@ -565,21 +569,25 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     normalize_path(path, normalized_dir, sizeof(normalized_dir));
 
     const char *dir = normalized_dir;
-    LOG_INFO("文件列表请求: 原始路径='%s' (规范化后='%s'), request_id='%s'", path ? path : "null", dir, request_id ? request_id : "null");
+
+    char default_request_id[64];
+    if (!request_id) {
+        snprintf(default_request_id, sizeof(default_request_id), "req-%lld", (long long)get_timestamp_ms());
+        request_id = default_request_id;
+        LOG_INFO("未提供request_id, 使用默认值: %s", request_id);
+    }
+
+    LOG_INFO("文件列表请求: 原始路径='%s' (规范化后='%s'), request_id='%s'", path ? path : "null", dir, request_id);
 
     DIR *dp = opendir(dir);
     if (!dp) {
         LOG_ERROR("无法打开目录: %s (errno=%d: %s)", dir, errno, strerror(errno));
         /* 返回空响应 */
         char json[512];
-        if (request_id) {
-            snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[],\"request_id\":\"%s\"}", dir, request_id);
-        } else {
-            snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[]}", dir);
-        }
+        snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[],\"request_id\":\"%s\"}", dir, request_id);
         ws_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
         if (path) free(path);
-        if (request_id) free(request_id);
+        if (request_id != default_request_id) free(request_id);
         return;
     }
 
@@ -693,9 +701,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
         /* 添加元数据 */
         offset += snprintf(json + offset, JSON_BUF_SIZE - offset, "]");
         offset += snprintf(json + offset, JSON_BUF_SIZE - offset, ",\"chunk\":%d,\"total_chunks\":%d", chunk_num, total_chunks);
-        if (request_id) {
-            offset += snprintf(json + offset, JSON_BUF_SIZE - offset, ",\"request_id\":\"%s\"", request_id);
-        }
+        offset += snprintf(json + offset, JSON_BUF_SIZE - offset, ",\"request_id\":\"%s\"", request_id);
         snprintf(json + offset, JSON_BUF_SIZE - offset, "}");
 
         /* 检查最终消息大小是否超过限制 */
@@ -723,9 +729,9 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     LOG_INFO("所有chunk发送完成 (%d 个chunks)", chunk_num);
     free(entries);
 
-cleanup:
+ cleanup:
     if (path) free(path);
-    if (request_id) free(request_id);
+    if (request_id != default_request_id) free(request_id);
 }
 
 /* 处理打包并发送请求 */

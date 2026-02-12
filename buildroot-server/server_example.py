@@ -393,6 +393,10 @@ class ConnectionManager:
         """检查设备是否已连接"""
         return device_id in self.connected_devices
 
+    def is_device_websocket(self, websocket: WebSocketServerProtocol) -> bool:
+        """检查给定的websocket是否是设备连接"""
+        return websocket in self.connected_devices.values()
+
     def get_all_devices(self) -> Dict[str, Any]:
         """获取所有连接的设备信息"""
         devices = []
@@ -794,6 +798,33 @@ class MessageHandler:
             if device_id and self.conn_mgr.is_device_connected(device_id):
                 await self.send_to_device(device_id, msg_type, json_data)
             return
+        elif msg_type in (
+            MessageType.PTY_CREATE,
+            MessageType.PTY_DATA,
+            MessageType.PTY_RESIZE,
+            MessageType.PTY_CLOSE,
+        ):
+            # PTY消息需要区分来源
+            is_from_device = self.conn_mgr.is_device_websocket(websocket)
+            if is_from_device:
+                # 从设备来的消息，广播到web consoles
+                if msg_type == MessageType.PTY_DATA:
+                    await self.handle_pty_data(device_id, json_data)
+                elif msg_type == MessageType.PTY_CREATE:
+                    await self.handle_pty_create(device_id, json_data)
+                elif msg_type == MessageType.PTY_RESIZE:
+                    await self.handle_pty_resize(device_id, json_data)
+                elif msg_type == MessageType.PTY_CLOSE:
+                    await self.handle_pty_close(device_id, json_data)
+            else:
+                # 从web console来的消息，转发给设备
+                if device_id and self.conn_mgr.is_device_connected(device_id):
+                    await self.send_to_device(device_id, msg_type, json_data)
+                else:
+                    logger.warning(
+                        f"Cannot forward PTY message: device {device_id} not connected"
+                    )
+            return
 
         # 其他消息处理
         handlers = {
@@ -801,10 +832,6 @@ class MessageHandler:
             MessageType.SYSTEM_STATUS: self.handle_system_status,
             MessageType.LOG_UPLOAD: self.handle_log_upload,
             MessageType.SCRIPT_RESULT: self.handle_script_result,
-            MessageType.PTY_CREATE: self.handle_pty_create,
-            MessageType.PTY_DATA: self.handle_pty_data,
-            MessageType.PTY_RESIZE: self.handle_pty_resize,
-            MessageType.PTY_CLOSE: self.handle_pty_close,
             MessageType.AUTH_RESULT: self.handle_auth_result,
         }
 
@@ -1002,12 +1029,13 @@ class CloudServer:
                 # Web控制台的消息处理
                 elif not is_device:
                     try:
-                        json_data = json.loads(message[1:].decode("utf-8"))
+                        json_str = message[1:].decode("utf-8")
+                        json_data = json.loads(json_str)
                         device_id = json_data.get("device_id")
 
                         device_info = device_id if device_id else "所有设备"
                         logger.info(
-                            f"Web控制台收到消息 [0x{msg_type:02X}] for device: {device_info}"
+                            f"Web控制台收到消息 [0x{msg_type:02X}] for device: {device_info}, data: {json_str[:200]}"
                         )
 
                         if device_id:

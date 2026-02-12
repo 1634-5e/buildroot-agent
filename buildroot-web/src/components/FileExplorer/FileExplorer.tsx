@@ -5,9 +5,10 @@ import { FileInfo } from '@/types';
 import { useAppStore } from '@/store/appStore';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { MessageType } from '@/types';
+import { setDirectoryCallback, removeDirectoryCallback } from '@/utils/callbackRegistry';
 
 export function FileExplorer() {
-  const { currentDevice, fileList, fileContent, setFileContent, clearFileListChunks, setDirectoryCallback, clearDirectoryData, directoryData, removeDirectoryCallback } = useAppStore();
+  const { currentDevice, fileList, fileContent, setFileContent, clearFileListChunks, clearDirectoryData, directoryData } = useAppStore();
   const { send } = useWebSocket();
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
 
@@ -44,7 +45,7 @@ export function FileExplorer() {
 
     console.log('FileExplorer: Sending FILE_LIST_REQUEST with data:', messageData);
     send(MessageType.FILE_LIST_REQUEST, messageData);
-  }, [currentDevice, send]);
+  }, [currentDevice]);
 
   const handleFileSelect = (file: FileInfo) => {
     console.log('=== File select START ===');
@@ -84,8 +85,6 @@ export function FileExplorer() {
   const handleDirectoryExpand = (path: string, onDataReceived: (files: FileInfo[]) => void) => {
     console.log('=== Directory expand START ===');
     console.log('Path:', path);
-    console.log('Current callbacks:', useAppStore.getState().directoryCallbacks);
-    console.log('Current directoryData:', useAppStore.getState().directoryData);
 
     if (!currentDevice) {
       console.warn('No current device');

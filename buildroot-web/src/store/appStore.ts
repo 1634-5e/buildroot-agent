@@ -45,10 +45,8 @@ interface AppState {
   fileListChunks: Map<number, FileInfo[]>;
   setFileListChunks: (chunks: Map<number, FileInfo[]>) => void;
   addFileListChunk: (chunk: number, files: FileInfo[]) => void;
+  addFileListChunkAndMaybeSet: (chunk: number, files: FileInfo[], totalChunks: number) => void;
   clearFileListChunks: () => void;
-  directoryCallbacks: Map<string, (chunk: number, total: number, files: FileInfo[]) => void>;
-  setDirectoryCallback: (path: string, callback: (chunk: number, total: number, files: FileInfo[]) => void) => void;
-  removeDirectoryCallback: (path: string) => void;
   directoryData: Map<string, FileInfo[]>;
   setDirectoryData: (path: string, files: FileInfo[]) => void;
   clearDirectoryData: () => void;
@@ -121,21 +119,35 @@ export const useAppStore = create<AppState>()(
         console.log('store.addFileListChunk: Current chunks:', Array.from(newChunks.keys()));
         return { fileListChunks: newChunks };
       }),
+      addFileListChunkAndMaybeSet: (chunk, files, totalChunks) => set((state) => {
+        const newChunks = new Map(state.fileListChunks);
+        newChunks.set(chunk, files);
+        console.log('store.addFileListChunkAndMaybeSet: Adding chunk', chunk, 'with', files.length, 'files');
+        
+        let mergedFiles: FileInfo[] | undefined;
+        let clearedChunks = false;
+        
+        if (chunk + 1 >= totalChunks) {
+          mergedFiles = [];
+          for (let i = 0; i < totalChunks; i++) {
+            if (newChunks.has(i)) {
+              const chunkData = newChunks.get(i)!;
+              mergedFiles.push(...chunkData);
+            }
+          }
+          clearedChunks = true;
+          console.log('store.addFileListChunkAndMaybeSet: Merged', mergedFiles.length, 'files from', totalChunks, 'chunks');
+        }
+        
+        return { 
+          fileListChunks: clearedChunks ? new Map() : newChunks,
+          fileList: mergedFiles || state.fileList,
+        };
+      }),
       clearFileListChunks: () => {
         console.log('store.clearFileListChunks: Clearing file list chunks');
         return set({ fileListChunks: new Map() });
       },
-      directoryCallbacks: new Map(),
-      setDirectoryCallback: (path, callback) => set((state) => {
-        const newMap = new Map(state.directoryCallbacks);
-        newMap.set(path, callback);
-        return { directoryCallbacks: newMap };
-      }),
-      removeDirectoryCallback: (path) => set((state) => {
-        const newMap = new Map(state.directoryCallbacks);
-        newMap.delete(path);
-        return { directoryCallbacks: newMap };
-      }),
       directoryData: new Map(),
       setDirectoryData: (path, files) => set((state) => {
         const newMap = new Map(state.directoryData);

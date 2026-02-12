@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Monitor, File, Terminal as TerminalIcon, ScrollText, Settings, Power } from 'lucide-react';
+import { Monitor, File, ScrollText, Settings, Power } from 'lucide-react';
 import { PrimarySidebar } from './Sidebar/PrimarySidebar';
 import { DeviceList } from './DeviceList/DeviceList';
-import { Terminal } from './Terminal/Terminal';
 import { FileExplorer } from './FileExplorer/FileExplorer';
 import { Monitor as MonitorComponent } from './Monitor/Monitor';
 import { ScriptRunner } from './ScriptRunner/ScriptRunner';
@@ -11,11 +10,11 @@ import { useWebSocket } from '@/contexts/WebSocketContext';
 import { ToastContainer } from './Shared/Toast';
 import { MessageType } from '@/types';
 
-type TabType = 'terminal' | 'files' | 'monitor' | 'scripts';
+type TabType = 'files' | 'monitor' | 'scripts';
 
 export function App() {
   const [currentView, setCurrentView] = useState<'devices'>('devices');
-  const [activeTab, setActiveTab] = useState<TabType>('terminal');
+  const [activeTab, setActiveTab] = useState<TabType>('files');
   const [showSettings, setShowSettings] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'warning' | 'info' }>>([]);
 
@@ -33,7 +32,7 @@ export function App() {
 
   const handleDeviceSelect = (device: any) => {
     setCurrentDevice(device);
-    setActiveTab('terminal');
+    setActiveTab('files');
 
     const deviceId = device.device_id || device.id;
     console.log('Selected device, requesting system_status:', deviceId);
@@ -57,7 +56,6 @@ export function App() {
   };
 
   const tabs = [
-    { id: 'terminal' as TabType, label: '终端', icon: <TerminalIcon size={18} /> },
     { id: 'files' as TabType, label: '文件', icon: <File size={18} /> },
     { id: 'monitor' as TabType, label: '监控', icon: <Monitor size={18} /> },
     { id: 'scripts' as TabType, label: '脚本', icon: <ScrollText size={18} /> },
@@ -139,7 +137,6 @@ export function App() {
             </div>
 
             <div className="flex-1 overflow-hidden">
-              {activeTab === 'terminal' && <Terminal deviceId={currentDevice.device_id || currentDevice.id} />}
               {activeTab === 'files' && <FileExplorer />}
               {activeTab === 'monitor' && <MonitorComponent />}
               {activeTab === 'scripts' && <ScriptRunner />}

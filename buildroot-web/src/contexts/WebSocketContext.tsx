@@ -1,5 +1,5 @@
 import { createContext, useContext, ReactNode } from 'react';
-import { useWebSocket as useWebSocketHook, usePTYData as usePTYDataHook } from '@/hooks/useWebSocket';
+import { useWebSocket as useWebSocketHook } from '@/hooks/useWebSocket';
 
 interface WebSocketContextValue {
   send: (msgType: number, data?: any) => void;
@@ -26,5 +26,3 @@ export function useWebSocket() {
   }
   return context;
 }
-
-export { usePTYDataHook as usePTYData };
