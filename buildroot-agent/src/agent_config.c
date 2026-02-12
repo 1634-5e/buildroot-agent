@@ -16,7 +16,7 @@ void config_set_defaults(agent_config_t *config)
     
     memset(config, 0, sizeof(agent_config_t));
     
-    strncpy(config->server_url, DEFAULT_SERVER_URL, sizeof(config->server_url) - 1);
+    strncpy(config->server_addr, DEFAULT_SERVER_ADDR, sizeof(config->server_addr) - 1);
     strncpy(config->log_path, DEFAULT_LOG_PATH, sizeof(config->log_path) - 1);
     strncpy(config->script_path, DEFAULT_SCRIPT_PATH, sizeof(config->script_path) - 1);
     
@@ -37,8 +37,8 @@ void config_set_defaults(agent_config_t *config)
 /* 解析配置行 */
 static int parse_config_line(agent_config_t *config, const char *key, const char *value)
 {
-    if (strcmp(key, "server_url") == 0) {
-        strncpy(config->server_url, value, sizeof(config->server_url) - 1);
+    if (strcmp(key, "server_addr") == 0) {
+        strncpy(config->server_addr, value, sizeof(config->server_addr) - 1);
     } else if (strcmp(key, "device_id") == 0) {
         strncpy(config->device_id, value, sizeof(config->device_id) - 1);
     } else if (strcmp(key, "auth_token") == 0) {
@@ -63,6 +63,10 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
         else if (strcmp(value, "warn") == 0) config->log_level = LOG_LEVEL_WARN;
         else if (strcmp(value, "error") == 0) config->log_level = LOG_LEVEL_ERROR;
         else config->log_level = atoi(value);
+    } else if (strcmp(key, "use_ssl") == 0) {
+        config->use_ssl = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(key, "ca_path") == 0) {
+        strncpy(config->ca_path, value, sizeof(config->ca_path) - 1);
     } else {
         return -1;  /* 未知配置项 */
     }
@@ -192,8 +196,8 @@ int config_save(agent_config_t *config, const char *path)
     fprintf(fp, "# Buildroot Agent Configuration\n");
     fprintf(fp, "# Generated automatically\n\n");
     
-    fprintf(fp, "# 服务器地址 (WebSocket)\n");
-    fprintf(fp, "server_url = \"%s\"\n\n", config->server_url);
+    fprintf(fp, "# 服务器地址 (host:port)\n");
+    fprintf(fp, "server_addr = \"%s\"\n\n", config->server_addr);
     
     fprintf(fp, "# 设备ID (唯一标识)\n");
     fprintf(fp, "device_id = \"%s\"\n\n", config->device_id);
@@ -244,7 +248,7 @@ void config_print(agent_config_t *config)
     if (!config) return;
     
     LOG_INFO("========== 当前配置 ==========");
-    LOG_INFO("服务器地址: %s", config->server_url);
+    LOG_INFO("服务器地址: %s", config->server_addr);
     LOG_INFO("设备ID: %s", config->device_id);
     LOG_INFO("心跳间隔: %d秒", config->heartbeat_interval);
     LOG_INFO("重连间隔: %d秒", config->reconnect_interval);
@@ -253,5 +257,9 @@ void config_print(agent_config_t *config)
     LOG_INFO("脚本目录: %s", config->script_path);
     LOG_INFO("PTY功能: %s", config->enable_pty ? "启用" : "禁用");
     LOG_INFO("脚本执行: %s", config->enable_script ? "启用" : "禁用");
+    LOG_INFO("SSL加密: %s", config->use_ssl ? "启用" : "禁用");
+    if (config->use_ssl && config->ca_path[0] != '\0') {
+        LOG_INFO("CA证书: %s", config->ca_path);
+    }
     LOG_INFO("==============================");
 }

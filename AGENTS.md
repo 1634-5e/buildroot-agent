@@ -2,6 +2,28 @@
 
 This file contains guidelines for agentic coding assistants working on this buildroot-agent repository.
 
+## 目录结构
+- agent: buildroot-agent
+- server: buildroot-server
+- web: buildroot-web
+
+## 版本信息
+
+### 运行环境 (buildroot-agent)
+- 系统: buildroot2015.08.1
+- gcc: 4.9
+- openssl: 1.1.1
+
+### 技术栈 (buildroot-agent)
+- 通信: tcp socket
+
+### 开发依赖 (buildroot-web)
+- vue: ^3.4.21
+- vue-tsc: ^2.0.7
+- xterm
+- shacdn/ui
+- tailwindcss
+
 ## Build Commands
 
 ### C/Makefile (buildroot-agent)
@@ -21,19 +43,13 @@ This file contains guidelines for agentic coding assistants working on this buil
 - `pip install websockets` - Install dependencies
 - Use `ruff check` or `ruff format` if available for linting/formatting
 
-### TypeScript/React (buildroot-web)
-- `cd buildroot-web && npm run dev` - Start development server on port 3000
-- `cd buildroot-web && npm run build` - Production build (typecheck + Vite build)
-- `cd buildroot-web && npm run preview` - Preview production build
-- `cd buildroot-web && npm run lint` - Run ESLint
-
 ## Code Style Guidelines
 
 ### C Code (buildroot-agent)
 - **Naming conventions**:
   - Types: `snake_case_t` suffix (e.g., `agent_context_t`, `system_status_t`)
   - Enums: `ENUM_NAME_CONSTANT` with `_t` suffix for enum type
-  - Macros: `UPPER_CASE_WITH_UNDERSCORES` (e.g., `DEFAULT_SERVER_URL`)
+  - Macros: `UPPER_CASE_WITH_UNDERSCORES` (e.g., `DEFAULT_SERVER_ADDR`)
   - Functions: `snake_case()` (e.g., `agent_init()`, `set_log_level()`)
   - Global variables: `g_prefix_` (e.g., `g_agent_ctx`, `g_log_level`)
   - Static functions: Mark with `static` keyword
@@ -56,22 +72,6 @@ This file contains guidelines for agentic coding assistants working on this buil
 - **Logging**: Configure with `logging.basicConfig()`, use `logger.info()`, `logger.error()`
 - **Async**: Use `asyncio`, `async/await` for WebSocket operations
 - **Error handling**: Use try/except, catch specific exceptions where possible
-
-### TypeScript/React (buildroot-web)
-- **Naming**:
-  - Components: `PascalCase` (e.g., `Terminal`, `FileExplorer`)
-  - Functions/variables: `camelCase`
-  - Types/interfaces: `PascalCase` (e.g., `Device`, `SystemStatus`)
-  - Enums: `PascalCase` with `UPPER_CASE` members
-- **Imports**: Use `@/` alias for absolute imports from `src/`
-- **Components**: Functional components with hooks, no class components
-- **State management**: Use Zustand via `useAppStore()` hook
-- **Context**: Use `useWebSocket()` for WebSocket operations
-- **TypeScript**: Strict mode enabled, all files must type-check
-- **Linting**: ESLint with React rules, fix errors before committing
-- **Props**: Define interfaces for component props
-- **Side effects**: Use `useEffect()` with proper dependency arrays
-- **Refs**: Use `useRef()` for DOM elements and mutable values
 
 ## Testing
 

@@ -767,7 +767,7 @@ void *status_thread(void *arg)
             if (status_collect(&status) == 0) {
                 char *json = status_to_json(&status);
                 if (json) {
-                    ws_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
                     LOG_DEBUG("上报系统状态: CPU=%.1f%%, MEM=%.1f/%.1fMB",
                               status.cpu_usage, status.mem_used, status.mem_total);
                     free(json);

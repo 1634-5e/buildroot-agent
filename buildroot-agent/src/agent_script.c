@@ -242,7 +242,7 @@ static void send_script_result(agent_context_t *ctx, const char *script_id,
         escaped_output,
         get_timestamp_ms());
     
-    ws_send_json(ctx, MSG_TYPE_SCRIPT_RESULT, json);
+    socket_send_json(ctx, MSG_TYPE_SCRIPT_RESULT, json);
     
     free(escaped_output);
     free(json);
@@ -405,7 +405,7 @@ int script_list(agent_context_t *ctx)
     closedir(dir);
     
     snprintf(json + offset, sizeof(json) - offset, "]}");
-    ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
     
     return 0;
 }

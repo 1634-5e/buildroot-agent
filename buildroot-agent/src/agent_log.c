@@ -121,7 +121,7 @@ int log_upload_file(agent_context_t *ctx, const char *filepath)
                 filepath, chunk_num, total_chunks, read_size,
                 encoded, get_timestamp_ms());
             
-            ws_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
+            socket_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
             free(json);
         }
         
@@ -223,7 +223,7 @@ int log_tail_file(agent_context_t *ctx, const char *filepath, int lines)
         snprintf(json + offset, json_size - offset,
             "],\"timestamp\":%" PRIu64 "}", get_timestamp_ms());
         
-        ws_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
+        socket_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
         free(json);
     }
     
@@ -278,7 +278,7 @@ static void *log_watch_thread(void *arg)
                             "{\"filepath\":\"%s\",\"line\":\"%s\",\"timestamp\":%" PRIu64 "}",
                             watch->filepath, buffer, get_timestamp_ms());
                         
-                        ws_send_json(watch->ctx, MSG_TYPE_LOG_UPLOAD, json);
+                        socket_send_json(watch->ctx, MSG_TYPE_LOG_UPLOAD, json);
                         free(json);
                     }
                 }
@@ -406,7 +406,7 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
         /* 返回错误消息 */
         char json[512];
         snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"无法打开文件\"}", filepath);
-        ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return -1;
     }
     
@@ -421,7 +421,7 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
         LOG_WARN("[FILE_READ] offset超出文件大小: offset=%d, file_size=%ld", offset, file_size);
         char json[512];
         snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\"}", filepath, offset);
-        ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return 0;
     }
     
@@ -460,7 +460,7 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
                     "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\"}",
                     filepath, offset, actual_read, encoded);
                 LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu", filepath, offset, actual_read);
-                ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+                socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
                 free(json);
             } else {
                 LOG_ERROR("[FILE_READ] JSON内存分配失败");
@@ -512,7 +512,7 @@ int log_list_files(agent_context_t *ctx, const char *log_dir)
     closedir(dp);
     
     snprintf(json + offset, sizeof(json) - offset, "]}");
-    ws_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
     
     return 0;
 }

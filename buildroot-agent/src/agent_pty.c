@@ -181,7 +181,7 @@ static void *pty_read_thread(void *arg)
                     struct timespec _ts_enqueue;
                     clock_gettime(CLOCK_REALTIME, &_ts_enqueue);
                     LOG_INFO("发送 PTY_DATA 入队: session_id=%d, encoded_len=%zu, ts=%ld.%09ld", session->session_id, encoded_len, (long)_ts_enqueue.tv_sec, _ts_enqueue.tv_nsec);
-                    int send_result = ws_send_json(ctx, MSG_TYPE_PTY_DATA, json);
+                    int send_result = socket_send_json(ctx, MSG_TYPE_PTY_DATA, json);
                     if (send_result != 0) {
                         LOG_WARN("PTY数据发送失败，session_id=%d", session->session_id);
                     } else {
@@ -204,7 +204,7 @@ static void *pty_read_thread(void *arg)
         char json[128];
         snprintf(json, sizeof(json), 
             "{\"session_id\":%d,\"reason\":\"closed\"}", session->session_id);
-        ws_send_json(ctx, MSG_TYPE_PTY_CLOSE, json);
+        socket_send_json(ctx, MSG_TYPE_PTY_CLOSE, json);
     }
     
     LOG_INFO("PTY读取线程退出: session_id=%d", session->session_id);
@@ -338,7 +338,7 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     snprintf(json, sizeof(json),
         "{\"session_id\":%d,\"status\":\"created\",\"rows\":%d,\"cols\":%d}",
         session_id, session->rows, session->cols);
-    ws_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+    socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
     
     return 0;
 }
@@ -555,7 +555,7 @@ int pty_list_sessions(agent_context_t *ctx)
     pthread_mutex_unlock(&g_pty_lock);
     
     snprintf(json + offset, sizeof(json) - offset, "],\"count\":%d}", count);
-    ws_send_json(ctx, MSG_TYPE_CMD_RESPONSE, json);
+    socket_send_json(ctx, MSG_TYPE_CMD_RESPONSE, json);
     
     return 0;
 }

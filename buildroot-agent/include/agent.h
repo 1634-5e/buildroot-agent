@@ -23,7 +23,7 @@
 #define AGENT_NAME          "buildroot-agent"
 
 /* 默认配置 */
-#define DEFAULT_SERVER_URL      "ws://127.0.0.1:8765/agent"
+#define DEFAULT_SERVER_ADDR     "127.0.0.1:8766"
 #define DEFAULT_HEARTBEAT_SEC   30
 #define DEFAULT_RECONNECT_SEC   5
 #define DEFAULT_LOG_PATH        "/var/log"
@@ -78,7 +78,7 @@ typedef struct {
 
 /* Agent配置结构 */
 typedef struct {
-    char server_url[256];       /* WebSocket服务器地址 */
+    char server_addr[256];      /* Socket服务器地址 (host:port) */
     char device_id[64];         /* 设备ID */
     char auth_token[128];       /* 认证Token */
     int heartbeat_interval;     /* 心跳间隔 (秒) */
@@ -89,6 +89,8 @@ typedef struct {
     bool enable_pty;            /* 是否启用PTY */
     bool enable_script;         /* 是否启用脚本执行 */
     int log_level;              /* 日志级别 */
+    bool use_ssl;              /* 是否使用SSL */
+    char ca_path[256];         /* CA证书路径 */
 } agent_config_t;
 
 /* PTY会话结构 */
@@ -105,7 +107,7 @@ typedef struct {
 /* Agent上下文结构 */
 typedef struct {
     agent_config_t config;      /* 配置 */
-    void *ws_client;            /* WebSocket客户端 */
+    void *socket_client;        /* Socket客户端 */
     bool connected;             /* 连接状态 */
     bool running;               /* 运行状态 */
     bool authenticated;         /* 认证状态 */
@@ -137,12 +139,12 @@ int config_save(agent_config_t *config, const char *path);
 void config_set_defaults(agent_config_t *config);
 void config_print(agent_config_t *config);
 
-/* agent_websocket.c */
-int ws_connect(agent_context_t *ctx);
-void ws_disconnect(agent_context_t *ctx);
-int ws_send_message(agent_context_t *ctx, msg_type_t type, const char *data, size_t len);
-int ws_send_json(agent_context_t *ctx, msg_type_t type, const char *json);
-void ws_cleanup(void);
+/* agent_socket.c */
+int socket_connect(agent_context_t *ctx);
+void socket_disconnect(agent_context_t *ctx);
+int socket_send_message(agent_context_t *ctx, msg_type_t type, const char *data, size_t len);
+int socket_send_json(agent_context_t *ctx, msg_type_t type, const char *json);
+void socket_cleanup(void);
 
 /* agent_status.c */
 int status_collect(system_status_t *status);

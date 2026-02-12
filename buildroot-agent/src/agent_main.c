@@ -49,7 +49,7 @@ static void *heartbeat_thread(void *arg)
         if (ctx->connected && ctx->authenticated) {
             char *heartbeat = protocol_create_heartbeat(ctx);
             if (heartbeat) {
-                ws_send_json(ctx, MSG_TYPE_HEARTBEAT, heartbeat);
+                socket_send_json(ctx, MSG_TYPE_HEARTBEAT, heartbeat);
                 LOG_DEBUG("发送心跳");
                 free(heartbeat);
             }
@@ -114,7 +114,7 @@ int agent_start(void)
     LOG_INFO("========================================");
     
     /* 连接到服务器 */
-    if (ws_connect(g_agent_ctx) != 0) {
+    if (socket_connect(g_agent_ctx) != 0) {
         LOG_ERROR("连接服务器失败");
         /* 继续运行，会自动重连 */
     }
@@ -154,8 +154,8 @@ void agent_stop(void)
     
     g_agent_ctx->running = false;
     
-    /* 断开WebSocket连接 */
-    ws_disconnect(g_agent_ctx);
+    /* 断开Socket连接 */
+    socket_disconnect(g_agent_ctx);
     
     /* 清理PTY会话 */
     pty_cleanup_all(g_agent_ctx);
@@ -171,8 +171,8 @@ void agent_cleanup(void)
 {
     if (!g_agent_ctx) return;
     
-    /* 清理WebSocket */
-    ws_cleanup();
+    /* 清理Socket */
+    socket_cleanup();
     
     /* 销毁互斥锁 */
     pthread_mutex_destroy(&g_agent_ctx->lock);
@@ -194,7 +194,7 @@ static void print_help(const char *prog)
     printf("用法: %s [选项]\n\n", prog);
     printf("选项:\n");
     printf("  -c, --config <path>   指定配置文件路径 (默认: %s)\n", DEFAULT_CONFIG_PATH);
-    printf("  -s, --server <url>    指定服务器地址\n");
+    printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
     printf("  -t, --token <token>   指定认证Token\n");
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
@@ -204,7 +204,7 @@ static void print_help(const char *prog)
     printf("\n");
     printf("示例:\n");
     printf("  %s -c /etc/agent.conf -d\n", prog);
-    printf("  %s -s wss://server.com/agent -t mytoken\n", prog);
+    printf("  %s -s 192.168.1.100:8766 -t mytoken\n", prog);
     printf("\n");
 }
 
@@ -219,7 +219,7 @@ static void print_version(void)
 int main(int argc, char *argv[])
 {
     const char *config_path = NULL;
-    const char *server_url = NULL;
+    const char *server_addr = NULL;
     const char *auth_token = NULL;
     bool daemon_mode = false;
     bool verbose = false;
@@ -245,7 +245,7 @@ int main(int argc, char *argv[])
             config_path = optarg;
             break;
         case 's':
-            server_url = optarg;
+            server_addr = optarg;
             break;
         case 't':
             auth_token = optarg;
@@ -317,9 +317,9 @@ int main(int argc, char *argv[])
     }
     
     /* 覆盖命令行参数 */
-    if (server_url) {
-        strncpy(g_agent_ctx->config.server_url, server_url, 
-                sizeof(g_agent_ctx->config.server_url) - 1);
+    if (server_addr) {
+        strncpy(g_agent_ctx->config.server_addr, server_addr,
+                sizeof(g_agent_ctx->config.server_addr) - 1);
     }
     if (auth_token) {
         strncpy(g_agent_ctx->config.auth_token, auth_token,

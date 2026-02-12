@@ -30,7 +30,7 @@ CFLAGS += -DVERSION=\"$(VERSION)\"
 
 # 链接选项
 LDFLAGS := -pthread
-LIBS := -lwebsockets -lssl -lcrypto -lutil
+LIBS := -lssl -lcrypto -lutil
 
 # 调试模式
 ifdef DEBUG
@@ -135,7 +135,7 @@ help:
 
 # 依赖关系
 $(OBJDIR)/agent_main.o: $(INCDIR)/agent.h
-$(OBJDIR)/agent_websocket.o: $(INCDIR)/agent.h
+$(OBJDIR)/agent_socket.o: $(INCDIR)/agent.h
 $(OBJDIR)/agent_status.o: $(INCDIR)/agent.h
 $(OBJDIR)/agent_log.o: $(INCDIR)/agent.h
 $(OBJDIR)/agent_script.o: $(INCDIR)/agent.h

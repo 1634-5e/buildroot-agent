@@ -2,6 +2,7 @@
 """
 Buildroot Agent 云端服务器示例 - 增强版
 支持文件上传、流式传输、断点续传，优化弱网环境
+支持双端口模式：WebSocket（前端）和 Socket（Agent）
 
 安装依赖: pip install websockets
 
@@ -15,8 +16,9 @@ import logging
 import os
 import hashlib
 import time
+import ssl
 from datetime import datetime
-from typing import Dict, Set, Any, Optional, Tuple, List
+from typing import Dict, Set, Any, Optional, Tuple, List, Union
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -358,18 +360,125 @@ class FileTransferManager:
                     logger.info(f"清理过期传输会话: {transfer_id}")
 
 
+class AgentSocketHandler:
+    """Agent Socket 连接处理器"""
+
+    def __init__(self, connection_manager, message_handler):
+        self.conn_mgr = connection_manager
+        self.msg_handler = message_handler
+
+    async def handle_connection(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
+        """处理 Agent Socket 连接"""
+        try:
+            addr = writer.get_extra_info("peername")
+            logger.info(f"新Agent Socket连接: {addr}")
+
+            device_id = None
+            authenticated = False
+
+            while True:
+                # 读取消息：[1字节类型] + [JSON数据]
+                try:
+                    type_byte = await reader.readexactly(1)
+                    msg_type = type_byte[0]
+
+                    # 读取剩余数据
+                    data = await reader.read(65535)
+                    if not data:
+                        break
+
+                    # 检查是否为认证消息
+                    if msg_type == MessageType.AUTH and not authenticated:
+                        try:
+                            json_str = data.decode("utf-8")
+                            json_data = json.loads(json_str)
+                            device_id = json_data.get("device_id", "unknown")
+
+                            authenticated = await self.msg_handler.handle_auth(
+                                self._create_socket_writer_wrapper(writer), json_data
+                            )
+
+                            if not authenticated:
+                                writer.close()
+                                await writer.wait_closed()
+                                return
+                        except Exception as e:
+                            logger.error(f"解析认证消息失败: {e}")
+                            writer.close()
+                            await writer.wait_closed()
+                            return
+
+                    # 已认证的消息处理
+                    elif authenticated and device_id:
+                        logger.info(f"收到Agent消息 [0x{msg_type:02X}] 从 {device_id}")
+                        full_message = bytes([msg_type]) + data
+                        await self.msg_handler.handle_message(
+                            self._create_socket_writer_wrapper(writer),
+                            device_id,
+                            full_message,
+                            is_socket=True,
+                        )
+
+                except asyncio.IncompleteReadError:
+                    logger.info(f"Agent连接断开: {addr}")
+                    break
+                except Exception as e:
+                    logger.error(f"处理Socket消息错误: {e}")
+                    break
+
+        finally:
+            if device_id:
+                self.conn_mgr.remove_device(device_id)
+                await self._notify_device_list_update()
+            writer.close()
+            await writer.wait_closed()
+
+    def _create_socket_writer_wrapper(self, writer: asyncio.StreamWriter):
+        """创建 Socket writer 包装器，使其具有类似 WebSocket 的 send 方法"""
+
+        class SocketWriterWrapper:
+            def __init__(self, w):
+                self.writer = w
+
+            async def send(self, message: bytes):
+                self.writer.write(message)
+                await self.writer.drain()
+
+            async def close(self):
+                self.writer.close()
+                await self.writer.wait_closed()
+
+        return SocketWriterWrapper(writer)
+
+    async def _notify_device_list_update(self):
+        """通知设备列表更新"""
+        device_list = self.conn_mgr.get_all_devices()
+        await self.msg_handler.broadcast_to_web_consoles(
+            MessageType.DEVICE_LIST, {"devices": device_list, "count": len(device_list)}
+        )
+
+
 class ConnectionManager:
-    """连接管理器 - 管理设备连接和Web控制台"""
+    """连接管理器 - 管理设备连接（WebSocket + Socket）和Web控制台"""
 
     def __init__(self, file_transfer_manager: FileTransferManager):
-        self.connected_devices: Dict[str, WebSocketServerProtocol] = {}
+        self.connected_devices: Dict[
+            str, Dict[str, Any]
+        ] = {}  # device_id -> {"type": "websocket"|"socket", "connection": obj}
         self.web_consoles: Set[WebSocketServerProtocol] = set()
         self.pty_sessions: Dict[str, Dict[int, asyncio.Queue]] = {}
         self.file_transfer = file_transfer_manager
 
-    def add_device(self, device_id: str, websocket: WebSocketServerProtocol) -> None:
+    def add_device(
+        self, device_id: str, connection: Any, conn_type: str = "websocket"
+    ) -> None:
         """添加设备连接"""
-        self.connected_devices[device_id] = websocket
+        self.connected_devices[device_id] = {
+            "type": conn_type,
+            "connection": connection,
+        }
         self.pty_sessions[device_id] = {}
 
     def remove_device(self, device_id: str) -> None:
@@ -385,38 +494,44 @@ class ConnectionManager:
         """移除Web控制台"""
         self.web_consoles.discard(websocket)
 
-    def get_device(self, device_id: str) -> Optional[WebSocketServerProtocol]:
-        """获取设备WebSocket连接"""
+    def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
+        """获取设备连接信息"""
         return self.connected_devices.get(device_id)
 
     def is_device_connected(self, device_id: str) -> bool:
         """检查设备是否已连接"""
         return device_id in self.connected_devices
 
-    def is_device_websocket(self, websocket: WebSocketServerProtocol) -> bool:
-        """检查给定的websocket是否是设备连接"""
-        return websocket in self.connected_devices.values()
-
-    def get_all_devices(self) -> Dict[str, Any]:
+    def get_all_devices(self) -> List[Dict[str, Any]]:
         """获取所有连接的设备信息"""
         devices = []
-        for device_id, ws in self.connected_devices.items():
-            remote_addr = self._get_remote_address(ws)
+        for device_id, dev_info in self.connected_devices.items():
+            conn = dev_info["connection"]
+            conn_type = dev_info["type"]
+            remote_addr = self._get_remote_address(conn, conn_type)
             devices.append(
                 {
                     "device_id": device_id,
                     "connected_time": datetime.now().isoformat(),
                     "status": "online",
+                    "connection_type": conn_type,
                     "remote_addr": remote_addr,
                 }
             )
         return devices
 
-    def _get_remote_address(self, websocket: WebSocketServerProtocol) -> str:
+    def _get_remote_address(self, connection: Any, conn_type: str) -> str:
         """获取远程地址信息"""
         try:
-            remote = getattr(websocket, "remote_address", "unknown")
-            return remote[0] if isinstance(remote, tuple) else str(remote)
+            if conn_type == "websocket":
+                remote = getattr(connection, "remote_address", "unknown")
+                return remote[0] if isinstance(remote, tuple) else str(remote)
+            elif conn_type == "socket":
+                writer = connection
+                addr = writer.get_extra_info("peername")
+                return f"{addr[0]}:{addr[1]}" if addr else "unknown"
+            else:
+                return "unknown"
         except:
             return "unknown"
 
@@ -770,7 +885,7 @@ class MessageHandler:
             logger.error(f"[{device_id}] 文件上传失败: {result}")
 
     async def handle_message(
-        self, websocket: WebSocketServerProtocol, device_id: str, data: bytes
+        self, websocket, device_id: str, data: bytes, is_socket: bool = False
     ) -> None:
         """处理消息"""
         msg_type, json_data = self.parse_message(data)
@@ -805,7 +920,7 @@ class MessageHandler:
             MessageType.PTY_CLOSE,
         ):
             # PTY消息需要区分来源
-            is_from_device = self.conn_mgr.is_device_websocket(websocket)
+            is_from_device = is_socket  # 来自Socket的都是Agent
             if is_from_device:
                 # 从设备来的消息，广播到web consoles
                 if msg_type == MessageType.PTY_DATA:
@@ -920,35 +1035,56 @@ class MessageHandler:
             logger.error(f"广播消息失败: {e}")
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
-        """发送消息到设备"""
+        """发送消息到设备（支持 WebSocket 和 Socket）"""
         if not self.conn_mgr.is_device_connected(device_id):
             logger.warning(f"设备未连接: {device_id}")
             return False
 
         try:
-            websocket = self.conn_mgr.get_device(device_id)
-            if not websocket:
-                logger.error(f"设备WebSocket为空: {device_id}")
+            dev_info = self.conn_mgr.get_device(device_id)
+            if not dev_info:
+                logger.error(f"设备连接为空: {device_id}")
                 return False
 
-            # 检查连接状态
-            if hasattr(websocket, "state") and websocket.state.name != "OPEN":
-                logger.warning(f"设备WebSocket连接未开启: {device_id}")
-                self.conn_mgr.remove_device(device_id)
-                return False
-
-            if not hasattr(websocket, "send") or not callable(
-                getattr(websocket, "send", None)
-            ):
-                logger.error(f"设备WebSocket无效: {device_id}")
-                return False
+            conn_type = dev_info["type"]
+            connection = dev_info["connection"]
 
             message = self.create_message(msg_type, data)
-            await websocket.send(message)
-            return True
+
+            if conn_type == "websocket":
+                # WebSocket 连接
+                if hasattr(connection, "state") and connection.state.name != "OPEN":
+                    logger.warning(f"设备WebSocket连接未开启: {device_id}")
+                    self.conn_mgr.remove_device(device_id)
+                    return False
+
+                if not hasattr(connection, "send") or not callable(
+                    getattr(connection, "send", None)
+                ):
+                    logger.error(f"设备WebSocket无效: {device_id}")
+                    return False
+
+                await connection.send(message)
+                return True
+
+            elif conn_type == "socket":
+                # Socket 连接
+                if hasattr(connection, "send") and callable(
+                    getattr(connection, "send", None)
+                ):
+                    await connection.send(message)
+                    return True
+                else:
+                    logger.error(f"设备Socket无效: {device_id}")
+                    return False
+
+            else:
+                logger.warning(f"未知的连接类型: {conn_type}")
+                return False
+
         except websockets.exceptions.ConnectionClosed as e:
             logger.warning(
-                f"设备WebSocket连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
+                f"设备连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
             )
             self.conn_mgr.remove_device(device_id)
             return False
@@ -964,6 +1100,7 @@ class CloudServer:
         self.file_transfer = FileTransferManager()
         self.conn_mgr = ConnectionManager(self.file_transfer)
         self.msg_handler = MessageHandler(self.conn_mgr)
+        self.socket_handler = AgentSocketHandler(self.conn_mgr, self.msg_handler)
 
     async def agent_handler(self, websocket: WebSocketServerProtocol) -> None:
         """WebSocket连接处理"""
@@ -1043,24 +1180,14 @@ class CloudServer:
                                 f"Web控制台消息 [0x{msg_type:02X}] 转发到设备: {device_id}"
                             )
 
-                            if self.conn_mgr.is_device_connected(device_id):
-                                target_ws = self.conn_mgr.get_device(device_id)
-                                if (
-                                    target_ws
-                                    and hasattr(target_ws, "send")
-                                    and callable(getattr(target_ws, "send", None))
-                                ):
-                                    new_message = bytes([msg_type]) + json.dumps(
-                                        json_data
-                                    ).encode("utf-8")
-                                    await target_ws.send(new_message)
-                                    logger.info(
-                                        f"消息已发送到设备 {device_id}, 大小: {len(new_message)} bytes"
-                                    )
-                                else:
-                                    logger.warning(f"设备WebSocket无效: {device_id}")
+                            # 使用 send_to_device 方法发送消息（支持 WebSocket 和 Socket）
+                            success = await self.msg_handler.send_to_device(
+                                device_id, msg_type, json_data
+                            )
+                            if success:
+                                logger.info(f"消息已转发到设备 {device_id}")
                             else:
-                                logger.warning(f"设备不在线: {device_id}")
+                                logger.warning(f"转发消息到设备失败: {device_id}")
                         else:
                             # Handle messages without device_id (like DEVICE_LIST requests)
                             if msg_type == MessageType.DEVICE_LIST:
@@ -1261,15 +1388,23 @@ class CloudServer:
         print()
 
     async def run(self) -> None:
-        """运行服务器"""
+        """运行服务器（双端口模式：WebSocket + Socket）"""
         host = "0.0.0.0"
-        port = 8765
+        ws_port = 8765  # 前端 WebSocket 端口
+        socket_port = 8766  # Agent Socket 端口
 
-        logger.info(f"启动WebSocket服务器: ws://{host}:{port}")
+        logger.info(f"启动WebSocket服务器（前端）: ws://{host}:{ws_port}")
+        logger.info(f"启动Socket服务器（Agent）: {host}:{socket_port}")
         logger.info(f"文件上传目录: {os.path.abspath(self.file_transfer.UPLOAD_DIR)}")
 
-        server = await websockets.serve(
-            self.agent_handler, host, port, ping_interval=30, ping_timeout=10
+        # 启动 WebSocket 服务器
+        ws_server = await websockets.serve(
+            self.agent_handler, host, ws_port, ping_interval=30, ping_timeout=10
+        )
+
+        # 启动 Socket 服务器
+        socket_server = await asyncio.start_server(
+            self.socket_handler.handle_connection, host, socket_port
         )
 
         logger.info("服务器运行中，按 Ctrl+C 停止")
@@ -1279,8 +1414,10 @@ class CloudServer:
         except asyncio.CancelledError:
             pass
         finally:
-            server.close()
-            await server.wait_closed()
+            ws_server.close()
+            await ws_server.wait_closed()
+            socket_server.close()
+            await socket_server.wait_closed()
 
 
 async def main() -> None:

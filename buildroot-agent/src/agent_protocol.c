@@ -585,7 +585,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
         /* 返回空响应 */
         char json[512];
         snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[],\"request_id\":\"%s\"}", dir, request_id);
-        ws_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+        socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
         if (path) free(path);
         if (request_id != default_request_id) free(request_id);
         return;
@@ -714,7 +714,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 
         LOG_INFO("发送chunk %d/%d, 文件数: %d/%d, 消息大小: %d字节", 
                  chunk_num, total_chunks, files_added, files_in_chunk, offset);
-        int rc = ws_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+        int rc = socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
         if (rc != 0) {
             LOG_ERROR("发送chunk %d 失败: %d", chunk_num, rc);
         }
@@ -968,7 +968,7 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
             snprintf(json + offset, json_size - offset, "}");
             
             LOG_INFO("发送打包响应: 文件=%s, 大小=%lld, 编码后=%zu", filename, (long long)fsize, encoded_len);
-            ws_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
+            socket_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
             free(json);
         } else {
             LOG_ERROR("JSON缓冲区或转义分配失败");
@@ -1015,7 +1015,7 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            ws_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
             free(json);
             LOG_INFO("系统状态已上报");
         }
@@ -1026,7 +1026,7 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            ws_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
             free(json);
             LOG_INFO("系统状态已上报");
         }
