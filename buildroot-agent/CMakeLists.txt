@@ -11,7 +11,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 file(GLOB SOURCES "${PROJECT_SOURCE_DIR}/src/*.c")
 add_executable(${PROJECT_NAME} ${SOURCES})
-target_link_libraries(${PROJECT_NAME} pthread ssl crypto util)
+target_link_libraries(${PROJECT_NAME} pthread ssl crypto util dl)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_definitions(-DDEBUG)

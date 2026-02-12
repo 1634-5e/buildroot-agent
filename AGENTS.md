@@ -34,13 +34,19 @@ This file contains guidelines for agentic coding assistants working on this buil
 - `cd buildroot-agent && cmake --install build --prefix /path` - Install to target directory
 - `cd buildroot-agent && cmake --build build --target release` - Build release version with stripped symbols
 - `cd buildroot-agent && cpack` - Create tarball package
-- `./buildroot-agent/scripts/build.sh` - Quick build script
+- `./buildroot-agent/scripts/build.sh` - Quick build script (默认启用静态链接)
 - `./buildroot-agent/scripts/release.sh` - Quick release build
 - `./buildroot-agent/scripts/install.sh /path` - Quick install script
 
 **Options:**
 - `-DCMAKE_BUILD_TYPE=Debug` - Build with debug symbols
-- `-DSTATIC_LINK=ON` - Build with static linking
+- `-DSTATIC_LINK=ON` - Build with static linking (已在build.sh中默认启用)
+
+**注意：静态链接**
+- build.sh 默认使用 `-DSTATIC_LINK=ON` 进行静态链接编译
+- 静态链接的二进制不依赖系统动态库，可在不同libc系统（如glibc、uClibc）上运行
+- 静态链接二进制体积较大（约1.4MB），但兼容性更好
+- 如果需要动态链接，手动删除 build.sh 中的 `-DSTATIC_LINK=ON` 参数
 
 ### Python (buildroot-server)
 - `cd buildroot-server && python3 server_example.py` - Run server
