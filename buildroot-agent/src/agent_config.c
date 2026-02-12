@@ -32,6 +32,18 @@ void config_set_defaults(agent_config_t *config)
     config->enable_pty = true;
     config->enable_script = true;
     config->log_level = LOG_LEVEL_INFO;
+    
+    /* 更新配置默认值 */
+    config->enable_auto_update = false;  /* 默认不启用自动更新 */
+    config->update_check_interval = DEFAULT_UPDATE_CHECK_INTERVAL;
+    strncpy(config->update_channel, DEFAULT_UPDATE_CHANNEL, sizeof(config->update_channel) - 1);
+    config->update_require_confirm = true;  /* 默认需要确认 */
+    strncpy(config->update_temp_path, DEFAULT_UPDATE_TEMP_PATH, sizeof(config->update_temp_path) - 1);
+    strncpy(config->update_backup_path, DEFAULT_UPDATE_BACKUP_PATH, sizeof(config->update_backup_path) - 1);
+    config->update_rollback_on_fail = true;  /* 失败自动回滚 */
+    config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
+    config->update_verify_checksum = true;  /* 默认校验校验和 */
+    config->update_ca_cert_path[0] = '\0';  /* 默认空，使用系统CA证书 */
 }
 
 /* 解析配置行 */
@@ -67,6 +79,26 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
         config->use_ssl = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
     } else if (strcmp(key, "ca_path") == 0) {
         strncpy(config->ca_path, value, sizeof(config->ca_path) - 1);
+    } else if (strcmp(key, "enable_auto_update") == 0) {
+        config->enable_auto_update = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(key, "update_check_interval") == 0) {
+        config->update_check_interval = atoi(value);
+    } else if (strcmp(key, "update_channel") == 0) {
+        strncpy(config->update_channel, value, sizeof(config->update_channel) - 1);
+    } else if (strcmp(key, "update_require_confirm") == 0) {
+        config->update_require_confirm = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(key, "update_temp_path") == 0) {
+        strncpy(config->update_temp_path, value, sizeof(config->update_temp_path) - 1);
+    } else if (strcmp(key, "update_backup_path") == 0) {
+        strncpy(config->update_backup_path, value, sizeof(config->update_backup_path) - 1);
+    } else if (strcmp(key, "update_rollback_on_fail") == 0) {
+        config->update_rollback_on_fail = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(key, "update_rollback_timeout") == 0) {
+        config->update_rollback_timeout = atoi(value);
+    } else if (strcmp(key, "update_verify_checksum") == 0) {
+        config->update_verify_checksum = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(key, "update_ca_cert_path") == 0) {
+        strncpy(config->update_ca_cert_path, value, sizeof(config->update_ca_cert_path) - 1);
     } else {
         return -1;  /* 未知配置项 */
     }

@@ -16,7 +16,7 @@
 agent_context_t *g_agent_ctx = NULL;
 
 /* PID文件路径 */
-#define PID_FILE    "/var/run/buildroot-agent.pid"
+#define PID_FILE    "/tmp/buildroot-agent.pid"
 
 /* 信号处理 */
 static void signal_handler(int sig)
@@ -25,6 +25,16 @@ static void signal_handler(int sig)
     
     if (g_agent_ctx) {
         g_agent_ctx->running = false;
+        
+        /* 额外处理：通知所有线程退出 */
+        /* 心跳和状态线程会检查running标志，无需额外操作 */
+        /* 重连线程和接收线程由socket模块管理 */
+    }
+    
+    /* 特殊处理SIGQUIT - 立即退出（可能不清理）*/
+    if (sig == SIGQUIT) {
+        LOG_INFO("收到SIGQUIT，立即退出");
+        _exit(1);
     }
 }
 
@@ -55,8 +65,12 @@ static void *heartbeat_thread(void *arg)
             }
         }
         
-        sleep(ctx->config.heartbeat_interval > 0 ? 
-              ctx->config.heartbeat_interval : DEFAULT_HEARTBEAT_SEC);
+        /* 分段sleep，每1秒检查一次停止标志 */
+        int sleep_time = ctx->config.heartbeat_interval > 0 ? 
+                        ctx->config.heartbeat_interval : DEFAULT_HEARTBEAT_SEC;
+        for (int i = 0; i < sleep_time && ctx->running; i++) {
+            sleep(1);
+        }
     }
     
     LOG_INFO("心跳线程退出");
@@ -82,6 +96,11 @@ int agent_init(const char *config_path)
         LOG_WARN("加载配置失败，使用默认配置");
     }
     
+    /* 初始化TCP下载模块（用于自动更新）*/
+    if (tcp_download_init() != 0) {
+        LOG_WARN("TCP下载模块初始化失败，自动更新功能不可用");
+    }
+    
     /* 设置日志级别 */
     set_log_level(g_agent_ctx->config.log_level);
     
@@ -93,6 +112,12 @@ int agent_init(const char *config_path)
     
     /* 初始化PTY会话 */
     g_agent_ctx->max_pty_sessions = 8;
+    g_agent_ctx->pty_sessions = calloc(g_agent_ctx->max_pty_sessions, sizeof(pty_session_t));
+    if (!g_agent_ctx->pty_sessions) {
+        LOG_ERROR("PTY会话内存分配失败");
+        return -1;
+    }
+    g_agent_ctx->pty_session_count = 0;
     
     LOG_INFO("Agent初始化完成");
     return 0;
@@ -119,6 +144,9 @@ int agent_start(void)
         /* 继续运行，会自动重连 */
     }
     
+    /* 启用自动重连 */
+    socket_enable_reconnect(g_agent_ctx);
+    
     /* 启动心跳线程 */
     pthread_t hb_thread;
     if (pthread_create(&hb_thread, NULL, heartbeat_thread, g_agent_ctx) != 0) {
@@ -136,6 +164,17 @@ int agent_start(void)
     }
     
     LOG_INFO("Agent已启动");
+    
+    /* 启动更新检查线程（如果启用）*/
+    if (g_agent_ctx->config.enable_auto_update) {
+        pthread_t update_thread;
+        if (pthread_create(&update_thread, NULL, heartbeat_thread, g_agent_ctx) == 0) {
+            LOG_INFO("更新检查线程启动");
+            pthread_detach(update_thread);
+        } else {
+            LOG_ERROR("创建更新检查线程失败");
+        }
+    }
     
     /* 主循环 */
     while (g_agent_ctx->running) {
@@ -174,8 +213,17 @@ void agent_cleanup(void)
     /* 清理Socket */
     socket_cleanup();
     
+    /* 清理TCP下载模块 */
+    tcp_download_cleanup();
+    
     /* 销毁互斥锁 */
     pthread_mutex_destroy(&g_agent_ctx->lock);
+    
+    /* 释放PTY会话 */
+    if (g_agent_ctx->pty_sessions) {
+        free(g_agent_ctx->pty_sessions);
+        g_agent_ctx->pty_sessions = NULL;
+    }
     
     /* 释放上下文 */
     free(g_agent_ctx);

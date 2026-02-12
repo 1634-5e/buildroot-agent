@@ -22,6 +22,9 @@ from typing import Dict, Set, Any, Optional, Tuple, List, Union
 from pathlib import Path
 from dataclasses import dataclass, field
 
+# 导入更新管理模块
+from update_manager import UpdateManager
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -55,6 +58,10 @@ class MessageType:
     FILE_LIST_REQUEST = 0x22
     FILE_LIST_RESPONSE = 0x23
     DOWNLOAD_PACKAGE = 0x24
+    FILE_DOWNLOAD_REQUEST = 0x25
+    FILE_DOWNLOAD_DATA = 0x26
+    FILE_DOWNLOAD_CONTROL = 0x27
+    DOWNLOAD_PACKAGE = 0x24
     CMD_REQUEST = 0x30
     CMD_RESPONSE = 0x31
     DEVICE_LIST = 0x50
@@ -69,6 +76,15 @@ class MessageType:
     FILE_DOWNLOAD_DATA = 0x45  # 下载数据分片
     FILE_DOWNLOAD_ACK = 0x46  # 下载确认
     FILE_TRANSFER_STATUS = 0x47  # 传输状态/进度
+    # 更新管理消息类型
+    UPDATE_CHECK = 0x60  # 检查更新请求
+    UPDATE_INFO = 0x61  # 更新信息响应
+    UPDATE_DOWNLOAD = 0x62  # 请求下载更新包
+    UPDATE_PROGRESS = 0x63  # 上报下载进度
+    UPDATE_APPROVE = 0x64  # 服务器批准下载（提供URL）
+    UPDATE_COMPLETE = 0x65  # 更新完成通知
+    UPDATE_ERROR = 0x66  # 更新错误通知
+    UPDATE_ROLLBACK = 0x67  # 回滚通知
 
 
 # 有效的认证Token
@@ -379,15 +395,21 @@ class AgentSocketHandler:
             authenticated = False
 
             while True:
-                # 读取消息：[1字节类型] + [JSON数据]
+                # 读取消息：[1字节类型] + [2字节长度(大端)] + [JSON数据]
                 try:
                     type_byte = await reader.readexactly(1)
                     msg_type = type_byte[0]
 
-                    # 读取剩余数据
-                    data = await reader.read(65535)
-                    if not data:
+                    # 读取长度字段（2字节大端序）
+                    length_bytes = await reader.readexactly(2)
+                    json_len = (length_bytes[0] << 8) | length_bytes[1]
+
+                    # 读取精确长度的JSON数据
+                    if json_len > 65535:
+                        logger.error(f"消息长度过大: {json_len}")
                         break
+
+                    data = await reader.readexactly(json_len)
 
                     # 检查是否为认证消息
                     if msg_type == MessageType.AUTH and not authenticated:
@@ -404,16 +426,24 @@ class AgentSocketHandler:
                                 writer.close()
                                 await writer.wait_closed()
                                 return
-                        except Exception as e:
+                        except json.JSONDecodeError as e:
                             logger.error(f"解析认证消息失败: {e}")
+                            logger.debug(f"原始JSON数据（前200字节）: {json_str[:200]}")
+                            writer.close()
+                            await writer.wait_closed()
+                            return
+                        except Exception as e:
+                            logger.error(f"处理认证消息异常: {e}")
                             writer.close()
                             await writer.wait_closed()
                             return
 
                     # 已认证的消息处理
                     elif authenticated and device_id:
-                        logger.info(f"收到Agent消息 [0x{msg_type:02X}] 从 {device_id}")
-                        full_message = bytes([msg_type]) + data
+                        logger.info(
+                            f"收到Agent消息 [0x{msg_type:02X}] 从 {device_id}, 长度={json_len}"
+                        )
+                        full_message = bytes([msg_type]) + length_bytes + data
                         await self.msg_handler.handle_message(
                             self._create_socket_writer_wrapper(writer),
                             device_id,
@@ -541,6 +571,12 @@ class MessageHandler:
 
     def __init__(self, connection_manager: ConnectionManager):
         self.conn_mgr = connection_manager
+        # 初始化更新管理器
+        self.update_manager = UpdateManager()
+
+        # 设置广播方法的回调
+        self.update_manager._broadcast_update_progress = self._broadcast_update_progress
+        self.update_manager._broadcast_update_status = self._broadcast_update_status
 
     @staticmethod
     def create_message(msg_type: int, data: dict) -> bytes:
@@ -550,19 +586,36 @@ class MessageHandler:
 
     @staticmethod
     def parse_message(data: bytes) -> Tuple[Optional[int], Optional[dict]]:
-        """解析消息"""
-        if len(data) < 1:
+        """解析消息: [type(1)] + [length(2, 大端)] + [JSON数据]"""
+        if len(data) < 3:
             return None, None
         msg_type = data[0]
+
+        # 读取长度字段（2字节大端序）
+        length_bytes = data[1:3]
+        json_len = (length_bytes[0] << 8) | length_bytes[1]
+
+        # 验证数据长度
+        if len(data) < 3 + json_len:
+            logger.warning(f"消息不完整: 期望{3 + json_len}字节, 实际{len(data)}字节")
+            return msg_type, {}
+
+        # 提取JSON数据
+        json_data_bytes = data[3 : 3 + json_len]
+
         try:
-            json_str = data[1:].decode("utf-8")
+            json_str = json_data_bytes.decode("utf-8")
             if json_str.strip():
                 json_data = json.loads(json_str)
             else:
                 json_data = {}
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.warning(f"消息解析失败: {e}")
+            logger.warning(f"消息JSON解析失败: {e}")
+            logger.debug(
+                f"原始JSON数据（前200字节）: {json_str[:200] if len(json_str) > 0 else 'empty'}"
+            )
             json_data = {}
+
         return msg_type, json_data
 
     async def handle_auth(self, websocket: WebSocketServerProtocol, data: dict) -> bool:
@@ -742,6 +795,131 @@ class MessageHandler:
             MessageType.AUTH_RESULT, {"device_id": device_id, **data}
         )
 
+    # 更新处理器方法
+    async def handle_update_check(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新检查请求"""
+        try:
+            result = await self.update_manager.handle_update_check(device_id, json_data)
+            await self.send_to_device(device_id, MessageType.UPDATE_INFO, result)
+            logger.info(f"[{device_id}] 已发送更新信息响应")
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新检查失败: {e}")
+            error_response = {
+                "has_update": "false",
+                "error": f"更新检查失败: {str(e)}",
+                "current_version": json_data.get("current_version", "1.0.0"),
+                "latest_version": json_data.get("current_version", "1.0.0"),
+            }
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_INFO, error_response
+            )
+
+    async def handle_update_download(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新下载请求"""
+        try:
+            result = await self.update_manager.handle_update_download(
+                device_id, json_data
+            )
+            if result.get("status") == "approved":
+                await self.send_to_device(device_id, MessageType.UPDATE_APPROVE, result)
+                logger.info(f"[{device_id}] 已批准下载: {result.get('download_url')}")
+            else:
+                await self.send_to_device(device_id, MessageType.UPDATE_ERROR, result)
+                logger.error(f"[{device_id}] 下载请求被拒绝: {result.get('error')}")
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理下载请求失败: {e}")
+            error_response = {
+                "status": "error",
+                "error": f"下载请求处理失败: {str(e)}",
+                "request_id": json_data.get("request_id", ""),
+            }
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_ERROR, error_response
+            )
+
+    async def handle_update_progress(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新进度报告"""
+        try:
+            await self.update_manager.handle_update_progress(device_id, json_data)
+            # 广播进度到Web控制台
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_PROGRESS, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新进度失败: {e}")
+
+    async def handle_update_complete(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新完成通知"""
+        try:
+            await self.update_manager.handle_update_complete(device_id, json_data)
+            # 广播完成状态到Web控制台
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_COMPLETE, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新完成通知失败: {e}")
+
+    async def handle_update_error(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新错误通知"""
+        try:
+            await self.update_manager.handle_update_error(device_id, json_data)
+            # 广播错误到Web控制台
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_ERROR, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新错误通知失败: {e}")
+
+    async def handle_update_rollback(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新回滚通知"""
+        try:
+            await self.update_manager.handle_update_rollback(device_id, json_data)
+            # 广播回滚状态到Web控制台
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_ROLLBACK, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新回滚通知失败: {e}")
+
+    # 重写更新管理器的广播方法
+    async def _broadcast_update_progress(
+        self, device_id: str, progress_data: Dict[str, Any]
+    ) -> None:
+        """广播更新进度到Web控制台"""
+        await self.broadcast_to_web_consoles(MessageType.UPDATE_PROGRESS, progress_data)
+
+    async def _broadcast_update_status(
+        self, device_id: str, status_data: Dict[str, Any]
+    ) -> None:
+        """广播更新状态到Web控制台"""
+        event_type = status_data.get("event", "update_status")
+        if event_type == "update_complete":
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_COMPLETE, status_data
+            )
+        elif event_type == "update_error":
+            await self.broadcast_to_web_consoles(MessageType.UPDATE_ERROR, status_data)
+        elif event_type == "update_rollback":
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_ROLLBACK, status_data
+            )
+        else:
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_PROGRESS, status_data
+            )
+
     async def handle_file_upload_start(
         self, device_id: str, data: dict, websocket: WebSocketServerProtocol
     ) -> None:
@@ -884,6 +1062,161 @@ class MessageHandler:
         else:
             logger.error(f"[{device_id}] 文件上传失败: {result}")
 
+    async def handle_file_download_request(self, device_id: str, data: dict) -> None:
+        """处理TCP文件下载请求"""
+        action = data.get("action")
+        file_path = data.get("file_path")
+        offset = data.get("offset", 0)
+        chunk_size = data.get("chunk_size", 16384)
+        request_id = data.get("request_id", "")
+
+        if action == "download_update" and file_path:
+            await self._handle_file_download(
+                device_id, file_path, offset, chunk_size, request_id
+            )
+        else:
+            logger.error(f"[{device_id}] 无效的下载请求: {data}")
+
+    async def _handle_file_download(
+        self,
+        device_id: str,
+        file_path: str,
+        offset: int,
+        chunk_size: int,
+        request_id: str,
+    ) -> None:
+        """处理文件下载的内部实现"""
+        try:
+            # 构建完整的文件路径（假设更新包存储在updates目录）
+            full_path = os.path.join("updates", os.path.basename(file_path))
+
+            if not os.path.exists(full_path):
+                # 发送错误响应
+                await self.send_to_device(
+                    device_id,
+                    MessageType.FILE_DOWNLOAD_DATA,
+                    {
+                        "action": "download_error",
+                        "file_path": file_path,
+                        "request_id": request_id,
+                        "error": f"文件不存在: {full_path}",
+                    },
+                )
+                return
+            await self.send_to_device(
+                device_id,
+                MessageType.FILE_DOWNLOAD_DATA,
+                {
+                    "action": "download_error",
+                    "file_path": file_path,
+                    "request_id": request_id,
+                    "error": f"文件不存在: {full_path}",
+                },
+            )
+            return
+
+            file_size = os.path.getsize(full_path)
+
+            if offset >= file_size:
+                # 文件已经下载完成
+                complete_response = self.create_message(
+                    MessageType.FILE_DOWNLOAD_DATA,
+                    {
+                        "action": "file_data",
+                        "file_path": file_path,
+                        "offset": offset,
+                        "data": "",
+                        "size": 0,
+                        "is_final": True,
+                        "total_size": file_size,
+                        "request_id": request_id,
+                    },
+                )
+                await self.send_to_device(
+                    device_id,
+                    MessageType.FILE_DOWNLOAD_DATA,
+                    {
+                        "action": "file_data",
+                        "file_path": file_path,
+                        "offset": offset,
+                        "data": "",
+                        "size": 0,
+                        "is_final": True,
+                        "total_size": file_size,
+                        "request_id": request_id,
+                    },
+                )
+                logger.info(f"[{device_id}] 文件下载完成: {file_path}")
+                return
+
+            # 读取数据块
+            with open(full_path, "rb") as f:
+                f.seek(offset)
+                data_chunk = f.read(chunk_size)
+
+            # Base64编码数据
+            import base64
+
+            data_b64 = base64.b64encode(data_chunk).decode("utf-8")
+
+            # 检查是否为最后一块
+            is_final = (offset + len(data_chunk)) >= file_size
+
+            # 发送数据块响应
+            response = self.create_message(
+                MessageType.FILE_DOWNLOAD_DATA,
+                {
+                    "action": "file_data",
+                    "file_path": file_path,
+                    "offset": offset,
+                    "data": data_b64,
+                    "size": len(data_chunk),
+                    "is_final": is_final,
+                    "total_size": file_size,
+                    "request_id": request_id,
+                },
+            )
+
+            await self.send_to_device(
+                device_id,
+                MessageType.FILE_DOWNLOAD_DATA,
+                {
+                    "action": "file_data",
+                    "file_path": file_path,
+                    "offset": offset,
+                    "data": data_b64,
+                    "size": len(data_chunk),
+                    "is_final": is_final,
+                    "total_size": file_size,
+                    "request_id": request_id,
+                },
+            )
+            logger.debug(
+                f"[{device_id}] 发送数据块: offset={offset}, size={len(data_chunk)}, final={is_final}"
+            )
+
+        except Exception as e:
+            logger.error(f"[{device_id}] 文件下载处理失败: {e}")
+            error_response = self.create_message(
+                MessageType.FILE_DOWNLOAD_DATA,
+                {
+                    "action": "download_error",
+                    "file_path": file_path,
+                    "request_id": request_id,
+                    "error": str(e),
+                },
+            )
+            await self.send_to_device(
+                device_id,
+                MessageType.FILE_DOWNLOAD_DATA,
+                {
+                    "action": "download_error",
+                    "file_path": file_path,
+                    "request_id": request_id,
+                    "error": str(e),
+                },
+            )
+
     async def handle_message(
         self, websocket, device_id: str, data: bytes, is_socket: bool = False
     ) -> None:
@@ -912,6 +1245,14 @@ class MessageHandler:
             # Forward file request to device
             if device_id and self.conn_mgr.is_device_connected(device_id):
                 await self.send_to_device(device_id, msg_type, json_data)
+            return
+        elif msg_type == MessageType.FILE_DOWNLOAD_REQUEST:
+            # Handle TCP file download request from agent
+            await self.handle_file_download_request(device_id, json_data)
+            return
+        elif msg_type == MessageType.FILE_DOWNLOAD_REQUEST:
+            # Handle TCP file download request from agent
+            await self.handle_file_download_request(device_id, json_data)
             return
         elif msg_type in (
             MessageType.PTY_CREATE,
@@ -948,6 +1289,13 @@ class MessageHandler:
             MessageType.LOG_UPLOAD: self.handle_log_upload,
             MessageType.SCRIPT_RESULT: self.handle_script_result,
             MessageType.AUTH_RESULT: self.handle_auth_result,
+            # 添加更新处理器
+            MessageType.UPDATE_CHECK: self.handle_update_check,
+            MessageType.UPDATE_DOWNLOAD: self.handle_update_download,
+            MessageType.UPDATE_PROGRESS: self.handle_update_progress,
+            MessageType.UPDATE_COMPLETE: self.handle_update_complete,
+            MessageType.UPDATE_ERROR: self.handle_update_error,
+            MessageType.UPDATE_ROLLBACK: self.handle_update_rollback,
         }
 
         if msg_type in handlers:

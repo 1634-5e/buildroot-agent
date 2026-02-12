@@ -335,3 +335,42 @@ bool is_process_running(const char *pid_file)
     
     return false;
 }
+
+/* 文件复制函数 */
+int copy_file(const char *src_path, const char *dst_path)
+{
+    FILE *src_fp, *dst_fp;
+    char buffer[65536];
+    size_t bytes_read;
+    
+    if (!src_path || !dst_path) {
+        return -1;
+    }
+    
+    /* 打开源文件 */
+    src_fp = fopen(src_path, "rb");
+    if (!src_fp) {
+        return -1;
+    }
+    
+    /* 打开目标文件 */
+    dst_fp = fopen(dst_path, "wb");
+    if (!dst_fp) {
+        fclose(src_fp);
+        return -1;
+    }
+    
+    /* 复制数据 */
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), src_fp)) > 0) {
+        if (fwrite(buffer, 1, bytes_read, dst_fp) != bytes_read) {
+            fclose(src_fp);
+            fclose(dst_fp);
+            return -1;
+        }
+    }
+    
+    fclose(src_fp);
+    fclose(dst_fp);
+    
+    return 0;
+}

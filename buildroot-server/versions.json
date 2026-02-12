@@ -1,0 +1,41 @@
+{
+  "versions": {
+    "1.0.0": {
+      "release_date": "2024-02-13T00:00:00Z",
+      "download_url": "https://example.com/updates/agent-1.0.0.tar.gz",
+      "file_size": 6553600,
+      "md5_checksum": "d41d8cd98f00b204e9800998ecf8427e0",
+      "sha256_checksum": "e3b0c44298f1b7192a1d8f35a6c6a8a3a9b2c1b7c9e8c8c3c3c5a6",
+      "min_agent_version": "1.0.0",
+      "release_notes": "初始发布版本，基础功能",
+      "mandatory": false,
+      "channels": ["stable", "beta", "dev"]
+    },
+    "1.1.0": {
+      "release_date": "2024-03-15T00:00:00Z",
+      "download_url": "https://example.com/updates/agent-1.1.0.tar.gz",
+      "file_size": 6720000,
+      "md5_checksum": "a1b2c3d4e5f6a78901234567890abcd1ef234567890",
+      "sha256_checksum": "f1a2b3c4d5e6f7a8901234567890abcd1ef234567890ab12345678",
+      "min_agent_version": "1.0.0",
+      "release_notes": "修复bug，添加自更新功能",
+      "mandatory": false,
+      "channels": ["stable", "beta", "dev"]
+    },
+    "1.2.0": {
+      "release_date": "2024-04-01T00:00:00Z",
+      "download_url": "https://example.com/updates/agent-1.2.0.tar.gz",
+      "file_size": 6800000,
+      "md5_checksum": "b2c3d4e5f6a78901234567890abcd1ef234567890ab12345678",
+      "sha256_checksum": "g2d3e4f5f6a7b8901234567890abcd1ef234567890ab12345678",
+      "min_agent_version": "1.1.0",
+      "release_notes": "新功能：XXX，性能优化",
+      "mandatory": false,
+      "channels": ["stable", "beta", "dev"]
+    }
+  },
+  "default_channel": "stable",
+  "current_stable": "1.2.0",
+  "current_beta": "1.2.0",
+  "current_dev": "1.2.0-rc1"
+}

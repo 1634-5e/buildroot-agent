@@ -14,6 +14,8 @@
 #include <time.h>
 #include "agent.h"
 
+
+
 /* 简单的本地 Base64 编码（用于小文件） */
 static const char base64_table_local[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static char *base64_encode_local(const unsigned char *data, size_t input_len, size_t *output_len)
@@ -100,7 +102,7 @@ static char *json_escape_string(const char *src, size_t max_len)
 }
 
 /* 简单的JSON解析辅助函数 */
-static char *json_get_string(const char *json, const char *key)
+char *json_get_string(const char *json, const char *key)
 {
     char search[128];
     snprintf(search, sizeof(search), "\"%s\"", key);
@@ -300,7 +302,7 @@ static void free_string_array(char **array, int count) {
     free(array);
 }
 
-static int json_get_int(const char *json, const char *key, int default_val)
+int json_get_int(const char *json, const char *key, int default_val)
 {
     char search[128];
     snprintf(search, sizeof(search), "\"%s\":", key);
@@ -314,7 +316,21 @@ static int json_get_int(const char *json, const char *key, int default_val)
     return atoi(pos);
 }
 
-static bool json_get_bool(const char *json, const char *key, bool default_val)
+int64_t json_get_int64(const char *json, const char *key)
+{
+    char search[128];
+    snprintf(search, sizeof(search), "\"%s\":", key);
+    
+    char *pos = strstr(json, search);
+    if (!pos) return 0;
+    
+    pos += strlen(search);
+    while (*pos && isspace(*pos)) pos++;
+    
+    return atoll(pos);
+}
+
+bool json_get_bool(const char *json, const char *key, bool default_val)
 {
     char search[128];
     snprintf(search, sizeof(search), "\"%s\":", key);
@@ -1090,6 +1106,9 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     case MSG_TYPE_FILE_LIST_REQUEST:
         handle_file_list_request(ctx, json_data);
         break;
+    case MSG_TYPE_FILE_DOWNLOAD_DATA:
+        tcp_handle_download_response(ctx, data, len);
+        break;
     case MSG_TYPE_DOWNLOAD_PACKAGE:
         handle_download_package(ctx, json_data);
         break;
@@ -1107,6 +1126,210 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
         /* 设备列表更新（来自服务器） */
         LOG_INFO("收到设备列表更新: %s", json_data);
         break;
+        
+    case MSG_TYPE_UPDATE_CHECK:
+        /* 更新检查请求 */
+        LOG_INFO("收到更新检查请求");
+        break;
+        
+    case MSG_TYPE_UPDATE_INFO:
+        /* 更新信息响应 */
+        {
+            char *has_update_str = json_get_string(json_data, "has_update");
+            char *latest_version = json_get_string(json_data, "latest_version");
+            char *download_url = json_get_string(json_data, "download_url");
+            char *md5_checksum = json_get_string(json_data, "md5_checksum");
+            char *release_notes = json_get_string(json_data, "release_notes");
+            int mandatory = json_get_bool(json_data, "mandatory", false);
+            
+            if (!has_update_str || strcmp(has_update_str, "true") != 0) {
+                LOG_INFO("当前版本已是最新: %s", AGENT_VERSION);
+                break;
+            }
+            
+            LOG_INFO("发现新版本: %s", latest_version);
+            LOG_INFO("下载URL: %s", download_url);
+            LOG_INFO("MD5校验和: %s", md5_checksum);
+            LOG_INFO("更新说明: %s", release_notes);
+            LOG_INFO("是否强制更新: %s", mandatory ? "是" : "否");
+            
+            /* 如果配置了自动确认，或者强制更新，自动请求下载 */
+            if ((!g_agent_ctx->config.update_require_confirm) || mandatory) {
+                LOG_INFO("自动请求下载更新");
+                /* 发送下载请求 */
+                char *json = malloc(256);
+                snprintf(json, 256,
+                         "{\"version\":\"%s\",\"request_id\":\"update-%lld\"}",
+                         latest_version, (long long)get_timestamp_ms());
+                int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_DOWNLOAD, json);
+                free(json);
+                
+                if (rc != 0) {
+                    LOG_ERROR("发送下载请求失败");
+                }
+            } else {
+                LOG_INFO("等待服务器批准下载");
+            }
+            break;
+        }
+        
+    case MSG_TYPE_UPDATE_APPROVE:
+        /* 服务器批准下载，提供下载URL */
+        {
+            LOG_INFO("收到下载批准");
+            char *download_url = json_get_string(json_data, "download_url");
+            char *request_id = json_get_string(json_data, "request_id");
+            
+            if (!download_url) {
+                LOG_ERROR("下载URL为空");
+                /* 发送错误通知 */
+                char *error_json = malloc(256);
+                snprintf(error_json, 256,
+                         "{\"status\":\"failed\",\"error\":\"no_download_url\",\"request_id\":\"%s\"}",
+                         request_id ? request_id : "unknown");
+                socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+                free(error_json);
+                break;
+            }
+            
+            /* 准备下载路径 */
+            char download_path[512];
+            char temp_dir[512];
+            time_t now = time(NULL);
+            snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
+                     g_agent_ctx->config.update_temp_path, (long long)now);
+            snprintf(download_path, sizeof(download_path),
+                     "%s/agent-update-%lld.tar.gz",
+                     temp_dir, (long long)now);
+            
+            /* 创建临时目录 */
+            mkdir_recursive(temp_dir, 0755);
+            
+            /* 开始下载 */
+            int rc = update_download_package(
+                download_url,
+                download_path,
+                download_progress_callback,
+                g_agent_ctx
+            );
+            
+            if (rc == 0) {
+                LOG_INFO("下载成功，开始安装");
+                
+                /* 发送进度：下载完成 */
+                char *progress_json = malloc(256);
+                snprintf(progress_json, 256,
+                         "{\"status\":\"downloaded\",\"request_id\":\"%s\",\"progress\":100}",
+                         request_id ? request_id : "unknown");
+                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
+                free(progress_json);
+                
+                /* 发送安装通知 */
+                char *install_json = malloc(256);
+                snprintf(install_json, 256,
+                         "{\"status\":\"installing\",\"request_id\":\"%s\",\"path\":\"%s\"}",
+                         request_id ? request_id : "unknown",
+                         download_path);
+                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
+                free(install_json);
+                
+                /* 开始安装 */
+                update_install_package(download_path);
+            } else {
+                LOG_ERROR("下载失败");
+                
+                /* 发送错误通知 */
+                char *error_json = malloc(256);
+                snprintf(error_json, 256,
+                         "{\"status\":\"failed\",\"error\":\"download_failed\",\"request_id\":\"%s\"}",
+                         request_id ? request_id : "unknown");
+                socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+                free(error_json);
+            }
+            break;
+        }
+        
+    case MSG_TYPE_UPDATE_PROGRESS:
+        /* 更新进度上报 */
+        {
+            char *status = json_get_string(json_data, "status");
+            int progress = json_get_int(json_data, "progress", 0);
+            
+            LOG_INFO("更新状态: %s, 进度: %d%%", status, progress);
+            break;
+        }
+        
+    case MSG_TYPE_UPDATE_COMPLETE:
+        /* 更新完成，服务器通知重启 */
+        {
+            char *new_version = json_get_string(json_data, "new_version");
+            LOG_INFO("收到更新完成通知，新版本: %s", new_version);
+            
+            /* 准备重启 */
+            sleep(2);
+            update_restart_agent();
+            break;
+        }
+        
+    case MSG_TYPE_UPDATE_ERROR:
+        /* 更新错误通知 */
+        {
+            char *error = json_get_string(json_data, "error");
+            char *status = json_get_string(json_data, "status");
+            
+            LOG_ERROR("更新错误: %s", error);
+            
+            /* 如果配置了自动回滚，执行回滚 */
+            if (g_agent_ctx && g_agent_ctx->config.update_rollback_on_fail) {
+                LOG_INFO("自动回滚到旧版本");
+                
+                char last_backup_path[512];
+                FILE *fp = fopen("/var/lib/agent/backup/.last_backup", "r");
+                if (fp) {
+                    if (fgets(last_backup_path, sizeof(last_backup_path), fp)) {
+                        /* 去除换行符 */
+                        char *newline = strchr(last_backup_path, '\n');
+                        if (newline) *newline = '\0';
+                    }
+                    fclose(fp);
+                    
+                    if (strlen(last_backup_path) > 0) {
+                        update_rollback_to_backup(last_backup_path);
+                    }
+                }
+            }
+            
+            break;
+        }
+        
+    case MSG_TYPE_UPDATE_ROLLBACK:
+        /* 服务器通知回滚 */
+        {
+            LOG_INFO("收到回滚指令");
+            /* 服务器会指定回滚到的版本或备份 */
+            char *backup_path = json_get_string(json_data, "backup_path");
+            
+            if (backup_path && strlen(backup_path) > 0) {
+                LOG_INFO("回滚到: %s", backup_path);
+                update_rollback_to_backup(backup_path);
+            } else {
+                LOG_WARN("回滚路径为空，尝试自动回滚");
+                char last_backup_path[512];
+                FILE *fp = fopen("/var/lib/agent/backup/.last_backup", "r");
+                if (fp) {
+                    if (fgets(last_backup_path, sizeof(last_backup_path), fp)) {
+                        char *newline = strchr(last_backup_path, '\n');
+                        if (newline) *newline = '\0';
+                    }
+                    fclose(fp);
+                    
+                    if (strlen(last_backup_path) > 0) {
+                        update_rollback_to_backup(last_backup_path);
+                    }
+                }
+            }
+            }
+            break;
         
     default:
         LOG_WARN("未知消息类型: 0x%02X", type);

@@ -775,7 +775,12 @@ void *status_thread(void *arg)
             }
         }
         
-        sleep(ctx->config.status_interval > 0 ? ctx->config.status_interval : 60);
+        /* 分段sleep，每1秒检查一次停止标志 */
+        int sleep_time = ctx->config.status_interval > 0 ? 
+                        ctx->config.status_interval : 60;
+        for (int i = 0; i < sleep_time && ctx->running; i++) {
+            sleep(1);
+        }
     }
     
     LOG_INFO("状态采集线程退出");
