@@ -7,3 +7,4 @@ package
 node_modules
 dist
 .alma-snapshots
+build

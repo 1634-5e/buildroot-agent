@@ -13,6 +13,7 @@ This file contains guidelines for agentic coding assistants working on this buil
 - 系统: buildroot2015.08.1
 - gcc: 4.9
 - openssl: 1.1.1
+- cmake: 2.8.12.2
 
 ### 技术栈 (buildroot-agent)
 - 通信: tcp socket
@@ -26,17 +27,20 @@ This file contains guidelines for agentic coding assistants working on this buil
 
 ## Build Commands
 
-### C/Makefile (buildroot-agent)
-- `make` - Build the agent binary to `bin/buildroot-agent`
-- `make clean` - Clean build artifacts (obj/, bin/)
-- `make install DESTDIR=/path` - Install to target directory
-- `make uninstall` - Remove installed files
-- `make release` - Build release version with stripped symbols
-- `make package` - Create tarball package in dist/
-- `make DEBUG=1` - Build with debug symbols (-O0 -g3)
-- `make STATIC=1` - Build with static linking
-- `make CC=arm-linux-gnueabihf-gcc` - Cross-compile for ARM
-- `make help` - Show all available targets
+### C/CMake (buildroot-agent)
+- `cd buildroot-agent && cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/arm-buildroot.cmake` - Configure for cross-compilation
+- `cd buildroot-agent && cmake --build build` - Build the agent binary to `build/bin/buildroot-agent`
+- `cd buildroot-agent && rm -rf build` - Clean build artifacts
+- `cd buildroot-agent && cmake --install build --prefix /path` - Install to target directory
+- `cd buildroot-agent && cmake --build build --target release` - Build release version with stripped symbols
+- `cd buildroot-agent && cpack` - Create tarball package
+- `./buildroot-agent/scripts/build.sh` - Quick build script
+- `./buildroot-agent/scripts/release.sh` - Quick release build
+- `./buildroot-agent/scripts/install.sh /path` - Quick install script
+
+**Options:**
+- `-DCMAKE_BUILD_TYPE=Debug` - Build with debug symbols
+- `-DSTATIC_LINK=ON` - Build with static linking
 
 ### Python (buildroot-server)
 - `cd buildroot-server && python3 server_example.py` - Run server
@@ -81,10 +85,17 @@ No formal test suite exists yet. To run tests:
 
 ## Cross-Compilation
 
-For embedded targets, specify the cross-compiler:
+The buildroot-agent uses CMake with a toolchain file for cross-compilation:
 ```bash
-make CC=arm-linux-gnueabihf-gcc STRIP=arm-linux-gnueabihf-strip
+cd buildroot-agent
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/arm-buildroot.cmake
+cmake --build build
 ```
+
+The toolchain file `cmake/arm-buildroot.cmake` configures:
+- Cross-compiler: arm-buildroot-linux-uclibcgnueabi-gcc
+- Sysroot: /workspaces/buildroot-agent/package/armhf-sysroot
+- Library search paths for OpenSSL, pthread, libutil
 
 ## Protocol Compatibility
 
