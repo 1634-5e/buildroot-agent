@@ -18,6 +18,7 @@
     <!-- Ace Editor -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-language_tools.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-modelist.js"></script>
     <style>
         :root {
             --bg-primary: #0d0d12;
@@ -879,17 +880,6 @@
             color: var(--border-color);
         }
 
-        .editor-actions {
-            display: flex;
-            gap: 4px;
-        }
-
-        .editor-find-bar {
-            padding: 8px 12px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-color);
-        }
-
         .editor-wrapper {
             flex: 1;
             display: flex;
@@ -985,78 +975,6 @@
             display: flex;
             justify-content: flex-end;
             gap: 8px;
-        }
-
-        /* Command Palette - 快捷键面板 */
-        .command-palette-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 10002;
-            display: none;
-        }
-        .command-palette-overlay.active {
-            display: flex;
-            justify-content: center;
-            padding-top: 20vh;
-        }
-        .command-palette {
-            width: 520px;
-            max-height: 400px;
-            background: var(--bg-elevated);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg);
-            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-        .command-palette input {
-            width: 100%;
-            padding: 14px 18px;
-            background: transparent;
-            border: none;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-size: 15px;
-            outline: none;
-        }
-        .command-palette-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 6px;
-        }
-        .command-palette-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 12px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            font-size: 13px;
-            color: var(--text-secondary);
-            transition: all var(--transition);
-        }
-        .command-palette-item:hover,
-        .command-palette-item.selected {
-            background: rgba(99, 102, 241, 0.15);
-            color: var(--text-primary);
-        }
-        .command-palette-item .cmd-label {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .command-palette-item .cmd-shortcut {
-            font-size: 11px;
-            color: var(--text-muted);
-            font-family: 'JetBrains Mono', monospace;
-            background: var(--bg-secondary);
-            padding: 2px 6px;
-            border-radius: 4px;
         }
 
         .file-browser-toolbar {
@@ -1814,7 +1732,6 @@
                                     <span>资源管理器</span>
                                     <div class="file-sidebar-actions">
                                         <button class="btn btn-icon" onclick="showNewFileDialog()" title="新建文件">📝</button>
-                                        <button class="btn btn-icon" onclick="uploadFile()" title="上传文件">📤</button>
                                         <button class="btn btn-icon" onclick="downloadSelectedFiles()" title="下载选中">⬇️</button>
                                         <button class="btn btn-icon" onclick="collapseAllFolders()" title="全部折叠">📁</button>
                                         <button class="btn btn-icon" onclick="refreshFileTree()" title="刷新">🔄</button>
@@ -1853,10 +1770,10 @@
                                             <button class="btn btn-sm" onclick="closePreview()">✕</button>
                                         </div>
                                     </div>
-                                    <!-- 预览模式 -->
-                                    <div class="file-preview-content" id="previewContent">
-                                        <!-- File content will be displayed here -->
-                                    </div>
+                                    <!-- 预览模式（已废弃，统一使用 Ace Editor） -->
+                                    <!-- <div class="file-preview-content" id="previewContent">
+                                        File content will be displayed here
+                                    </div> -->
                                     <!-- 编辑模式 -->
                                     <div class="file-editor-container" id="fileEditorContainer" style="display: none;">
                                         <!-- 多标签栏 -->
@@ -1871,30 +1788,8 @@
                                                 <span class="editor-separator">|</span>
                                                 <span id="editorFileType">plaintext</span>
                                             </div>
-                                            <div class="editor-actions">
-                                                <button class="terminal-btn" onclick="editorUndo()" title="撤销 (Ctrl+Z)">↩️</button>
-                                                <button class="terminal-btn" onclick="editorRedo()" title="重做 (Ctrl+Y)">↪️</button>
-                                                <button class="terminal-btn" onclick="editorFind()" title="查找 (Ctrl+F)">🔍</button>
-                                                <button class="terminal-btn" onclick="editorWrapToggle()" title="切换自动换行">↔️</button>
-                                                <button class="terminal-btn" onclick="toggleSyntaxHighlight()" title="切换语法高亮" id="btnSyntaxHighlight">🎨</button>
-                                                <button class="terminal-btn" onclick="showCommandPalette()" title="命令面板 (Ctrl+Shift+P)">⌨️</button>
-                                            </div>
-                                        </div>
-                                        <!-- 查找替换栏 -->
-                                        <div class="editor-find-bar" id="editorFindBar" style="display: none;">
-                                            <div style="display: flex; gap: 8px; align-items: center; flex: 1;">
-                                                <input type="text" id="editorFindInput" placeholder="查找..." 
-                                                       oninput="editorFindNext(false)" onkeydown="if(event.key==='Enter'){event.preventDefault();editorFindNext(true);}"
-                                                       style="flex: 1; padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
-                                                <input type="text" id="editorReplaceInput" placeholder="替换..." 
-                                                       style="flex: 1; padding: 6px 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-size: 13px; outline: none;">
-                                                <button class="terminal-btn" onclick="editorReplace()" title="替换">替换</button>
-                                                <button class="terminal-btn" onclick="editorReplaceAll()" title="全部替换">全部</button>
-                                                <span id="editorFindCount" style="font-size: 12px; color: var(--text-muted); min-width: 60px;">0 个结果</span>
-                                                <button class="terminal-btn" onclick="closeFindBar()" style="padding: 4px 8px;">✕</button>
-                                            </div>
-                                        </div>
-                                        <div class="editor-wrapper">
+                                         </div>
+                                         <div class="editor-wrapper">
                                             <!-- Ace Editor 容器 -->
                                             <div id="aceEditor" style="width: 100%; height: 100%;"></div>
                                         </div>
@@ -2080,17 +1975,6 @@
         </main>
     </div>
 
-    <!-- Command Palette -->
-    <div class="command-palette-overlay" id="commandPaletteOverlay" onclick="if(event.target===this)closeCommandPalette()">
-        <div class="command-palette">
-            <input type="text" id="commandPaletteInput" placeholder="输入命令..." 
-                   oninput="filterCommands()" onkeydown="handleCommandPaletteKey(event)">
-            <div class="command-palette-list" id="commandPaletteList">
-                <!-- 动态生成 -->
-            </div>
-        </div>
-    </div>
-
     <!-- New File Dialog -->
     <div class="modal-overlay" id="newFileDialog" style="display:none;" onclick="if(event.target===this)closeNewFileDialog()">
         <div class="new-file-dialog">
@@ -2194,20 +2078,16 @@
             PTY_CLOSE: 0x13,
             FILE_REQUEST: 0x20,
             FILE_DATA: 0x21,
-            FILE_LIST_REQUEST: 0x22,
-            FILE_LIST_RESPONSE: 0x23,
-            DOWNLOAD_PACKAGE: 0x24,
-            CMD_REQUEST: 0x30,
-            CMD_RESPONSE: 0x31,
-            FILE_UPLOAD_START: 0x40,
-            FILE_UPLOAD_DATA: 0x41,
-            FILE_UPLOAD_ACK: 0x42,
-            FILE_UPLOAD_COMPLETE: 0x43,
-            FILE_DOWNLOAD_START: 0x44,
-            FILE_DOWNLOAD_DATA: 0x45,
-            FILE_DOWNLOAD_ACK: 0x46,
-            FILE_TRANSFER_STATUS: 0x47,
-            DEVICE_LIST: 0x50
+             FILE_LIST_REQUEST: 0x22,
+             FILE_LIST_RESPONSE: 0x23,
+             DOWNLOAD_PACKAGE: 0x24,
+             CMD_REQUEST: 0x30,
+             CMD_RESPONSE: 0x31,
+             FILE_DOWNLOAD_START: 0x44,
+             FILE_DOWNLOAD_DATA: 0x45,
+             FILE_DOWNLOAD_ACK: 0x46,
+             FILE_TRANSFER_STATUS: 0x47,
+             DEVICE_LIST: 0x50
         };
 
         // ============================================
@@ -2563,12 +2443,6 @@
                     break;
                 case MSG_TYPES.DOWNLOAD_PACKAGE:
                     handleDownloadPackage(data);
-                    break;
-                case MSG_TYPES.FILE_UPLOAD_ACK:
-                    handleFileUploadAck(data);
-                    break;
-                case MSG_TYPES.FILE_UPLOAD_COMPLETE:
-                    handleFileUploadComplete(data);
                     break;
                 case MSG_TYPES.FILE_TRANSFER_STATUS:
                     handleFileTransferStatus(data);
@@ -3482,8 +3356,6 @@
         
         // Editor state variables (must be defined before any function that uses them)
         let isEditorActive = false;
-        let isEditorModified = false;
-        let editorOriginalContent = '';
         let editorCurrentFile = null;
         let editorWordWrap = false;
         let editorLastSavedContent = '';
@@ -3510,25 +3382,145 @@
             }
         }, 15000); // Check every 15 seconds
 
-        // 可编辑的文件扩展名集合
-        const EDITABLE_EXTENSIONS = new Set([
-            'txt', 'log', 'md', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts',
-            'py', 'sh', 'bash', 'zsh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml',
-            'properties', 'env', 'rc', 'profile',
-            'c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua',
-            'swift', 'kt', 'sql', 'makefile', 'dockerfile', 'cmake',
-            'service', 'timer', 'mount', 'rules', 'csv', 'tsv'
-        ]);
+        /**
+         * 检查编辑器是否有未保存的修改（使用 Ace UndoManager）
+         * @returns {boolean} 是否有未保存的修改
+         */
+        function isEditorDirty() {
+            if (!aceEditor || !aceSession) return false;
+            const undoManager = aceSession.getUndoManager();
+            return !undoManager.isClean();
+        }
 
-        // Utility function to check if file is editable
-        function isFileEditable(filename) {
-            if (!filename) return false;
-            const name = filename.toLowerCase();
-            // 无扩展名的常见可编辑文件
-            const editableNames = ['makefile', 'dockerfile', 'vagrantfile', 'gemfile', 'rakefile', '.gitignore', '.env', '.bashrc', '.profile', '.vimrc'];
-            if (editableNames.includes(name)) return true;
-            const ext = name.split('.').pop();
-            return EDITABLE_EXTENSIONS.has(ext);
+        /**
+         * 标记编辑器为已保存状态（使用 Ace UndoManager）
+         */
+        function markEditorAsClean() {
+            if (!aceEditor || !aceSession) return;
+            const undoManager = aceSession.getUndoManager();
+            undoManager.markClean();
+        }
+
+        /**
+         * 重置编辑器状态（加载新文件时）
+         */
+        function resetEditorState() {
+            if (!aceEditor || !aceSession) return;
+            const undoManager = aceSession.getUndoManager();
+            undoManager.reset();
+            markEditorAsClean();
+            
+            // 更新 UI
+            const badge = document.getElementById('editorModifiedBadge');
+            if (badge) badge.style.display = 'none';
+            
+            // 更新标签页
+            if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
+                const tab = openEditorTabs.get(activeEditorTabPath);
+                tab.modified = false;
+                renderEditorTabs();
+            }
+        }
+
+        /**
+         * 基于文件头（Magic Number）检测是否为二进制文件
+         * @param {Uint8Array} bytes 文件字节数组
+         * @returns {boolean} 是否为二进制文件
+         */
+        function isBinaryFile(bytes) {
+            if (!bytes || bytes.length === 0) return false;
+            
+            const checkLength = Math.min(32, bytes.length);
+            let binaryCount = 0;
+            
+            for (let i = 0; i < checkLength; i++) {
+                const byte = bytes[i];
+                const isPrintable = (byte >= 32 && byte <= 126) || (byte >= 9 && byte <= 13);
+                if (!isPrintable) {
+                    binaryCount++;
+                }
+            }
+            
+            return (binaryCount / checkLength) > 0.15;
+        }
+
+        /**
+         * 检测文件是否为文本文件（基于内容字节分析）
+         * @param {string} content 文件内容字符串
+         * @returns {boolean} 是否为文本文件
+         */
+        function isTextFile(content) {
+            if (!content || content.length === 0) return true;
+            
+            const sample = content.substring(0, 1000);
+            const length = sample.length;
+            let binaryCount = 0;
+            
+            for (let i = 0; i < length; i++) {
+                const code = sample.charCodeAt(i);
+                if (code < 9 || (code > 13 && code < 32) || code > 65535) {
+                    binaryCount++;
+                }
+            }
+            
+            return (binaryCount / length) < 0.3;
+        }
+
+        /**
+         * 检测文件是否可编辑
+         * @param {string} filename 文件名
+         * @param {string} content 文件内容
+         * @returns {boolean} 是否可编辑
+         */
+        function isFileEditable(filename, content) {
+            if (!isTextFile(content)) {
+                return false;
+            }
+            
+            try {
+                const modeList = ace.require('ace/ext/modelist');
+                const mode = modeList.getModeForPath(filename);
+                return mode && mode.mode && mode.mode !== 'ace/mode/text';
+            } catch (e) {
+                console.warn('Ace modelist 检测失败:', e);
+                return isTextFile(content);
+            }
+        }
+
+        /**
+         * 获取文件对应的 Ace 语言模式
+         * @param {string} filename 文件名
+         * @returns {string|null} Ace 模式字符串，如 'ace/mode/javascript'
+         */
+        function getAceLanguageMode(filename) {
+            try {
+                const modeList = ace.require('ace/ext/modelist');
+                const mode = modeList.getModeForPath(filename);
+                return mode?.mode || 'ace/mode/text';
+            } catch (e) {
+                console.warn('获取 Ace 模式失败:', e);
+                return 'ace/mode/text';
+            }
+        }
+
+        /**
+         * 获取文件类型显示名称
+         * @param {string} filename 文件名
+         * @returns {string} 类型名称
+         */
+        function getFileTypeLabel(filename) {
+            try {
+                const modeList = ace.require('ace/ext/modelist');
+                const mode = modeList.getModeForPath(filename);
+                return mode?.caption || 'Text';
+            } catch (e) {
+                return 'Text';
+            }
+        }
+
+        // Ace Editor change 事件处理函数（全局，用于 displayEditorContent() 访问）
+        function handleEditorChange(delta) {
+            onAceEditorChange(delta);
         }
 
         // ============================================
@@ -3570,10 +3562,8 @@
                 // 设置主题（深色主题匹配现有 UI）
                 aceEditor.setTheme("ace/theme/monokai");
                 
-                // 监听内容变化
-                aceSession.on("change", function(delta) {
-                    onAceEditorChange(delta);
-                });
+                // 监听内容变化（使用全局 handleEditorChange 函数）
+                aceSession.on("change", handleEditorChange);
                 
                 // 监听光标变化（更新行列信息）
                 aceEditor.selection.on("changeCursor", function() {
@@ -3597,40 +3587,6 @@
         }
 
         // 设置 Ace 语言模式
-        function setAceLanguageMode(ext) {
-            const modeMap = {
-                'c': 'ace/mode/c',
-                'cpp': 'ace/mode/c_cpp',
-                'h': 'ace/mode/c_cpp',
-                'hpp': 'ace/mode/c_cpp',
-                'sh': 'ace/mode/sh',
-                'bash': 'ace/mode/sh',
-                'zsh': 'ace/mode/sh',
-                'py': 'ace/mode/python',
-                'js': 'ace/mode/javascript',
-                'ts': 'ace/mode/typescript',
-                'json': 'ace/mode/json',
-                'xml': 'ace/mode/xml',
-                'html': 'ace/mode/html',
-                'css': 'ace/mode/css',
-                'md': 'ace/mode/markdown',
-                'yaml': 'ace/mode/yaml',
-                'yml': 'ace/mode/yaml',
-                'toml': 'ace/mode/toml',
-                'ini': 'ace/mode/ini',
-                'conf': 'ace/mode/ini',
-                'cfg': 'ace/mode/ini',
-                'txt': 'ace/mode/text',
-                'log': 'ace/mode/text',
-            };
-            
-            const mode = modeMap[ext.toLowerCase()] || 'ace/mode/text';
-            aceSession.setMode(mode);
-            
-            console.log(`[Ace Editor] 语言模式: ${mode}`);
-        }
-
-        // 获取文件扩展名
         function getFileExtension(filename) {
             if (!filename) return '';
             const parts = filename.split('.');
@@ -3644,106 +3600,85 @@
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
 
-            // 如果当前编辑器有未保存修改，提示确认
             if (isEditorActive && isEditorModified) {
                 if (!confirm('当前文件已修改但未保存，确定切换？')) return;
             }
-            // 退出编辑模式
             if (isEditorActive) exitEditor();
 
-            // 设置当前编辑文件信息
             editorCurrentFile = { path, name, size, mtime: 0 };
             
             const preview = safeGetElement('filePreview');
             const placeholder = safeGetElement('filePreviewPlaceholder');
             const previewName = safeGetElement('previewFilename');
             const previewSize = safeGetElement('previewFilesize');
-            const previewContent = safeGetElement('previewContent');
             
             if (placeholder) placeholder.style.display = 'none';
             if (preview) preview.style.display = 'flex';
+            const previewPanel = document.getElementById('filePreviewPanel');
+            if (previewPanel) previewPanel.style.display = 'flex';
 
-            // 根据文件是否可编辑显示/隐藏编辑按钮
-            const btnEdit = document.getElementById('btnEditFile');
-            if (btnEdit) btnEdit.style.display = isFileEditable(name) ? 'inline-flex' : 'none';
             if (previewName) previewName.textContent = name;
             if (previewSize) previewSize.textContent = formatBytes(size);
-            
-            // Check file type
+
             const ext = name.split('.').pop().toLowerCase();
-            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
-            const textExts = ['txt', 'log', 'md', 'json', 'xml', 'html', 'css', 'js', 'py', 'sh', 'conf', 'cfg', 'ini', 'yaml', 'yml', 'toml', 'ini', 'properties'];
-            const codeExts = ['c', 'cpp', 'h', 'hpp', 'java', 'go', 'rs', 'rb', 'php', 'pl', 'lua', 'swift', 'kt'];
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
             
-            if (previewContent) {
-                previewContent.className = 'file-preview-content';
-                previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">加载中...</div>';
-            }
-            
-            if (imageExts.includes(ext)) {
-                // 图片预览
-                if (previewContent) {
-                    previewContent.classList.add('image');
-                    previewContent.innerHTML = '<div style="color: var(--text-muted); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px;">\n                        <div style="font-size: 48px;">🖼️</div>\n                        <div>正在加载图片...</div>\n                        <button class="btn btn-sm" onclick="downloadSelectedFile()">⬇️ 下载图片</button>\n                    </div>';
+            if (aceEditor && aceEditorReady) {
+                aceEditor.setValue('', -1);
+                aceEditor.setReadOnly(true);
+                
+                if (imageExts.includes(ext)) {
+                    aceEditor.setValue(`[图片文件 - ${formatBytes(size)}]\n\n请点击下载按钮查看图片`, -1);
+                    pendingFilePreview = { path, name, ext, size };
+                    sendMessage(MSG_TYPES.FILE_REQUEST, {
+                        action: 'download',
+                        filepath: path,
+                        request_id: 'preview-img-' + Date.now()
+                    });
+                    
+                    const btnEdit = document.getElementById('btnEditFile');
+                    if (btnEdit) btnEdit.style.display = 'none';
+                } else {
+                    const readLength = Math.min(size, 32768);
+                    aceEditor.setValue('加载中...', -1);
+                    pendingFilePreview = { path, name, ext, size };
+                    
+                    console.log(`[PREVIEW] Sending file read request for ${path}, length: ${readLength} (file size: ${size})`);
+                    sendMessage(MSG_TYPES.FILE_REQUEST, {
+                        action: 'read',
+                        filepath: path,
+                        offset: 0,
+                        length: readLength,
+                        request_id: 'read-' + Date.now()
+                    });
+                    
+                    const btnEdit = document.getElementById('btnEditFile');
+                    if (btnEdit) btnEdit.style.display = 'none';
+                    
+                    setTimeout(() => {
+                        if (pendingFilePreview && pendingFilePreview.path === path) {
+                            if (aceEditor.getValue() === '加载中...') {
+                                aceEditor.setValue('加载超时，请重试', -1);
+                            }
+                            pendingFilePreview = null;
+                        }
+                    }, 10000);
                 }
-                
-                // 发送图片下载请求
-                pendingFilePreview = { path, name, ext, size };
-                sendMessage(MSG_TYPES.FILE_REQUEST, {
-                    action: 'download',
-                    filepath: path,
-                    request_id: 'preview-img-' + Date.now()
-                });
-            } else if (textExts.includes(ext) || codeExts.includes(ext) || size < 51200) { // Text/code files or files < 50KB
-                // Request file content from server
-                if (previewContent) {
-                    previewContent.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">正在加载文件内容...</div>';
-                }
-                
-                pendingFilePreview = { path, name, ext, size };
-                
-                // Send file read request - limit to 32KB to stay under WebSocket message size limit
-                // Base64 encoding will increase size by ~33%, so 32KB -> ~43KB (under 65534 byte limit)
-                const readLength = Math.min(size, 32768); // Max 32KB
-                console.log(`[PREVIEW] Sending file read request for ${path}, length: ${readLength} (file size: ${size})`);
-                sendMessage(MSG_TYPES.FILE_REQUEST, {
-                    action: 'read',
-                    filepath: path,
-                    offset: 0,
-                    length: readLength,
-                    request_id: 'read-' + Date.now()
-                });
-                
-                // Set timeout (increased to 10 seconds)
-                setTimeout(() => {
-                    if (pendingFilePreview && pendingFilePreview.path === path && previewContent) {
-                        console.warn(`[PREVIEW] Timeout for ${path}`);
-                        previewContent.innerHTML = '<div style="color: var(--text-muted);">加载超时，请重试</div>';
-                        pendingFilePreview = null;
-                    }
-                }, 10000);
             } else {
-                // Binary or large file
-                if (previewContent) {
-                    previewContent.classList.add('binary');
-                    previewContent.textContent = `二进制文件或文件过大 (${formatBytes(size)})\n\n请下载后查看`;
-                }
+                setTimeout(() => previewFile(path, name, size), 100);
             }
         }
 
         function handleFileData(data) {
             console.log('[FILE_DATA] Received file data:', data);
 
-            // 处理文件写入响应
             if (pendingFileSave && data.filepath && data.filepath === pendingFileSave.path) {
                 if (data.success) {
-                    // 写入成功，更新 mtime
                     if (editorCurrentFile) {
                         editorCurrentFile.mtime = data.mtime || 0;
                     }
                     onFileSaveSuccess();
                 } else if (data.error) {
-                    // 写入失败
                     onFileSaveError(data.error);
                 }
                 return;
@@ -3755,13 +3690,6 @@
             }
 
             const { path, name, ext, size } = pendingFilePreview;
-            const previewContent = safeGetElement('previewContent');
-
-            if (!previewContent) {
-                console.warn('previewContent element not found');
-                pendingFilePreview = null;
-                return;
-            }
 
             if (data.filepath && data.filepath !== path) {
                 console.warn(`[FILE_DATA] File path mismatch: expected ${path}, got ${data.filepath}`);
@@ -3770,104 +3698,66 @@
 
             if (data.error) {
                 console.error('[FILE_DATA] Error:', data.error);
-                previewContent.innerHTML = `<div style="color: var(--accent-error);">错误: ${data.error}</div>`;
+                aceEditor.setValue(`错误: ${data.error}`, -1);
                 pendingFilePreview = null;
                 return;
             }
             
+            let content = '';
+            let bytes = null;
+            
             if (data.content) {
-                try {
-                    // 图片数据
-                    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
-                    if (imageExts.includes(ext)) {
-                        const mimeType = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
-                        const imgSrc = `data:${mimeType};base64,${data.content}`;
-                        previewContent.innerHTML = `<img src="${imgSrc}" alt="${name}" style="max-width: 100%; max-height: 100%; object-fit: contain;" onclick="window.open('${imgSrc}', '_blank')" title="点击打开大图">`;
-                    } else {
-                        // Decode base64 content with UTF-8 support
-                        const binaryString = atob(data.content);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let i = 0; i < binaryString.length; i++) {
-                            bytes[i] = binaryString.charCodeAt(i);
-                        }
-                        const decoder = new TextDecoder('utf-8');
-                        const content = decoder.decode(bytes);
-                        console.log('[FILE_DATA] Decoded content length:', content.length);
-
-                        // Store content and mtime for editor mode
-                        editorOriginalContent = content;
-                        editorLastSavedContent = content;
-                        if (editorCurrentFile) {
-                            editorCurrentFile.mtime = data.mtime || 0;
-                        }
-
-                        // Always use editor component for preview (readonly mode)
-                        // For files <1MB, use editor component
-                        if (size < 1024 * 1024) {
-                            console.log('[FILE_DATA] Displaying content in Ace Editor (readonly mode)');
-                            displayEditorContent(content, true);  // true = readonly mode
-                        } else {
-                            // Large files: show plain text with line numbers
-                            const lines = content.split('\n');
-                            let html = '<div style="display: flex; height: 100%;">';
-                            html += '<div style="width: 48px; padding: 12px 8px 12px 0; background: var(--bg-secondary); border-right: 1px solid var(--border-color); font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; color: var(--text-muted); text-align: right; overflow: hidden; user-select: none; flex-shrink: 0;">';
-                            for (let i = 1; i <= lines.length; i++) {
-                                html += i + '\n';
-                            }
-                            html += '</div>';
-                            html += '<div style="flex: 1; overflow: auto; padding: 12px 16px; font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; white-space: pre;">';
-                            html += escapeHtml(content);
-                            html += '</div></div>';
-                            previewContent.innerHTML = html;
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error decoding file content:', e);
-                    previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
+                const binaryString = atob(data.content);
+                bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
                 }
             } else if (data.chunk_data) {
-                // Handle chunked data with UTF-8 support
-                try {
-                    const binaryString = atob(data.chunk_data);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    const decoder = new TextDecoder('utf-8');
-                    const content = decoder.decode(bytes);
-                    console.log('[FILE_DATA] Decoded chunk_data length:', content.length);
-
-                    // Store content and mtime
-                    editorOriginalContent = content;
-                    editorLastSavedContent = content;
-                    if (editorCurrentFile) {
-                        editorCurrentFile.mtime = data.mtime || 0;
-                    }
-
-                    // Always use editor component for preview (readonly mode)
-                    if (size < 1024 * 1024) {
-                        displayEditorContent(content, true);  // true = readonly mode
-                    } else {
-                        // Large files: show plain text with line numbers
-                        const lines = content.split('\n');
-                        let html = '<div style="display: flex; height: 100%;">';
-                        html += '<div style="width: 48px; padding: 12px 8px 12px 0; background: var(--bg-secondary); border-right: 1px solid var(--border-color); font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; color: var(--text-muted); text-align: right; overflow: hidden; user-select: none; flex-shrink: 0;">';
-                        for (let i = 1; i <= lines.length; i++) {
-                            html += i + '\n';
-                        }
-                        html += '</div>';
-                        html += '<div style="flex: 1; overflow: auto; padding: 12px 16px; font-family: \'JetBrains Mono\', monospace; font-size: 13px; line-height: 20.8px; white-space: pre;">';
-                        html += escapeHtml(content);
-                        html += '</div></div>';
-                        previewContent.innerHTML = html;
-                    }
-                } catch (e) {
-                    console.error('Error decoding file content:', e);
-                    previewContent.innerHTML = '<div style="color: var(--text-muted);">无法解码文件内容</div>';
+                const binaryString = atob(data.chunk_data);
+                bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
                 }
+            }
+            
+            if (bytes && isBinaryFile(bytes)) {
+                const ext = name.split('.').pop().toLowerCase();
+                const binaryExts = ['gz', 'zip', 'tar', 'bz2', 'xz', 'rar', '7z', 'exe', 'dll', 'so', 'bin', 'pdf', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'mp3', 'mp4', 'wav', 'avi', 'mkv'];
+                
+                if (binaryExts.includes(ext)) {
+                    content = `[二进制文件 - ${ext.toUpperCase()}]\n\n文件大小: ${formatBytes(size)}\n\n此文件不支持在线编辑，请下载后查看`;
+                } else {
+                    content = `[二进制文件]\n\n文件大小: ${formatBytes(size)}\n\n此文件不支持在线编辑，请下载后查看`;
+                }
+            } else if (bytes) {
+                content = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
             } else {
-                console.warn('[FILE_DATA] No content or chunk_data in response');
-                previewContent.innerHTML = '<div style="color: var(--text-muted);">文件内容为空</div>';
+                aceEditor.setValue('文件内容为空', -1);
+                pendingFilePreview = null;
+                return;
+            }
+
+            const editable = isFileEditable(name, content);
+            
+            editorLastSavedContent = content;
+            if (editorCurrentFile) {
+                editorCurrentFile.mtime = data.mtime || 0;
+                editorCurrentFile.editable = editable;
+            }
+
+            displayEditorContent(content, true);
+            
+            // 重置编辑器状态（使用 UndoManager）
+            resetEditorState();
+            
+            const btnEdit = document.getElementById('btnEditFile');
+            if (btnEdit) {
+                btnEdit.style.display = editable ? 'inline-flex' : 'none';
+                if (!editable) {
+                    btnEdit.title = '此文件类型不支持编辑';
+                } else {
+                    btnEdit.title = '编辑文件';
+                }
             }
             
             pendingFilePreview = null;
@@ -3893,15 +3783,11 @@
 
         // Display content using editor component (both preview and edit modes)
         function displayEditorContent(content, readonly = false, retryCount = 0) {
+            // 显示编辑器容器
             const preview = document.getElementById('filePreview');
             const editorContainer = document.getElementById('fileEditorContainer');
-            
-            if (!preview || !editorContainer) return;
-            
-            // Hide editor container toolbar and show preview
-            editorContainer.style.display = 'flex';
-            preview.style.display = 'flex';
-            document.getElementById('previewContent').style.display = 'none';
+            if (preview) preview.style.display = 'flex';
+            if (editorContainer) editorContainer.style.display = 'flex';
             
             // 如果 Ace Editor 还没有准备好，延迟执行
             if (!aceEditorReady || !aceEditor) {
@@ -3918,38 +3804,60 @@
             
             console.log('[Ace Editor] 设置内容，长度:', content.length);
             
-            // Set content
-            aceEditor.setValue(content, -1);  // -1 = 光标移到开头
+            // 临时移除 change 事件监听器，避免 setValue() 触发修改检测
+            aceSession.off("change", handleEditorChange);
             
-            // 强制调整大小以确保正确显示
+            // 设置内容
+            aceEditor.setValue(content, -1);
+            
+            // 重新添加 change 事件监听器
+            aceSession.on("change", handleEditorChange);
+            
             aceEditor.resize();
             
-            console.log('[Ace Editor] 内容设置完成');
-            
-            // Set readonly mode
             aceEditor.setReadOnly(readonly);
             
-            // Set language mode
-            const ext = getFileExtension(editorCurrentFile ? editorCurrentFile.name : '');
-            setAceLanguageMode(ext);
+            if (editorCurrentFile) {
+                const languageMode = getAceLanguageMode(editorCurrentFile.name);
+                if (aceSession) {
+                    aceSession.setMode(languageMode);
+                }
+                
+                let fileTypeLabel;
+                if (!editorCurrentFile.editable) {
+                    const ext = editorCurrentFile.name.split('.').pop().toLowerCase();
+                    const binaryTypes = {
+                        'gz': 'GZIP', 'zip': 'ZIP', 'tar': 'TAR', 'bz2': 'BZ2', 'xz': 'XZ',
+                        'rar': 'RAR', '7z': '7Z', 'exe': 'Executable', 'dll': 'DLL',
+                        'so': 'Shared Object', 'bin': 'Binary', 'pdf': 'PDF',
+                        'doc': 'Document', 'docx': 'Document', 'xls': 'Spreadsheet',
+                        'xlsx': 'Spreadsheet', 'ppt': 'Presentation', 'pptx': 'Presentation',
+                        'mp3': 'Audio', 'mp4': 'Video', 'wav': 'Audio', 'avi': 'Video', 'mkv': 'Video',
+                        'jpg': 'Image', 'jpeg': 'Image', 'png': 'Image', 'gif': 'Image',
+                        'bmp': 'Image', 'webp': 'Image', 'svg': 'Image'
+                    };
+                    fileTypeLabel = binaryTypes[ext] || 'Binary';
+                } else {
+                    fileTypeLabel = getFileTypeLabel(editorCurrentFile.name);
+                }
+                
+                const fileTypeEl = document.getElementById('editorFileType');
+                if (fileTypeEl) {
+                    fileTypeEl.textContent = fileTypeLabel;
+                }
+            }
             
-            // Update file type
-            document.getElementById('editorFileType').textContent = getFileType(editorCurrentFile ? editorCurrentFile.name : '');
-            
-            // In preview mode, hide edit buttons
             const btnEdit = document.getElementById('btnEditFile');
             const btnSave = document.getElementById('btnSaveFile');
             const btnCancel = document.getElementById('btnCancelEdit');
             if (readonly) {
-                // Preview mode: show edit button
-                if (btnEdit && isFileEditable(editorCurrentFile.name)) {
+                if (btnEdit && editorCurrentFile?.editable) {
                     btnEdit.style.display = 'inline-flex';
                 }
                 if (btnSave) btnSave.style.display = 'none';
                 if (btnCancel) btnCancel.style.display = 'none';
                 isEditorActive = false;
             } else {
-                // Edit mode
                 if (btnEdit) btnEdit.style.display = 'none';
                 if (btnSave) btnSave.style.display = 'inline-flex';
                 if (btnCancel) btnCancel.style.display = 'inline-flex';
@@ -3984,35 +3892,32 @@
                 return;
             }
 
-            if (!isFileEditable(editorCurrentFile.name)) {
+            const currentContent = aceEditor ? aceEditor.getValue() : '';
+            if (!isFileEditable(editorCurrentFile.name, currentContent)) {
                 showToast('该文件类型不支持编辑', 'warning');
                 return;
             }
 
-            // 文件大小限制 (编辑器限制 1MB)
             if (editorCurrentFile.size > 1024 * 1024) {
                 showToast('文件过大，不支持在线编辑 (最大 1MB)', 'warning');
                 return;
             }
 
-            // 检查是否已经在标签页中打开
             const tabPath = editorCurrentFile.path;
             if (openEditorTabs.has(tabPath)) {
                 switchToTab(tabPath);
                 return;
             }
 
-            // 获取当前预览内容作为编辑器初始内容
             let content;
             if (aceEditor && aceEditorReady) {
                 content = aceEditor.getValue();
                 console.log('[EnterEditor] 从 Ace Editor 获取内容，长度:', content.length);
             } else {
-                content = editorOriginalContent;
-                console.log('[EnterEditor] 使用 editorOriginalContent，长度:', content.length);
+                console.log('[EnterEditor] Ace Editor 未就绪');
+                return;
             }
             
-            // 创建新的标签页
             const newTab = {
                 path: tabPath,
                 name: editorCurrentFile.name,
@@ -4020,6 +3925,7 @@
                 content: content,
                 originalContent: content,
                 modified: false,
+                editable: editorCurrentFile.editable || true,
                 undoStack: [],
                 redoStack: [],
                 scrollTop: 0,
@@ -4029,14 +3935,19 @@
             };
             openEditorTabs.set(tabPath, newTab);
             
-            editorOriginalContent = content;
             editorLastSavedContent = content;
-            editorUndoStack = [];
-            editorRedoStack = [];
             activeEditorTabPath = tabPath;
             
-            // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
-            displayEditorContent(content, false);  // false = editable mode
+            displayEditorContent(content, false);
+            
+            // 重置编辑器状态（使用 UndoManager）
+            resetEditorState();
+            
+            const languageMode = getAceLanguageMode(editorCurrentFile.name);
+            if (aceSession) {
+                aceSession.setMode(languageMode);
+                console.log(`[Ace Editor] 设置语言模式: ${languageMode}`);
+            }
             
             renderEditorTabs();
             
@@ -4086,15 +3997,19 @@
             activeEditorTabPath = path;
             const newTab = openEditorTabs.get(path);
 
-            // 更新编辑器状态
-            editorOriginalContent = newTab.originalContent;
-            editorUndoStack = newTab.undoStack || [];
-            editorRedoStack = newTab.redoStack || [];
-            isEditorModified = newTab.modified;
-            editorCurrentFile = { path: newTab.path, name: newTab.name, size: newTab.size, mtime: newTab.mtime || 0 };
+            editorCurrentFile = { 
+                path: newTab.path, 
+                name: newTab.name, 
+                size: newTab.size, 
+                mtime: newTab.mtime || 0,
+                editable: newTab.editable || true
+            };
 
             // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
             displayEditorContent(newTab.content, false);  // false = editable mode
+            
+            // 重置编辑器状态（使用 UndoManager）
+            resetEditorState();
         }
 
         function closeEditorTab(path) {
@@ -4140,16 +4055,29 @@
 
         function exitEditor() {
             isEditorActive = false;
-            isEditorModified = false;
             
-            // Switch to preview (readonly) mode
-            if (aceEditor) {
-                displayEditorContent(aceEditor.getValue(), true);  // true = readonly
+            // 切换回预览（只读）模式
+            if (aceEditor && aceEditorReady) {
+                aceEditor.setReadOnly(true);
+                
+                const btnEdit = document.getElementById('btnEditFile');
+                const btnSave = document.getElementById('btnSaveFile');
+                const btnCancel = document.getElementById('btnCancelEdit');
+                const badge = document.getElementById('editorModifiedBadge');
+                
+                if (btnEdit && editorCurrentFile?.editable) {
+                    btnEdit.style.display = 'inline-flex';
+                }
+                if (btnSave) btnSave.style.display = 'none';
+                if (btnCancel) btnCancel.style.display = 'none';
+                
+                // 清除"已修改"状态显示
+                if (badge) badge.style.display = 'none';
             }
         }
         
         function cancelEdit() {
-            if (isEditorModified) {
+            if (isEditorDirty()) {
                 if (!confirm('放弃所有修改？')) return;
             }
             exitEditor();
@@ -4162,14 +4090,14 @@
             if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
                 const tab = openEditorTabs.get(activeEditorTabPath);
                 tab.content = content;
-                tab.modified = content !== tab.originalContent;
-                // Ace 内置撤销/重做，无需手动管理
+                // 使用 UndoManager 检测修改状态
+                tab.modified = isEditorDirty();
             }
 
-            // 检测是否有修改
-            isEditorModified = content !== editorOriginalContent;
+            // 更新 UI 修改状态
+            const isDirty = isEditorDirty();
             const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+            if (badge) badge.style.display = isDirty ? 'inline-block' : 'none';
 
             // 更新标签栏显示修改状态
             renderEditorTabs();
@@ -4265,133 +4193,8 @@
                 duplicateLine();
                 return;
             }
-            
-            // Ctrl+Shift+P: 命令面板
-            if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'P') {
-                event.preventDefault();
-                showCommandPalette();
-                return;
-            }
         }
 
-        function editorUndo() {
-            if (!aceEditor) return;
-            aceEditor.undo();
-        }
- 
-        function editorRedo() {
-            if (!aceEditor) return;
-            aceEditor.redo();
-        }
-
-        function editorFind() {
-            const findBar = document.getElementById('editorFindBar');
-            if (!findBar) return;
- 
-            if (findBar.style.display === 'none') {
-                findBar.style.display = 'block';
-                const findInput = document.getElementById('editorFindInput');
-                if (findInput) {
-                    // 如果有选中文本，填入查找框
-                    if (aceEditor) {
-                        const selected = aceEditor.getSelectedText();
-                        if (selected && selected.length < 100) {
-                            findInput.value = selected;
-                        }
-                    }
-                    findInput.focus();
-                    findInput.select();
-                }
-            } else {
-                closeFindBar();
-            }
-        }
- 
-        function closeFindBar() {
-            const findBar = document.getElementById('editorFindBar');
-            if (findBar) findBar.style.display = 'none';
-        }
- 
-        function editorFindNext(advance) {
-            const findInput = document.getElementById('editorFindInput');
-            const countEl = document.getElementById('editorFindCount');
-            if (!findInput || !aceEditor) return;
- 
-            const query = findInput.value;
-            if (!query) {
-                if (countEl) countEl.textContent = '0 个结果';
-                return;
-            }
- 
-            // 使用 Ace 内置查找
-            aceEditor.find(query, {
-                backwards: !advance,
-                wrap: true,
-                caseSensitive: false,
-                wholeWord: false,
-                regExp: false,
-            });
- 
-            // 更新计数（Ace 没有直接提供计数 API，需要自己实现）
-            const allRanges = aceEditor.findAll(query);
-            if (countEl) countEl.textContent = `${allRanges.length} 个结果`;
-        }
- 
-        function editorReplace() {
-            const findInput = document.getElementById('editorFindInput');
-            const replaceInput = document.getElementById('editorReplaceInput');
-            if (!findInput || !replaceInput || !aceEditor) return;
- 
-            const query = findInput.value;
-            const replacement = replaceInput.value;
-            if (!query) return;
- 
-            // 替换当前选中
-            aceEditor.replace(replacement);
-            editorFindNext(true);
-        }
- 
-        function editorReplaceAll() {
-            const findInput = document.getElementById('editorFindInput');
-            const replaceInput = document.getElementById('editorReplaceInput');
-            const countEl = document.getElementById('editorFindCount');
-            if (!findInput || !replaceInput || !aceEditor) return;
- 
-            const query = findInput.value;
-            const replacement = replaceInput.value;
-            if (!query) return;
- 
-            // 全部替换
-            const allRanges = aceEditor.findAll(query);
-            aceEditor.replaceAll(replacement);
- 
-            const count = allRanges.length;
-            if (countEl) countEl.textContent = `已替换 ${count} 处`;
-            showToast(`已替换 ${count} 处`, 'success');
-        }
-
-        function editorWrapToggle() {
-            if (!aceEditor) return;
- 
-            editorWordWrap = !editorWordWrap;
-            aceSession.setUseWrapMode(editorWordWrap);
- 
-            showToast(editorWordWrap ? '自动换行: 开' : '自动换行: 关', 'info');
-        }
-
-        function toggleSyntaxHighlight() {
-            if (!aceEditor) return;
-            
-            // Ace 始终启用语法高亮，此函数改为切换主题
-            const currentTheme = aceEditor.getTheme();
-            const newTheme = currentTheme === 'ace/theme/tomorrow_night_eight' 
-                ? 'ace/theme/tomorrow_night_blue'
-                : 'ace/theme/tomorrow_night_eight';
-            aceEditor.setTheme(newTheme);
-            
-            showToast('主题已切换', 'info');
-        }
- 
         // ============================================
         // Utility Functions - 工具函数
         // ============================================
@@ -4426,8 +4229,8 @@
 
             const content = aceEditor ? aceEditor.getValue() : '';
 
-            // 没有修改
-            if (content === editorOriginalContent) {
+            // 没有修改（使用 UndoManager 检测）
+            if (!isEditorDirty()) {
                 showToast('文件没有修改', 'info');
                 return;
             }
@@ -4475,12 +4278,10 @@
             }
 
             const content = aceEditor ? aceEditor.getValue() : '';
-            editorOriginalContent = content;
             editorLastSavedContent = content;
 
-            isEditorModified = false;
-            const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = 'none';
+            // 标记为已保存状态（使用 UndoManager）
+            markEditorAsClean();
 
             // 更新当前标签页的状态
             if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
@@ -4490,6 +4291,9 @@
                 tab.mtime = editorCurrentFile.mtime || 0;
                 renderEditorTabs();
             }
+
+            // 保存成功后，自动退出编辑状态
+            exitEditor();
 
             showToast(`已保存: ${editorCurrentFile?.name || '文件'}`, 'success');
         }
@@ -4582,116 +4386,11 @@
                 action: 'write',
                 filepath: editorCurrentFile.path,
                 content: encoded,
-                mtime: 0,  // 强制覆盖时不需要比对 mtime
-                force: true,  // 强制模式
+                mtime: 0,
+                force: true,
                 encoding: 'utf-8',
                 request_id: 'save-force-' + Date.now()
             });
-        }
-
-        // ============================================
-        // Command Palette - 命令面板
-        // ============================================
-        const EDITOR_COMMANDS = [
-            { id: 'save', label: '保存文件', icon: '💾', shortcut: 'Ctrl+S', action: () => saveFileToDevice() },
-            { id: 'undo', label: '撤销', icon: '↩️', shortcut: 'Ctrl+Z', action: () => editorUndo() },
-            { id: 'redo', label: '重做', icon: '↪️', shortcut: 'Ctrl+Y', action: () => editorRedo() },
-            { id: 'find', label: '查找', icon: '🔍', shortcut: 'Ctrl+F', action: () => editorFind() },
-            { id: 'replace', label: '查找替换', icon: '🔄', shortcut: '', action: () => { editorFind(); document.getElementById('editorReplaceInput').focus(); } },
-            { id: 'wrap', label: '自动换行', icon: '↔️', shortcut: '', action: () => editorWrapToggle() },
-            { id: 'highlight', label: '语法高亮', icon: '🎨', shortcut: '', action: () => toggleSyntaxHighlight() },
-            { id: 'format', label: '格式化 JSON', icon: '📋', shortcut: '', action: () => formatJSON() },
-            { id: 'trim', label: '去除空行', icon: '🧹', shortcut: '', action: () => trimEmptyLines() },
-            { id: 'sort', label: '排序行', icon: '📊', shortcut: '', action: () => sortLines() },
-            { id: 'duplicate', label: '重复行', icon: '📋', shortcut: 'Ctrl+D', action: () => duplicateLine() },
-            { id: 'delete', label: '删除行', icon: '🗑️', shortcut: 'Ctrl+D', action: () => deleteLine() },
-            { id: 'goto', label: '跳转到行', icon: '↗️', shortcut: 'Ctrl+G', action: () => gotoLine() },
-            { id: 'close-tab', label: '关闭标签', icon: '✕', shortcut: 'Ctrl+W', action: () => closeEditorTab(activeEditorTabPath) },
-            { id: 'close-others', label: '关闭其他标签', icon: '✕', shortcut: '', action: () => closeAllTabs(activeEditorTabPath) },
-        ];
-
-        let commandPaletteSelectedIndex = 0;
-        let filteredCommands = [];
-
-        function showCommandPalette() {
-            if (!isEditorActive) {
-                showToast('请先进入编辑模式', 'warning');
-                return;
-            }
-
-            const overlay = document.getElementById('commandPaletteOverlay');
-            const input = document.getElementById('commandPaletteInput');
-            overlay.classList.add('active');
-            input.value = '';
-            input.focus();
-            commandPaletteSelectedIndex = 0;
-            filterCommands();
-        }
-
-        function closeCommandPalette() {
-            const overlay = document.getElementById('commandPaletteOverlay');
-            overlay.classList.remove('active');
-        }
-
-        function filterCommands() {
-            const input = document.getElementById('commandPaletteInput');
-            const query = input.value.toLowerCase().trim();
-            const list = document.getElementById('commandPaletteList');
-
-            if (!query) {
-                filteredCommands = [...EDITOR_COMMANDS];
-            } else {
-                filteredCommands = EDITOR_COMMANDS.filter(cmd => 
-                    cmd.label.toLowerCase().includes(query) || cmd.id.includes(query)
-                );
-            }
-
-            commandPaletteSelectedIndex = 0;
-            renderCommandPalette(list);
-        }
-
-        function renderCommandPalette(list) {
-            if (!list) return;
-
-            let html = '';
-            filteredCommands.forEach((cmd, idx) => {
-                const isSelected = idx === commandPaletteSelectedIndex;
-                html += `<div class="command-palette-item ${isSelected ? 'selected' : ''}" 
-                         data-index="${idx}" onclick="executeCommand(${idx})">
-                    <span class="cmd-label">
-                        <span style="width: 24px;">${cmd.icon}</span>
-                        <span>${cmd.label}</span>
-                    </span>
-                    ${cmd.shortcut ? `<span class="cmd-shortcut">${cmd.shortcut}</span>` : ''}
-                </div>`;
-            });
-
-            list.innerHTML = html || '<div style="padding: 20px; text-align: center; color: var(--text-muted);">没有找到命令</div>';
-        }
-
-        function executeCommand(index) {
-            if (index >= 0 && index < filteredCommands.length) {
-                const cmd = filteredCommands[index];
-                closeCommandPalette();
-                cmd.action();
-            }
-        }
-
-        function handleCommandPaletteKey(event) {
-            if (event.key === 'Escape') {
-                closeCommandPalette();
-            } else if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                commandPaletteSelectedIndex = Math.min(commandPaletteSelectedIndex + 1, filteredCommands.length - 1);
-                renderCommandPalette(document.getElementById('commandPaletteList'));
-            } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                commandPaletteSelectedIndex = Math.max(commandPaletteSelectedIndex - 1, 0);
-                renderCommandPalette(document.getElementById('commandPaletteList'));
-            } else if (event.key === 'Enter') {
-                event.preventDefault();
-                executeCommand(commandPaletteSelectedIndex);
-            }
         }
 
         // ============================================
@@ -4842,380 +4541,6 @@
                     el.classList.add('selected');
                 }
             });
-        }
-
-        // ============================================
-        // File Upload - 分片上传、进度显示、断点续传
-        // ============================================
-        let activeUploads = {}; // 活跃的上传任务
-
-        function uploadFile() {
-            if (!currentDevice) {
-                showToast('请先选择设备', 'warning');
-                return;
-            }
-
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.multiple = true;
-            input.onchange = (e) => {
-                const files = Array.from(e.target.files);
-                if (files.length === 0) return;
-
-                files.forEach(file => {
-                    startFileUpload(file, currentPath || '/tmp');
-                });
-            };
-            input.click();
-        }
-
-        async function startFileUpload(file, targetDir) {
-            const uploadId = 'upload-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
-
-            // 计算文件 MD5（小文件才算，大文件跳过）
-            let checksum = '';
-            if (file.size < 10 * 1024 * 1024) { // < 10MB
-                try {
-                    const buffer = await file.arrayBuffer();
-                    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-                    checksum = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-                } catch (e) {
-                    console.warn('无法计算文件哈希:', e);
-                }
-            }
-
-            // 创建上传任务
-            activeUploads[uploadId] = {
-                file: file,
-                filename: file.name,
-                fileSize: file.size,
-                targetDir: targetDir,
-                transferId: null,
-                chunkSize: 32 * 1024, // 默认 32KB，服务端会返回建议值
-                totalChunks: 0,
-                sentChunks: new Set(),
-                ackedChunks: new Set(),
-                checksum: checksum,
-                startTime: Date.now(),
-                status: 'starting', // starting, uploading, completing, done, error
-                retryCount: 0,
-                maxRetries: 3
-            };
-
-            // 显示上传进度 UI
-            showUploadProgress(uploadId);
-
-            // 发送上传开始请求
-            sendMessage(MSG_TYPES.FILE_UPLOAD_START, {
-                filename: file.name,
-                file_size: file.size,
-                checksum: checksum,
-                target_dir: targetDir,
-                upload_id: uploadId
-            });
-
-            showToast(`开始上传: ${file.name} (${formatBytes(file.size)})`, 'info');
-        }
-
-        function handleFileUploadAck(data) {
-            console.log('Upload ACK:', data);
-
-            // 找到对应的上传任务
-            let upload = null;
-            let uploadId = null;
-
-            if (data.transfer_id) {
-                // 通过 transfer_id 匹配
-                for (const [id, u] of Object.entries(activeUploads)) {
-                    if (u.transferId === data.transfer_id || u.status === 'starting') {
-                        upload = u;
-                        uploadId = id;
-                        break;
-                    }
-                }
-            }
-
-            if (data.chunk_index !== undefined && data.transfer_id) {
-                // 这是分片确认
-                for (const [id, u] of Object.entries(activeUploads)) {
-                    if (u.transferId === data.transfer_id) {
-                        upload = u;
-                        uploadId = id;
-                        break;
-                    }
-                }
-
-                if (upload && data.success) {
-                    upload.ackedChunks.add(data.chunk_index);
-                    updateUploadProgress(uploadId);
-
-                    // 检查是否所有分片都已确认
-                    if (upload.ackedChunks.size >= upload.totalChunks) {
-                        completeUpload(uploadId);
-                    }
-                } else if (upload && !data.success) {
-                    console.warn(`分片 ${data.chunk_index} 上传失败: ${data.message}`);
-                    // 重试该分片
-                    retryChunk(uploadId, data.chunk_index);
-                }
-                return;
-            }
-
-            if (!upload) return;
-
-            // 初始化上传参数
-            if (data.transfer_id) {
-                upload.transferId = data.transfer_id;
-            }
-            if (data.chunk_size) {
-                upload.chunkSize = data.chunk_size;
-            }
-            upload.totalChunks = data.total_chunks || Math.ceil(upload.fileSize / upload.chunkSize);
-
-            // 处理断点续传
-            if (data.resume && data.received_chunks) {
-                data.received_chunks.forEach(idx => upload.ackedChunks.add(idx));
-                showToast(`断点续传: 已有 ${upload.ackedChunks.size}/${upload.totalChunks} 分片`, 'info');
-            }
-
-            upload.status = 'uploading';
-            updateUploadProgress(uploadId);
-
-            // 开始发送分片
-            sendFileChunks(uploadId);
-        }
-
-        async function sendFileChunks(uploadId) {
-            const upload = activeUploads[uploadId];
-            if (!upload || upload.status !== 'uploading') return;
-
-            const concurrency = 3; // 并发发送数
-            let pending = 0;
-
-            for (let i = 0; i < upload.totalChunks; i++) {
-                if (upload.ackedChunks.has(i) || upload.sentChunks.has(i)) continue;
-
-                // 等待并发槽位
-                while (pending >= concurrency) {
-                    await new Promise(r => setTimeout(r, 50));
-                    if (upload.status !== 'uploading') return;
-                }
-
-                pending++;
-                upload.sentChunks.add(i);
-
-                // 读取分片数据
-                const start = i * upload.chunkSize;
-                const end = Math.min(start + upload.chunkSize, upload.fileSize);
-                const chunk = upload.file.slice(start, end);
-
-                try {
-                    const arrayBuffer = await chunk.arrayBuffer();
-                    const base64Data = arrayBufferToBase64(arrayBuffer);
-
-                    sendMessage(MSG_TYPES.FILE_UPLOAD_DATA, {
-                        transfer_id: upload.transferId,
-                        chunk_index: i,
-                        chunk_data: base64Data
-                    });
-                } catch (e) {
-                    console.error(`发送分片 ${i} 失败:`, e);
-                    upload.sentChunks.delete(i);
-                }
-
-                pending--;
-                updateUploadProgress(uploadId);
-            }
-        }
-
-        function retryChunk(uploadId, chunkIndex) {
-            const upload = activeUploads[uploadId];
-            if (!upload) return;
-
-            upload.sentChunks.delete(chunkIndex);
-
-            if (upload.retryCount < upload.maxRetries * upload.totalChunks) {
-                upload.retryCount++;
-                setTimeout(() => {
-                    if (upload.status === 'uploading') {
-                        sendFileChunks(uploadId);
-                    }
-                }, 1000);
-            } else {
-                upload.status = 'error';
-                updateUploadProgress(uploadId);
-                showToast(`上传失败: ${upload.filename}，重试次数已用尽`, 'error');
-            }
-        }
-
-        function completeUpload(uploadId) {
-            const upload = activeUploads[uploadId];
-            if (!upload || upload.status === 'completing' || upload.status === 'done') return;
-
-            upload.status = 'completing';
-
-            sendMessage(MSG_TYPES.FILE_UPLOAD_COMPLETE, {
-                transfer_id: upload.transferId
-            });
-        }
-
-        function handleFileUploadComplete(data) {
-            console.log('Upload complete response:', data);
-
-            for (const [uploadId, upload] of Object.entries(activeUploads)) {
-                if (upload.transferId === data.transfer_id) {
-                    if (data.success) {
-                        upload.status = 'done';
-                        const elapsed = ((Date.now() - upload.startTime) / 1000).toFixed(1);
-                        const speed = formatBytes(upload.fileSize / (elapsed || 1)) + '/s';
-                        showToast(`上传完成: ${upload.filename} (${elapsed}s, ${speed})`, 'success');
-
-                        // 刷新文件列表
-                        setTimeout(() => {
-                            refreshFiles(upload.targetDir);
-                            refreshFileTree();
-                        }, 500);
-                    } else {
-                        upload.status = 'error';
-                        showToast(`上传失败: ${upload.filename} - ${data.error || '未知错误'}`, 'error');
-                    }
-                    updateUploadProgress(uploadId);
-
-                    // 5秒后清理完成的任务
-                    setTimeout(() => {
-                        removeUploadProgress(uploadId);
-                        delete activeUploads[uploadId];
-                    }, 5000);
-                    break;
-                }
-            }
-        }
-
-        function handleFileTransferStatus(data) {
-            console.log('Transfer status:', data);
-            // 服务端推送的传输进度（可用于同步多端状态）
-            for (const [uploadId, upload] of Object.entries(activeUploads)) {
-                if (upload.transferId === data.transfer_id) {
-                    if (data.progress !== undefined) {
-                        updateUploadProgress(uploadId);
-                    }
-                    break;
-                }
-            }
-        }
-
-        function arrayBufferToBase64(buffer) {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary);
-        }
-
-        // ============================================
-        // Upload Progress UI
-        // ============================================
-        function showUploadProgress(uploadId) {
-            let container = document.getElementById('uploadProgressContainer');
-            if (!container) {
-                container = document.createElement('div');
-                container.id = 'uploadProgressContainer';
-                container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 1500; display: flex; flex-direction: column; gap: 8px; max-width: 360px;';
-                document.body.appendChild(container);
-            }
-
-            const upload = activeUploads[uploadId];
-            if (!upload) return;
-
-            const item = document.createElement('div');
-            item.id = `upload-progress-${uploadId}`;
-            item.style.cssText = 'background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px 16px; box-shadow: var(--shadow-lg); min-width: 300px;';
-            item.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
-                        <span>📤</span>
-                        <span style="font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${upload.filename}</span>
-                    </div>
-                    <button onclick="cancelUpload('${uploadId}')" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 4px;">✕</button>
-                </div>
-                <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; margin-bottom: 6px;">
-                    <div id="upload-bar-${uploadId}" style="height: 100%; background: var(--accent-primary); border-radius: 3px; transition: width 0.3s ease; width: 0%;"></div>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-                    <span id="upload-status-${uploadId}">准备中...</span>
-                    <span id="upload-percent-${uploadId}">0%</span>
-                </div>
-            `;
-            container.appendChild(item);
-        }
-
-        function updateUploadProgress(uploadId) {
-            const upload = activeUploads[uploadId];
-            if (!upload) return;
-
-            const bar = document.getElementById(`upload-bar-${uploadId}`);
-            const status = document.getElementById(`upload-status-${uploadId}`);
-            const percent = document.getElementById(`upload-percent-${uploadId}`);
-
-            if (!bar || !status || !percent) return;
-
-            const progress = upload.totalChunks > 0 ? (upload.ackedChunks.size / upload.totalChunks) * 100 : 0;
-            bar.style.width = progress + '%';
-            percent.textContent = progress.toFixed(0) + '%';
-
-            const elapsed = (Date.now() - upload.startTime) / 1000;
-            const bytesUploaded = upload.ackedChunks.size * upload.chunkSize;
-            const speed = elapsed > 0 ? formatBytes(bytesUploaded / elapsed) + '/s' : '--';
-
-            switch (upload.status) {
-                case 'starting':
-                    status.textContent = '准备中...';
-                    break;
-                case 'uploading':
-                    status.textContent = `${formatBytes(bytesUploaded)} / ${formatBytes(upload.fileSize)} · ${speed}`;
-                    break;
-                case 'completing':
-                    status.textContent = '校验中...';
-                    bar.style.background = 'var(--accent-warning)';
-                    break;
-                case 'done':
-                    status.textContent = '上传完成 ✓';
-                    bar.style.background = 'var(--accent-success)';
-                    bar.style.width = '100%';
-                    percent.textContent = '100%';
-                    break;
-                case 'error':
-                    status.textContent = '上传失败 ✕';
-                    bar.style.background = 'var(--accent-error)';
-                    break;
-            }
-        }
-
-        function removeUploadProgress(uploadId) {
-            const item = document.getElementById(`upload-progress-${uploadId}`);
-            if (item) {
-                item.style.transition = 'opacity 0.3s, transform 0.3s';
-                item.style.opacity = '0';
-                item.style.transform = 'translateX(100%)';
-                setTimeout(() => item.remove(), 300);
-            }
-
-            // 清理空容器
-            const container = document.getElementById('uploadProgressContainer');
-            if (container && container.children.length === 0) {
-                container.remove();
-            }
-        }
-
-        function cancelUpload(uploadId) {
-            const upload = activeUploads[uploadId];
-            if (upload) {
-                upload.status = 'error';
-                showToast(`已取消上传: ${upload.filename}`, 'info');
-            }
-            removeUploadProgress(uploadId);
-            delete activeUploads[uploadId];
         }
 
         function sendDownloadRequest(path) {
@@ -5955,25 +5280,6 @@
                     e.preventDefault();
                     e.stopPropagation();
                     filesTab.style.outline = 'none';
-                });
-
-                filesTab.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    filesTab.style.outline = 'none';
-
-                    if (!currentDevice) {
-                        showToast('请先选择设备', 'warning');
-                        return;
-                    }
-
-                    const files = Array.from(e.dataTransfer.files);
-                    if (files.length > 0) {
-                        files.forEach(file => {
-                            startFileUpload(file, currentPath || '/tmp');
-                        });
-                        showToast(`开始上传 ${files.length} 个文件`, 'info');
-                    }
                 });
             }
 
