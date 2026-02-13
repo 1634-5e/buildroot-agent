@@ -997,10 +997,7 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
                 }
                 
                 offset += snprintf(json + offset, chunk_len + 256 - offset,
-                    "\"content\":\"");
-                memcpy(json + offset, encoded + chunk_start, chunk_len);
-                offset += chunk_len;
-                offset += snprintf(json + offset, chunk_len + 256 - offset, "\"");
+                    "\"content\":\"%.*s\"", (int)chunk_len, encoded + chunk_start);
                 
                 offset += snprintf(json + offset, chunk_len + 256 - offset,
                     ",\"chunk_index\":%zu,\"total_chunks\":%zu", chunk_idx, total_chunks);

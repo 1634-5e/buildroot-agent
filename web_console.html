@@ -5761,7 +5761,7 @@
               
               if (!downloadChunks[request_id]) {
                   downloadChunks[request_id] = {
-                      chunks: new Array(total_chunks),
+                      chunks: new Array(total_chunks).fill(null),
                       total: total_chunks,
                       filename: data.filename,
                       size: data.size
@@ -5775,7 +5775,7 @@
               console.log(`收到分块 ${chunk_index + 1}/${total_chunks}`);
               
               // 检查是否接收完成
-              const isComplete = chunkData.chunks.every(c => c !== undefined && c !== null);
+              const isComplete = chunkData.chunks.every(c => c !== null && c !== undefined);
               
               if (isComplete || data.is_last) {
                   const fullContent = chunkData.chunks.join('');
