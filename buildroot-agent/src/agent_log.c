@@ -22,6 +22,7 @@
 /* 日志监控结构 */
 typedef struct {
     char filepath[256];
+    char request_id[64];
     int watch_fd;
     off_t last_pos;
     bool active;
@@ -70,7 +71,7 @@ static char *base64_encode(const unsigned char *data, size_t input_len, size_t *
 }
 
 /* 上传日志文件 */
-int log_upload_file(agent_context_t *ctx, const char *filepath)
+int log_upload_file(agent_context_t *ctx, const char *filepath, const char *request_id)
 {
     if (!ctx || !filepath) return -1;
     
@@ -85,7 +86,7 @@ int log_upload_file(agent_context_t *ctx, const char *filepath)
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     
-    LOG_INFO("上传日志文件: %s (大小: %ld bytes)", filepath, file_size);
+    LOG_INFO("上传日志文件: %s (大小: %ld bytes), request_id=%s", filepath, file_size, request_id ? request_id : "null");
     
     /* 分块上传 */
     unsigned char *buffer = malloc(LOG_CHUNK_SIZE);
@@ -116,11 +117,12 @@ int log_upload_file(agent_context_t *ctx, const char *filepath)
                 "\"total_chunks\":%d,"
                 "\"size\":%zu,"
                 "\"data\":\"%s\","
-                "\"timestamp\":%" PRIu64 ""
+                "\"timestamp\":%" PRIu64 ","
+                "\"request_id\":\"%s\""
                 "}",
                 filepath, chunk_num, total_chunks, read_size,
-                encoded, get_timestamp_ms());
-            
+                encoded, get_timestamp_ms(), request_id ? request_id : "");
+             
             socket_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
             free(json);
         }
@@ -140,7 +142,7 @@ int log_upload_file(agent_context_t *ctx, const char *filepath)
 }
 
 /* 获取文件末尾N行 */
-int log_tail_file(agent_context_t *ctx, const char *filepath, int lines)
+int log_tail_file(agent_context_t *ctx, const char *filepath, int lines, const char *request_id)
 {
     if (!ctx || !filepath || lines <= 0) return -1;
     
@@ -221,7 +223,7 @@ int log_tail_file(agent_context_t *ctx, const char *filepath, int lines)
         }
         
         snprintf(json + offset, json_size - offset,
-            "],\"timestamp\":%" PRIu64 "}", get_timestamp_ms());
+            "],\"timestamp\":%" PRIu64 ",\"request_id\":\"%s\"}", get_timestamp_ms(), request_id ? request_id : "");
         
         socket_send_json(ctx, MSG_TYPE_LOG_UPLOAD, json);
         free(json);
@@ -275,8 +277,8 @@ static void *log_watch_thread(void *arg)
                         if (newline) *newline = '\0';
                         
                         snprintf(json, strlen(buffer) + 512,
-                            "{\"filepath\":\"%s\",\"line\":\"%s\",\"timestamp\":%" PRIu64 "}",
-                            watch->filepath, buffer, get_timestamp_ms());
+                            "{\"filepath\":\"%s\",\"line\":\"%s\",\"timestamp\":%" PRIu64 ",\"request_id\":\"%s\"}",
+                            watch->filepath, buffer, get_timestamp_ms(), watch->request_id);
                         
                         socket_send_json(watch->ctx, MSG_TYPE_LOG_UPLOAD, json);
                         free(json);
@@ -311,7 +313,7 @@ static void *log_watch_thread(void *arg)
 }
 
 /* 开始监控日志文件 */
-int log_watch_start(agent_context_t *ctx, const char *filepath)
+int log_watch_start(agent_context_t *ctx, const char *filepath, const char *request_id)
 {
     if (!ctx || !filepath) return -1;
     
@@ -342,6 +344,7 @@ int log_watch_start(agent_context_t *ctx, const char *filepath)
     log_watch_t *watch = &g_log_watches[slot];
     memset(watch, 0, sizeof(log_watch_t));
     strncpy(watch->filepath, filepath, sizeof(watch->filepath) - 1);
+    strncpy(watch->request_id, request_id ? request_id : "", sizeof(watch->request_id) - 1);
     watch->ctx = ctx;
     watch->active = true;
     
@@ -357,7 +360,7 @@ int log_watch_start(agent_context_t *ctx, const char *filepath)
     
     pthread_mutex_unlock(&g_log_lock);
     
-    LOG_INFO("开始监控日志: %s", filepath);
+    LOG_INFO("开始监控日志: %s, request_id=%s", filepath, request_id ? request_id : "null");
     return 0;
 }
 
@@ -394,18 +397,18 @@ void log_watch_stop_all(void)
 }
 
 /* 读取文件内容（支持分块） */
-int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length)
+int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length, const char *request_id)
 {
     if (!ctx || !filepath) return -1;
     
-    LOG_INFO("[FILE_READ] 读取文件: %s, offset=%d, length=%d", filepath, offset, length);
+    LOG_INFO("[FILE_READ] 读取文件: %s, offset=%d, length=%d, request_id=%s", filepath, offset, length, request_id ? request_id : "null");
     
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
         LOG_ERROR("[FILE_READ] 无法打开文件: %s", filepath);
         /* 返回错误消息 */
         char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"无法打开文件\"}", filepath);
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"无法打开文件\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
         socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return -1;
     }
@@ -420,7 +423,7 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
         fclose(fp);
         LOG_WARN("[FILE_READ] offset超出文件大小: offset=%d, file_size=%ld", offset, file_size);
         char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\"}", filepath, offset);
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\",\"request_id\":\"%s\"}", filepath, offset, request_id ? request_id : "");
         socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return 0;
     }
@@ -457,9 +460,9 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
             char *json = malloc(json_size);
             if (json) {
                 snprintf(json, json_size,
-                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\"}",
-                    filepath, offset, actual_read, encoded);
-                LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu", filepath, offset, actual_read);
+                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\",\"request_id\":\"%s\"}",
+                    filepath, offset, actual_read, encoded, request_id ? request_id : "");
+                LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu, request_id=%s", filepath, offset, actual_read, request_id ? request_id : "");
                 socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
                 free(json);
             } else {
@@ -477,7 +480,7 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
 }
 
 /* 列出可监控的日志文件 */
-int log_list_files(agent_context_t *ctx, const char *log_dir)
+int log_list_files(agent_context_t *ctx, const char *log_dir, const char *request_id)
 {
     if (!ctx) return -1;
     
@@ -511,7 +514,7 @@ int log_list_files(agent_context_t *ctx, const char *log_dir)
     
     closedir(dp);
     
-    snprintf(json + offset, sizeof(json) - offset, "]}");
+    snprintf(json + offset, sizeof(json) - offset, "],\"request_id\":\"%s\"}", request_id ? request_id : "");
     socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
     
     return 0;

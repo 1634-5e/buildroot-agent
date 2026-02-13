@@ -28,7 +28,7 @@ from update_manager import UpdateManager
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -672,7 +672,7 @@ class MessageHandler:
         json_len = len(json_data)
         msg = bytes([msg_type]) + json_len.to_bytes(2, "big") + json_data
         logger.debug(
-            f"Created message: type=0x{msg_type:02X}, len={json_len}, data={json_data[:100] if json_data else b''}..."
+            f"[CREATE_MSG] type=0x{msg_type:02X}, len={json_len}, hex={msg.hex()[:50]}...{msg.hex()[-30:] if len(msg.hex()) > 80 else ''}"
         )
         return msg
 
@@ -1659,6 +1659,9 @@ class MessageHandler:
             connection = dev_info["connection"]
 
             message = self.create_message(msg_type, data)
+            logger.debug(
+                f"[SEND_TO_DEVICE] device={device_id}, type=0x{msg_type:02X}, msg_hex={message.hex()[:50]}...{message.hex()[-30:] if len(message.hex()) > 80 else ''}, total_len={len(message)}"
+            )
 
             if conn_type == "websocket":
                 # WebSocket 连接
@@ -1746,7 +1749,11 @@ class CloudServer:
                     self.conn_mgr.remove_console(websocket)
 
                     try:
-                        json_data = json.loads(message[1:].decode("utf-8"))
+                        # 解析认证消息: [type(1)] + [length(2, 大端)] + [JSON数据]
+                        auth_len = (message[1] << 8) | message[2]
+                        json_data = json.loads(
+                            message[3 : 3 + auth_len].decode("utf-8")
+                        )
                         device_id = json_data.get("device_id", "unknown")
                         authenticated = await self.msg_handler.handle_auth(
                             websocket, json_data
@@ -1777,7 +1784,15 @@ class CloudServer:
                 # Web控制台的消息处理
                 elif not is_device:
                     try:
-                        json_str = message[1:].decode("utf-8")
+                        # 解析消息: [type(1)] + [length(2, 大端)] + [JSON数据]
+                        logger.debug(
+                            f"[RECV_WEB] raw_hex={message.hex()[:50]}...{message.hex()[-30:] if len(message.hex()) > 80 else ''}, len={len(message)}"
+                        )
+                        json_len = (message[1] << 8) | message[2]
+                        logger.debug(
+                            f"[RECV_WEB] msg_type=0x{message[0]:02X}, json_len={json_len}, len_high={message[1]:02X}, len_low={message[2]:02X}"
+                        )
+                        json_str = message[3 : 3 + json_len].decode("utf-8")
                         json_data = json.loads(json_str)
 
                         console_id = json_data.pop("console_id", None)

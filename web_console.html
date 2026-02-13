@@ -2478,12 +2478,14 @@
                  data.console_id = consoleId;
              }
              
-             try {
-                  const json = JSON.stringify(data);
-                  const bytes = new TextEncoder().encode(json);
-                  const msg = new Uint8Array(1 + bytes.length);
-                  msg[0] = type;
-                  msg.set(bytes, 1);
+              try {
+                   const json = JSON.stringify(data);
+                   const bytes = new TextEncoder().encode(json);
+                   const msg = new Uint8Array(1 + 2 + bytes.length);
+                   msg[0] = type;
+                   msg[1] = (bytes.length >> 8) & 0xFF;
+                   msg[2] = bytes.length & 0xFF;
+                   msg.set(bytes, 3);
                   
                   // Debug: log message details for FILE_REQUEST
                   if (type === MSG_TYPES.FILE_REQUEST) {
@@ -3123,9 +3125,11 @@
                         try {
                             const json = JSON.stringify(msg.data);
                             const bytes = new TextEncoder().encode(json);
-                            const message = new Uint8Array(1 + bytes.length);
+                            const message = new Uint8Array(1 + 2 + bytes.length);
                             message[0] = msg.type;
-                            message.set(bytes, 1);
+                            message[1] = (bytes.length >> 8) & 0xFF;
+                            message[2] = bytes.length & 0xFF;
+                            message.set(bytes, 3);
                             ws.send(message);
                         } catch (error) {
                             console.error('Error sending queued message:', error);
@@ -3640,7 +3644,8 @@
                     action: 'read',
                     filepath: path,
                     offset: 0,
-                    length: readLength
+                    length: readLength,
+                    request_id: 'read-' + Date.now()
                 });
                 
                 // Set timeout (increased to 10 seconds)

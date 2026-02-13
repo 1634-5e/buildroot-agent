@@ -481,12 +481,20 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
     
     char *action = json_get_string(data, "action");
     char *filepath = json_get_string(data, "filepath");
+    char *request_id = json_get_string(data, "request_id");
     int lines = json_get_int(data, "lines", 100);
     int offset = json_get_int(data, "offset", 0);
     int length = json_get_int(data, "length", 0);
     
-    LOG_INFO("[FILE_REQUEST] Parsed: action=%s, filepath=%s, offset=%d, length=%d",
-             action ? action : "null", filepath ? filepath : "null", offset, length);
+    char default_request_id[64];
+    if (!request_id) {
+        snprintf(default_request_id, sizeof(default_request_id), "req-%lld", (long long)get_timestamp_ms());
+        request_id = default_request_id;
+        LOG_INFO("未提供request_id, 使用默认值: %s", request_id);
+    }
+    
+    LOG_INFO("[FILE_REQUEST] Parsed: action=%s, filepath=%s, offset=%d, length=%d, request_id=%s",
+             action ? action : "null", filepath ? filepath : "null", offset, length, request_id);
     
     if (!action) {
         LOG_ERROR("[FILE_REQUEST] No action specified");
@@ -494,18 +502,18 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
     }
     
     if (strcmp(action, "upload") == 0 && filepath) {
-        log_upload_file(ctx, filepath);
+        log_upload_file(ctx, filepath, request_id);
     } else if (strcmp(action, "tail") == 0 && filepath) {
-        log_tail_file(ctx, filepath, lines);
+        log_tail_file(ctx, filepath, lines, request_id);
     } else if (strcmp(action, "watch") == 0 && filepath) {
-        log_watch_start(ctx, filepath);
+        log_watch_start(ctx, filepath, request_id);
     } else if (strcmp(action, "unwatch") == 0 && filepath) {
         log_watch_stop(ctx, filepath);
     } else if (strcmp(action, "list") == 0) {
-        log_list_files(ctx, filepath);
+        log_list_files(ctx, filepath, request_id);
     } else if (strcmp(action, "read") == 0 && filepath) {
         LOG_INFO("[FILE_REQUEST] Calling log_read_file for %s", filepath);
-        log_read_file(ctx, filepath, offset, length);
+        log_read_file(ctx, filepath, offset, length, request_id);
     } else {
         LOG_WARN("[FILE_REQUEST] Unknown action: %s", action);
     }
@@ -513,6 +521,7 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
 cleanup:
     if (action) free(action);
     if (filepath) free(filepath);
+    if (request_id != default_request_id) free(request_id);
 }
 
 /* 文件信息结构体 */
@@ -1132,15 +1141,23 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     }
 
     msg_type_t type = (msg_type_t)(unsigned char)data[0];
-    uint16_t json_len = (data[1] << 8) | data[2];
+    uint16_t json_len = ((unsigned char)data[1] << 8) | (unsigned char)data[2];
     const char *json_data = data + 3;
+
+    /* 打印原始字节（前32字节） */
+    char hex_str[65];
+    int i;
+    for (i = 0; i < 32 && i < len; i++) {
+        sprintf(hex_str + i * 2, "%02X", (unsigned char)data[i]);
+    }
+    hex_str[i * 2] = '\0';
+    LOG_DEBUG("[RECV_MSG] raw_hex=%s..., len=%zu, type=0x%02X, len_byte0=%02X, len_byte1=%02X, json_len=%u",
+              hex_str, len, (unsigned char)type, (unsigned char)data[1], (unsigned char)data[2], json_len);
 
     if (len < (size_t)(3 + json_len)) {
         LOG_ERROR("消息长度不匹配: 期望%u字节, 实际%zu字节", 3 + json_len, len);
         return -1;
     }
-
-    LOG_DEBUG("收到消息: type=0x%02X, json_len=%u", (unsigned char)type, json_len);
     
     switch (type) {
     case MSG_TYPE_AUTH_RESULT:

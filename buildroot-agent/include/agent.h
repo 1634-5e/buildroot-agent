@@ -269,13 +269,13 @@ char *status_to_json(system_status_t *status);
 void *status_thread(void *arg);
 
 /* agent_log.c */
-int log_upload_file(agent_context_t *ctx, const char *filepath);
-int log_tail_file(agent_context_t *ctx, const char *filepath, int lines);
-int log_watch_start(agent_context_t *ctx, const char *filepath);
+int log_upload_file(agent_context_t *ctx, const char *filepath, const char *request_id);
+int log_tail_file(agent_context_t *ctx, const char *filepath, int lines, const char *request_id);
+int log_watch_start(agent_context_t *ctx, const char *filepath, const char *request_id);
 void log_watch_stop(agent_context_t *ctx, const char *filepath);
 void log_watch_stop_all(void);
-int log_list_files(agent_context_t *ctx, const char *filepath);
-int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length);
+int log_list_files(agent_context_t *ctx, const char *filepath, const char *request_id);
+int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length, const char *request_id);
 
 /* agent_script.c */
 int script_save(const char *script_id, const char *content, const char *path);
