@@ -87,11 +87,11 @@ class MessageType:
     UPDATE_ROLLBACK = 0x67  # 回滚通知
 
 
-# 有效的认证Token
-VALID_TOKENS = {
-    "test-token-123": "测试设备1",
-    "your-auth-token": "默认设备",
-}
+# 有效的认证Token（已废弃，保留用于向后兼容）
+# VALID_TOKENS = {
+#     "test-token-123": "测试设备1",
+#     "your-auth-token": "默认设备",
+# }
 
 
 @dataclass
@@ -411,29 +411,26 @@ class AgentSocketHandler:
 
                     data = await reader.readexactly(json_len)
 
-                    # 检查是否为认证消息
+                    # 检查是否为注册消息（已去除认证机制）
                     if msg_type == MessageType.AUTH and not authenticated:
                         try:
                             json_str = data.decode("utf-8")
                             json_data = json.loads(json_str)
                             device_id = json_data.get("device_id", "unknown")
 
-                            authenticated = await self.msg_handler.handle_auth(
+                            # 处理注册（自动接受所有设备）
+                            await self.msg_handler.handle_auth(
                                 self._create_socket_writer_wrapper(writer), json_data
                             )
-
-                            if not authenticated:
-                                writer.close()
-                                await writer.wait_closed()
-                                return
+                            authenticated = True
                         except json.JSONDecodeError as e:
-                            logger.error(f"解析认证消息失败: {e}")
+                            logger.error(f"解析注册消息失败: {e}")
                             logger.debug(f"原始JSON数据（前200字节）: {json_str[:200]}")
                             writer.close()
                             await writer.wait_closed()
                             return
                         except Exception as e:
-                            logger.error(f"处理认证消息异常: {e}")
+                            logger.error(f"处理注册消息异常: {e}")
                             writer.close()
                             await writer.wait_closed()
                             return
@@ -583,8 +580,10 @@ class MessageHandler:
         """创建消息: [type(1)] + [length(2, 大端)] + [JSON数据]"""
         json_data = json.dumps(data, ensure_ascii=False).encode("utf-8")
         json_len = len(json_data)
-        msg = bytes([msg_type]) + json_len.to_bytes(2, 'big') + json_data
-        logger.debug(f"Created message: type=0x{msg_type:02X}, len={json_len}, data={json_data[:100] if json_data else b''}...")
+        msg = bytes([msg_type]) + json_len.to_bytes(2, "big") + json_data
+        logger.debug(
+            f"Created message: type=0x{msg_type:02X}, len={json_len}, data={json_data[:100] if json_data else b''}..."
+        )
         return msg
 
     @staticmethod
@@ -622,38 +621,26 @@ class MessageHandler:
         return msg_type, json_data
 
     async def handle_auth(self, websocket: WebSocketServerProtocol, data: dict) -> bool:
-        """处理认证"""
+        """处理设备注册（已去除认证机制）"""
         device_id = data.get("device_id", "unknown")
-        token = data.get("token", "")
         version = data.get("version", "unknown")
 
-        logger.info(f"处理认证请求: {device_id}, token={token}, version={version}")
+        logger.info(f"设备注册成功: {device_id} (版本: {version})")
+        self.conn_mgr.add_device(device_id, websocket)
 
-        if token in VALID_TOKENS:
-            logger.info(f"设备认证成功: {device_id} (版本: {version})")
-            self.conn_mgr.add_device(device_id, websocket)
+        response = self.create_message(
+            MessageType.AUTH_RESULT,
+            {"success": True, "message": f"欢迎, {device_id}"},
+        )
+        logger.info(
+            f"准备发送注册响应给 {device_id}, 消息长度={len(response)}, 类型=0x{MessageType.AUTH_RESULT:02X}"
+        )
+        send_result = await self._safe_send(websocket, response)
+        logger.info(f"_safe_send返回结果: {send_result}")
+        logger.info(f"注册响应{'已成功' if send_result else '发送失败'}给 {device_id}")
+        return True
 
-            response = self.create_message(
-                MessageType.AUTH_RESULT,
-                {"success": True, "message": f"欢迎, {VALID_TOKENS[token]}"},
-            )
-            logger.info(f"准备发送认证响应给 {device_id}, 消息长度={len(response)}, 类型=0x{MessageType.AUTH_RESULT:02X}")
-            send_result = await self._safe_send(websocket, response)
-            logger.info(f"_safe_send返回结果: {send_result}")
-            logger.info(f"认证响应{'已成功' if send_result else '发送失败'}给 {device_id}")
-            return True
-        else:
-            logger.warning(f"设备认证失败: {device_id}:{token}, 无效Token")
-            response = self.create_message(
-                MessageType.AUTH_RESULT,
-                {"success": False, "message": "认证失败: Token无效"},
-            )
-            await self._safe_send(websocket, response)
-            return False
-
-    async def _safe_send(
-        self, websocket, message: bytes
-    ) -> bool:
+    async def _safe_send(self, websocket, message: bytes) -> bool:
         """安全发送消息（支持WebSocket和Socket）"""
         try:
             # 检查是否是WebSocket连接
@@ -675,6 +662,7 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 

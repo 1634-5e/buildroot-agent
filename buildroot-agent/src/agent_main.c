@@ -41,11 +41,22 @@ static void signal_handler(int sig)
 /* 设置信号处理 */
 static void setup_signals(void)
 {
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-    signal(SIGHUP, signal_handler);
-    signal(SIGPIPE, SIG_IGN);  /* 忽略SIGPIPE */
-    signal(SIGCHLD, SIG_IGN);  /* 自动回收子进程 */
+    struct sigaction sa;
+    
+    /* 设置信号处理函数 */
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;  /* 重启被中断的系统调用 */
+    
+    /* 注册信号处理 */
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGHUP, &sa, NULL);
+    
+    /* 忽略 SIGPIPE 和 SIGCHLD */
+    sa.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sa, NULL);
+    sigaction(SIGCHLD, &sa, NULL);
 }
 
 /* 心跳线程 */
