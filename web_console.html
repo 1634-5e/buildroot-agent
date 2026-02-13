@@ -2777,6 +2777,11 @@
             if (data.success === true || data.status === 'created' || data.status === 'success') {
                 showToast('终端连接成功', 'success');
                 updateTerminalStatus('connected');
+                
+                const ptyCount = data.pty_count || 0;
+                const ptyMax = data.pty_max || 8;
+                term.writeln(`\r\n\x1b[1;36mPTY Sessions: ${ptyCount}/${ptyMax}\x1b[0m\r\n`);
+                
                 term.focus();
                 // Resize once connected to ensure sync
                 fitAddon.fit();

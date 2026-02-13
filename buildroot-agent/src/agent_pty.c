@@ -218,6 +218,9 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     
     if (!ctx->config.enable_pty) {
         LOG_WARN("PTY功能已禁用");
+        char json[256];
+        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY功能已禁用\"}", session_id);
+        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
         return -1;
     }
     
@@ -227,6 +230,9 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (find_pty_session(session_id) != NULL) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_WARN("PTY会话已存在: %d", session_id);
+        char json[256];
+        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY会话已存在\"}", session_id);
+        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
         return -1;
     }
     
@@ -235,6 +241,9 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (!session) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_ERROR("PTY会话数已达上限");
+        char json[256];
+        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY会话数已达上限\"}", session_id);
+        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
         return -1;
     }
     
@@ -262,6 +271,9 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (pid < 0) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_ERROR("forkpty失败: %s", strerror(errno));
+        char json[256];
+        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"forkpty失败: %s\"}", session_id, strerror(errno));
+        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
         return -1;
     }
     
@@ -335,10 +347,17 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
              session_id, pid, master_fd, session->cols, session->rows);
     
     /* 发送创建成功消息 */
-    char json[256];
+    int pty_count = 0;
+    for (int i = 0; i < MAX_PTY_SESSIONS; i++) {
+        if (g_pty_sessions[i].active) {
+            pty_count++;
+        }
+    }
+    
+    char json[512];
     snprintf(json, sizeof(json),
-        "{\"session_id\":%d,\"status\":\"created\",\"rows\":%d,\"cols\":%d}",
-        session_id, session->rows, session->cols);
+        "{\"session_id\":%d,\"status\":\"created\",\"rows\":%d,\"cols\":%d,\"pty_count\":%d,\"pty_max\":%d}",
+        session_id, session->rows, session->cols, pty_count, MAX_PTY_SESSIONS);
     socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
     
     return 0;
