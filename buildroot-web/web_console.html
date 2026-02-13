@@ -3638,11 +3638,15 @@
             const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
             
             if (aceEditor && aceEditorReady) {
+                aceSession.off("change", handleEditorChange);
                 aceEditor.setValue('', -1);
+                aceSession.on("change", handleEditorChange);
                 aceEditor.setReadOnly(true);
                 
                 if (imageExts.includes(ext)) {
+                    aceSession.off("change", handleEditorChange);
                     aceEditor.setValue(`[图片文件 - ${formatBytes(size)}]\n\n请点击下载按钮查看图片`, -1);
+                    aceSession.on("change", handleEditorChange);
                     pendingFilePreview = { path, name, ext, size };
                     sendMessage(MSG_TYPES.FILE_REQUEST, {
                         action: 'download',
@@ -3654,7 +3658,9 @@
                     if (btnEdit) btnEdit.style.display = 'none';
                 } else {
                     const readLength = Math.min(size, 32768);
+                    aceSession.off("change", handleEditorChange);
                     aceEditor.setValue('加载中...', -1);
+                    aceSession.on("change", handleEditorChange);
                     pendingFilePreview = { path, name, ext, size };
                     
                     console.log(`[PREVIEW] Sending file read request for ${path}, length: ${readLength} (file size: ${size})`);
@@ -3672,7 +3678,9 @@
                     setTimeout(() => {
                         if (pendingFilePreview && pendingFilePreview.path === path) {
                             if (aceEditor.getValue() === '加载中...') {
+                                aceSession.off("change", handleEditorChange);
                                 aceEditor.setValue('加载超时，请重试', -1);
+                                aceSession.on("change", handleEditorChange);
                             }
                             pendingFilePreview = null;
                         }
