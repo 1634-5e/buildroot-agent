@@ -1710,6 +1710,8 @@ class CloudServer:
         self.conn_mgr = ConnectionManager(self.file_transfer)
         self.msg_handler = MessageHandler(self.conn_mgr)
         self.socket_handler = AgentSocketHandler(self.conn_mgr, self.msg_handler)
+        self._last_device_count = 0
+        self._device_list_broadcast_task = None
 
     async def agent_handler(self, websocket: WebSocketServerProtocol) -> None:
         """WebSocket连接处理"""
@@ -1864,6 +1866,21 @@ class CloudServer:
         await self.msg_handler.broadcast_to_web_consoles(
             MessageType.DEVICE_LIST, {"devices": device_list, "count": len(device_list)}
         )
+
+    def _start_device_list_monitor(self) -> None:
+        """启动设备列表监控定时任务"""
+        self._device_list_broadcast_task = asyncio.create_task(
+            self._check_device_list_changes()
+        )
+
+    async def _check_device_list_changes(self) -> None:
+        """定时检查设备列表变化，有新设备时广播"""
+        while True:
+            await asyncio.sleep(15)
+            current_count = len(self.conn_mgr.connected_devices)
+            if current_count > self._last_device_count:
+                await self.notify_device_list_update()
+            self._last_device_count = current_count
 
     async def interactive_console(self) -> None:
         """交互式控制台"""
@@ -2040,6 +2057,9 @@ class CloudServer:
         socket_server = await asyncio.start_server(
             self.socket_handler.handle_connection, host, socket_port
         )
+
+        # 启动设备列表监控任务
+        self._start_device_list_monitor()
 
         logger.info("服务器运行中，按 Ctrl+C 停止")
 

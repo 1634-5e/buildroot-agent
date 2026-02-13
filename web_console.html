@@ -5489,6 +5489,14 @@
                 currentDevice.cpu_usage = data.cpu_usage;
                 currentDevice.mem_used = data.mem_used;
                 currentDevice.load_1min = data.load_1min;
+                
+                const deviceIndex = devices.findIndex(d => d.device_id === data.device_id);
+                if (deviceIndex !== -1) {
+                    devices[deviceIndex].cpu_usage = data.cpu_usage;
+                    devices[deviceIndex].mem_used = data.mem_used;
+                    devices[deviceIndex].load_1min = data.load_1min;
+                }
+                
                 renderDeviceList();
             }
             
