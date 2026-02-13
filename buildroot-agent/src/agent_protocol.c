@@ -659,14 +659,14 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     /* 分块发送JSON响应（避免单条消息过大） */
     /* WebSocket消息大小限制为65534字节，每个文件约需要200-300字节，所以每个chunk最多20-30个文件 */
     const int CHUNK_SIZE = 20; /* 每个chunk最多20个文件 */
-    int chunk_num = 0;
-    int total_chunks = (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    
+    int total_chunks = count == 0 ? 1 : (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
     LOG_INFO("将分 %d 个chunk发送, 每个chunk最多 %d 个文件 (总数: %d)", total_chunks, CHUNK_SIZE, count);
-    
-    for (int i = 0; i < count; i += CHUNK_SIZE) {
-        int chunk_end = (i + CHUNK_SIZE < count) ? (i + CHUNK_SIZE) : count;
-        int files_in_chunk = chunk_end - i;
+
+    for (int chunk_num = 0; chunk_num < total_chunks; chunk_num++) {
+        int chunk_start = chunk_num * CHUNK_SIZE;
+        int chunk_end = (chunk_start + CHUNK_SIZE < count) ? (chunk_start + CHUNK_SIZE) : count;
+        int files_in_chunk = chunk_end - chunk_start;
         
         /* 使用较小缓冲区（128KB），确保不会超过WebSocket限制 */
         const int JSON_BUF_SIZE = 131072;
@@ -688,7 +688,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 
         /* 遍历这个chunk的所有文件 */
         int files_added = 0;
-        for (int j = i; j < chunk_end && offset < available_space; j++) {
+        for (int j = chunk_start; j < chunk_end && offset < available_space; j++) {
             char *esc_name = json_escape_string(entries[j].name, sizeof(entries[j].name));
             char *esc_path = json_escape_string(entries[j].path, sizeof(entries[j].path));
             
@@ -698,7 +698,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
             if (esc_name && esc_path) {
                 int len = snprintf(json + offset, JSON_BUF_SIZE - offset,
                     "%s{\"name\":\"%s\",\"path\":\"%s\",\"is_dir\":%d,\"size\":%lld}",
-                    (j > i) ? "," : "", esc_name, esc_path, entries[j].is_dir, (long long)entries[j].size);
+                    (j > chunk_start) ? "," : "", esc_name, esc_path, entries[j].is_dir, (long long)entries[j].size);
 
                 /* 检查是否有足够的剩余空间 */
                 if (offset + len < available_space) {
@@ -732,21 +732,19 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
             goto cleanup;
         }
 
-        LOG_INFO("发送chunk %d/%d, 文件数: %d/%d, 消息大小: %d字节", 
-                 chunk_num, total_chunks, files_added, files_in_chunk, offset);
+        LOG_INFO("发送chunk %d/%d, 文件数: %d/%d, 消息大小: %d字节",
+                  chunk_num, total_chunks, files_added, files_in_chunk, offset);
         int rc = socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
         if (rc != 0) {
             LOG_ERROR("发送chunk %d 失败: %d", chunk_num, rc);
         }
         free(json);
-        
-        chunk_num++;
-        
+
         /* 避免发送过快 */
         usleep(10000);  /* 10ms */
     }
 
-    LOG_INFO("所有chunk发送完成 (%d 个chunks)", chunk_num);
+    LOG_INFO("所有chunk发送完成 (%d 个chunks)", total_chunks);
     free(entries);
 
  cleanup:
