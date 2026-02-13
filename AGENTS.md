@@ -34,9 +34,13 @@ This file contains guidelines for agentic coding assistants working on this buil
 - `cd buildroot-agent && cmake --install build --prefix /path` - Install to target directory
 - `cd buildroot-agent && cmake --build build --target release` - Build release version with stripped symbols
 - `cd buildroot-agent && cpack` - Create tarball package
-- `./buildroot-agent/scripts/build.sh` - Quick build script (默认启用静态链接)
-- `./buildroot-agent/scripts/release.sh` - Quick release build
-- `./buildroot-agent/scripts/install.sh /path` - Quick install script
+- `./buildroot-agent/scripts/build.sh` - Quick build script (默认: --local, 静态链接)
+- `./buildroot-agent/scripts/build.sh --local` - 本地编译 (x86_64, 静态链接)
+- `./buildroot-agent/scripts/build.sh --cross` - 交叉编译 (arm, 静态链接)
+- `./buildroot-agent/scripts/release.sh` - Quick release build (默认: --local)
+- `./buildroot-agent/scripts/release.sh --cross` - Quick release build (arm)
+- `./buildroot-agent/scripts/install.sh` - Quick install script (默认: --local)
+- `./buildroot-agent/scripts/install.sh --cross /path` - Quick install (arm)
 
 **Options:**
 - `-DCMAKE_BUILD_TYPE=Debug` - Build with debug symbols
@@ -100,8 +104,12 @@ cmake --build build
 
 The toolchain file `cmake/arm-buildroot.cmake` configures:
 - Cross-compiler: arm-buildroot-linux-uclibcgnueabi-gcc
-- Sysroot: /workspaces/buildroot-agent/package/armhf-sysroot
+- Sysroot: /path/to/buildroot/output/host/usr/arm-buildroot-linux-uclibcgnueabi/sysroot
 - Library search paths for OpenSSL, pthread, libutil
+
+**Build modes:**
+- `--local`: 本地编译 (x86_64), 静态链接
+- `--cross`: 交叉编译 (arm), 静态链接
 
 ## Protocol Compatibility
 

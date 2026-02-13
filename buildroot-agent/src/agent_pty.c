@@ -605,6 +605,13 @@ void pty_check_timeout(agent_context_t *ctx)
                 }
                 
                 LOG_INFO("PTY会话已超时关闭: session_id=%d", session_id);
+                
+                if (ctx && ctx->connected) {
+                    char json[128];
+                    snprintf(json, sizeof(json),
+                        "{\"session_id\":%d,\"reason\":\"session timeout\"}", session_id);
+                    socket_send_json(ctx, MSG_TYPE_PTY_CLOSE, json);
+                }
             }
         }
     }

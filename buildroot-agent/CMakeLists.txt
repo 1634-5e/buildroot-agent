@@ -19,45 +19,28 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 if(STATIC_LINK)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
-endif()
-
-# 移除libcurl依赖，改用TCP文件传输
-message(STATUS "Building without libcurl (using TCP download)")
-
-if(STATIC_LINK)
-    # 添加基本系统库用于静态链接
-    target_compile_definitions(${PROJECT_NAME} PRIVATE 
-        -DSTATIC_LINK_AVAILABLE=1
-    )
-    
-    # 静态链接时需要的基本系统库
-    find_library(DL_LIB dl NAMES libdl.a)
-    
-    set(STATIC_DEPS)
-    if(DL_LIB)
-        list(APPEND STATIC_DEPS ${DL_LIB})
-    endif()
-    
-    target_link_libraries(${PROJECT_NAME} 
-        pthread 
-        util 
-        ${STATIC_DEPS}
-    )
-    message(STATUS "Using static linking without libcurl (TCP download mode)")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc")
+    target_link_libraries(${PROJECT_NAME} pthread util dl)
+    message(STATUS "Using static linking")
 else()
-    # 动态链接
     target_link_libraries(${PROJECT_NAME} 
         pthread 
         util 
         dl
     )
-    message(STATUS "Using dynamic linking without libcurl (TCP download mode)")
+    message(STATUS "Using dynamic linking")
 endif()
 
 # 安装规则
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
+)
+
+# Release target - strip symbols
+add_custom_target(release
+    COMMAND ${CMAKE_STRIP} $<TARGET_FILE:${PROJECT_NAME}>
+    DEPENDS ${PROJECT_NAME}
+    COMMENT "Stripping symbols from ${PROJECT_NAME}"
 )
 
 # 打包规则

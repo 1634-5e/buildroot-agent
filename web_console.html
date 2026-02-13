@@ -2273,6 +2273,7 @@
         let initialReconnectDelay = 1000; // 1 second
         let maxReconnectDelay = 30000; // 30 seconds
         let messageQueue = [];
+        let consoleId = null;
 
         // xterm.js 终端实例
         let term = null;
@@ -2332,6 +2333,11 @@
                 reconnectAttempts = 0;
                 updateConnectionStatus(true);
                 showToast('已连接到服务器', 'success');
+                
+                if (!consoleId) {
+                    consoleId = 'console_' + Math.random().toString(36).substr(2, 8);
+                    console.log('Generated console_id:', consoleId);
+                }
                 
                 // Process any queued messages
                 processMessageQueue();
@@ -2399,13 +2405,6 @@
                     );
                 }
             });
-            
-            // 页面可见性变化时（后台挂起）发送 PTY_CLOSE
-            document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'hidden' && ptySessionId && isConnected && currentDevice) {
-                    sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
-                }
-            });
 
             ws.onmessage = async (event) => {
                 try {
@@ -2471,11 +2470,15 @@
                  }
              }
              
-              if (currentDevice && currentDevice.device_id) {
-                  data.device_id = currentDevice.device_id;
-              }
-              
-              try {
+             if (currentDevice && currentDevice.device_id) {
+                 data.device_id = currentDevice.device_id;
+             }
+             
+             if (consoleId) {
+                 data.console_id = consoleId;
+             }
+             
+             try {
                   const json = JSON.stringify(data);
                   const bytes = new TextEncoder().encode(json);
                   const msg = new Uint8Array(1 + bytes.length);
@@ -2882,7 +2885,7 @@
                     ptySessionId = null;
                 }
                 
-                const newSessionId = Date.now();
+                const newSessionId = Math.floor(Math.random() * 1000000000);
                 console.log('Creating PTY session:', newSessionId);
                 
                 term.reset();
@@ -2963,17 +2966,18 @@
         function handlePtyClose(data) {
             console.log('PTY close received:', data);
             const sessionId = data.session_id || data.id;
+            const reason = data.reason || data.error;
             
             if (ptySessionId && ptySessionId === sessionId) {
                 ptySessionId = null;
-                term.writeln('\r\n\x1b[1;33mTerminal session closed.\x1b[0m');
-                showToast('终端会话已关闭', 'info');
+                if (reason === 'session timeout') {
+                    term.writeln('\r\n\x1b[1;31mTerminal session closed: session timeout (no activity).\x1b[0m');
+                    showToast('终端会话因长时间无活动已超时关闭', 'warning');
+                } else {
+                    term.writeln('\r\n\x1b[33mTerminal session closed.\x1b[0m');
+                    showToast('终端会话已关闭', 'info');
+                }
                 updateTerminalStatus('disconnected');
-            }
-            
-            if (data.error || data.reason) {
-                const reason = data.error || data.reason;
-                term.writeln(`\r\n\x1b[1;31mClosed: ${reason}\x1b[0m`);
             }
         }
 
