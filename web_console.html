@@ -2397,7 +2397,7 @@
                         return;
                     }
                     const msgType = bytes[0];
-                    const dataStr = new TextDecoder().decode(bytes.slice(1));
+                    const dataStr = new TextDecoder().decode(bytes.slice(3));
                     let data;
                     try {
                         data = dataStr ? JSON.parse(dataStr) : {};

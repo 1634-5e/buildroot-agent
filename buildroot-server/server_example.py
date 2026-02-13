@@ -575,6 +575,9 @@ class MessageHandler:
         self.update_manager._broadcast_update_progress = self._broadcast_update_progress
         self.update_manager._broadcast_update_status = self._broadcast_update_status
 
+        # 分块下载跟踪: {request_id: {"chunks": [], "total": 0, "filename": "", "size": 0}}
+        self.download_chunks = {}
+
     @staticmethod
     def create_message(msg_type: int, data: dict) -> bytes:
         """创建消息: [type(1)] + [length(2, 大端)] + [JSON数据]"""
@@ -614,7 +617,7 @@ class MessageHandler:
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             logger.warning(f"消息JSON解析失败: {e}")
             logger.debug(
-                f"原始JSON数据（前200字节）: {json_str[:200] if len(json_str) > 0 else 'empty'}"
+                f"原始JSON数据（前200字节）: {json_data_bytes[:200] if len(json_data_bytes) > 0 else 'empty'}"
             )
             json_data = {}
 
@@ -1324,12 +1327,7 @@ class MessageHandler:
                 MessageType.FILE_LIST_RESPONSE, {"device_id": device_id, **json_data}
             )
         elif msg_type == MessageType.DOWNLOAD_PACKAGE:
-            logger.info(
-                f"收到打包响应 [{device_id}]: filename={json_data.get('filename', 'unknown')}, size={json_data.get('size', '0')}"
-            )
-            await self.broadcast_to_web_consoles(
-                MessageType.DOWNLOAD_PACKAGE, {"device_id": device_id, **json_data}
-            )
+            await self._handle_download_package(device_id, json_data)
         elif msg_type == MessageType.CMD_RESPONSE:
             logger.info(f"收到命令响应 [{device_id}]: {json_data}")
             await self.broadcast_to_web_consoles(
@@ -1394,6 +1392,50 @@ class MessageHandler:
                 self.conn_mgr.remove_console(console)
         except Exception as e:
             logger.error(f"广播消息失败: {e}")
+
+    async def _handle_download_package(self, device_id: str, json_data: dict) -> None:
+        """处理打包下载响应，支持分块传输"""
+        request_id = json_data.get("request_id", f"{device_id}-download")
+        chunk_index = json_data.get("chunk_index", 0)
+        total_chunks = json_data.get("total_chunks", 1)
+        content = json_data.get("content", "")
+
+        logger.info(
+            f"收到打包分块 [{device_id}]: request_id={request_id}, chunk={chunk_index + 1}/{total_chunks}"
+        )
+
+        if request_id not in self.download_chunks:
+            self.download_chunks[request_id] = {
+                "chunks": [None] * total_chunks,
+                "total": total_chunks,
+                "filename": json_data.get("filename", "unknown"),
+                "size": json_data.get("size", 0),
+                "device_id": device_id,
+            }
+
+        chunk_data = self.download_chunks[request_id]
+        chunk_data["chunks"][chunk_index] = content
+
+        complete = json_data.get("complete", chunk_index == total_chunks - 1)
+
+        if complete or all(chunk is not None for chunk in chunk_data["chunks"]):
+            full_content = "".join(chunk_data["chunks"])
+            final_data = {
+                "device_id": device_id,
+                "filename": chunk_data["filename"],
+                "size": chunk_data["size"],
+                "content": full_content,
+            }
+            logger.info(
+                f"打包响应组装完成 [{device_id}]: filename={chunk_data['filename']}, size={chunk_data['size']}"
+            )
+            await self.broadcast_to_web_consoles(
+                MessageType.DOWNLOAD_PACKAGE, final_data
+            )
+            del self.download_chunks[request_id]
+        else:
+            remaining = sum(1 for c in chunk_data["chunks"] if c is None)
+            logger.debug(f"等待更多分块: {remaining}块未收到")
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
         """发送消息到设备（支持 WebSocket 和 Socket）"""

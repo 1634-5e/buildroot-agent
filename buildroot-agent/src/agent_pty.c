@@ -273,14 +273,14 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
         setenv("LC_ALL", "en_US.UTF-8", 1);
         setenv("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin", 1);
         setenv("HOME", "/root", 1);
-        setenv("SHELL", "/bin/sh", 1);
+        setenv("SHELL", "/bin/bash", 1);
         
         /* 切换到home目录 */
         chdir("/root");
         
         /* 执行shell */
         const char *shell = getenv("SHELL");
-        if (!shell) shell = "/bin/sh";
+        if (!shell) shell = "/bin/bash";
         
         execlp(shell, shell, "-i", NULL);
         

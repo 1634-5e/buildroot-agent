@@ -50,6 +50,8 @@ typedef struct {
     int base_retry_delay;              /* 基础重连延迟（秒） */
     int max_retry_delay;               /* 最大重连延迟（秒） */
     pthread_mutex_t reconnect_lock;    /* 重连状态互斥锁 */
+    pthread_cond_t reconnect_cond;     /* 重连条件变量（用于通知连接断开） */
+    bool reconnect_notify;             /* 连接断开通知标志 */
     
     agent_context_t *agent_ctx;
 } socket_client_t;
@@ -62,10 +64,10 @@ struct msg_node {
 };
 
 static socket_client_t *g_socket_client = NULL;
+static bool g_client_initialized = false;
 
 /* 函数前向声明 */
 static int do_connect(socket_client_t *client, const char *host, int port);
-static void socket_reconnect_start(void);
 
 /* 连接超时控制 */
 static int connect_with_timeout(int sock_fd, struct sockaddr *addr, socklen_t addr_len, int timeout_sec)
@@ -165,18 +167,14 @@ static void *socket_recv_thread(void *arg)
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
     client->thread_running = false;
     client->connected = false;
-    bool should_reconnect = client->should_reconnect;
+    client->reconnect_notify = true;
+    pthread_cond_signal(&client->reconnect_cond);
     pthread_mutex_unlock(&g_socket_client->reconnect_lock);
 
     /* 设置agent的connected状态，停止心跳和状态线程 */
     pthread_mutex_lock(&g_socket_client->agent_ctx->lock);
     g_socket_client->agent_ctx->connected = false;
     pthread_mutex_unlock(&g_socket_client->agent_ctx->lock);
-
-    /* 连接断开，触发重连机制 */
-    if (should_reconnect) {
-        socket_reconnect_start();
-    }
 
     return NULL;
 }
@@ -303,6 +301,88 @@ static int do_connect(socket_client_t *client, const char *host, int port)
     return -1;
 }
 
+/* 重连服务器（不销毁客户端结构）*/
+static int do_reconnect(socket_client_t *client, const char *host, int port)
+{
+    pthread_mutex_lock(&client->reconnect_lock);
+    client->connecting = true;
+    pthread_mutex_unlock(&client->reconnect_lock);
+    
+    /* 清理旧的socket和线程 */
+    if (client->send_thread) {
+        pthread_mutex_lock(&client->send_lock);
+        client->send_thread_running = false;
+        pthread_cond_signal(&client->send_cond);
+        pthread_mutex_unlock(&client->send_lock);
+        pthread_join(client->send_thread, NULL);
+    }
+    
+    if (client->thread_running) {
+        client->thread_running = false;
+    }
+    
+    if (client->recv_thread) {
+        pthread_join(client->recv_thread, NULL);
+    }
+    
+    if (client->sock_fd >= 0) {
+        shutdown(client->sock_fd, SHUT_RDWR);
+        close(client->sock_fd);
+        client->sock_fd = -1;
+    }
+    
+    /* 清空发送队列 */
+    pthread_mutex_lock(&client->send_lock);
+    struct msg_node *node = client->msg_head;
+    while (node) {
+        struct msg_node *next = node->next;
+        free(node->data);
+        free(node);
+        node = next;
+    }
+    client->msg_head = NULL;
+    client->msg_tail = NULL;
+    client->queued_count = 0;
+    pthread_mutex_unlock(&client->send_lock);
+    
+    int ret = do_connect(client, host, port);
+    
+    pthread_mutex_lock(&client->reconnect_lock);
+    client->connecting = false;
+    if (ret == 0) {
+        client->connected = true;
+        client->retry_count = 0;
+        client->thread_running = true;
+    } else {
+        client->connected = false;
+    }
+    pthread_mutex_unlock(&client->reconnect_lock);
+    
+    if (ret == 0) {
+        pthread_create(&client->recv_thread, NULL, socket_recv_thread, client);
+        
+        client->send_thread_running = true;
+        pthread_create(&client->send_thread, NULL, socket_send_thread, client);
+        
+        char *auth_msg = protocol_create_auth_msg(client->agent_ctx);
+        if (auth_msg) {
+            socket_send_json(client->agent_ctx, MSG_TYPE_AUTH, auth_msg);
+            LOG_INFO("已发送设备注册消息: %s", client->agent_ctx->config.device_id);
+            free(auth_msg);
+        }
+        
+        client->agent_ctx->authenticated = false;
+        
+        pthread_mutex_lock(&client->agent_ctx->lock);
+        client->agent_ctx->connected = true;
+        pthread_mutex_unlock(&client->agent_ctx->lock);
+        
+        LOG_INFO("Agent已连接，设备ID: %s", client->agent_ctx->config.device_id);
+    }
+    
+    return ret;
+}
+
 /* 初始化Socket客户端 */
 static socket_client_t *socket_client_init(agent_context_t *ctx)
 {
@@ -318,9 +398,9 @@ static socket_client_t *socket_client_init(agent_context_t *ctx)
     client->connected = false;
     client->connecting = false;
     client->retry_count = 0;
-    client->should_reconnect = false;
+    client->should_reconnect = true;
     client->reconnect_thread_running = false;
-    client->current_retry_delay = 0;
+    client->current_retry_delay = 5;
     client->base_retry_delay = 5;
     client->max_retry_delay = 60;
     client->msg_head = NULL;
@@ -331,6 +411,8 @@ static socket_client_t *socket_client_init(agent_context_t *ctx)
     pthread_mutex_init(&client->send_lock, NULL);
     pthread_cond_init(&client->send_cond, NULL);
     pthread_mutex_init(&client->reconnect_lock, NULL);
+    pthread_cond_init(&client->reconnect_cond, NULL);
+    client->reconnect_notify = false;
     
     return client;
 }
@@ -342,9 +424,12 @@ static void socket_client_cleanup(socket_client_t *client)
         return;
     }
     
+    pthread_mutex_lock(&client->reconnect_lock);
     client->should_reconnect = false;
     client->thread_running = false;
     client->connected = false;
+    pthread_cond_broadcast(&client->reconnect_cond);
+    pthread_mutex_unlock(&client->reconnect_lock);
     
     /* 停止并等待发送线程退出 */
     pthread_mutex_lock(&client->send_lock);
@@ -382,6 +467,7 @@ static void socket_client_cleanup(socket_client_t *client)
     pthread_mutex_destroy(&client->send_lock);
     pthread_cond_destroy(&client->send_cond);
     pthread_mutex_destroy(&client->reconnect_lock);
+    pthread_cond_destroy(&client->reconnect_cond);
 }
 
 /* 解析服务器地址 (host:port) */
@@ -420,15 +506,13 @@ int socket_connect(agent_context_t *ctx)
         return -1;
     }
     
-    if (g_socket_client) {
-        socket_client_cleanup(g_socket_client);
-        free(g_socket_client);
-        g_socket_client = NULL;
-    }
-    
-    g_socket_client = socket_client_init(ctx);
+    /* 只在首次连接时创建客户端，后续不销毁 */
     if (!g_socket_client) {
-        return -1;
+        g_socket_client = socket_client_init(ctx);
+        if (!g_socket_client) {
+            return -1;
+        }
+        g_client_initialized = true;
     }
     
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
@@ -451,7 +535,6 @@ int socket_connect(agent_context_t *ctx)
 
         /* 启动发送线程 */
         pthread_create(&g_socket_client->send_thread, NULL, socket_send_thread, g_socket_client);
-        LOG_INFO("Socket发送线程启动");
 
         /* 发送设备注册消息（去认证化，仅用device_id区分）*/
         char *auth_msg = protocol_create_auth_msg(g_socket_client->agent_ctx);
@@ -567,7 +650,19 @@ static void *socket_reconnect_thread(void *arg)
         pthread_mutex_unlock(&client->reconnect_lock);
         
         if (connected) {
-            sleep(retry_delay);
+            /* 连接成功，等待连接断开通知 */
+            pthread_mutex_lock(&client->reconnect_lock);
+            while (client->connected && client->should_reconnect && g_agent_ctx && g_agent_ctx->running) {
+                client->reconnect_notify = false;
+                pthread_cond_wait(&client->reconnect_cond, &client->reconnect_lock);
+                
+                /* 检查是否真的收到断开通知 */
+                if (client->reconnect_notify) {
+                    LOG_INFO("检测到连接断开，准备重连");
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&client->reconnect_lock);
             continue;
         }
         
@@ -586,8 +681,16 @@ static void *socket_reconnect_thread(void *arg)
             break;
         }
         
+        /* 解析服务器地址 */
+        char host[256];
+        int port;
+        if (parse_server_addr(client->agent_ctx->config.server_addr, host, sizeof(host), &port) != 0) {
+            sleep(retry_delay);
+            continue;
+        }
+        
         /* 执行重连 */
-        int ret = socket_connect(client->agent_ctx);
+        int ret = do_reconnect(client, host, port);
 
         pthread_mutex_lock(&client->reconnect_lock);
         if (ret == 0) {
@@ -618,24 +721,6 @@ static void *socket_reconnect_thread(void *arg)
 }
 
 /* 启动自动重连 */
-void socket_reconnect_start(void)
-{
-    if (!g_socket_client) {
-        return;
-    }
-    
-    pthread_mutex_lock(&g_socket_client->reconnect_lock);
-    if (g_socket_client->reconnect_thread_running) {
-        pthread_mutex_unlock(&g_socket_client->reconnect_lock);
-        return;
-    }
-    g_socket_client->should_reconnect = true;
-    g_socket_client->current_retry_delay = g_socket_client->base_retry_delay;
-    pthread_mutex_unlock(&g_socket_client->reconnect_lock);
-    
-    pthread_create(&g_socket_client->reconnect_thread, NULL, socket_reconnect_thread, g_socket_client);
-}
-
 /* 停止自动重连 */
 void socket_reconnect_stop(void)
 {
@@ -645,6 +730,7 @@ void socket_reconnect_stop(void)
     
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
     g_socket_client->should_reconnect = false;
+    pthread_cond_broadcast(&g_socket_client->reconnect_cond);
     pthread_mutex_unlock(&g_socket_client->reconnect_lock);
     
     if (g_socket_client->reconnect_thread_running) {
@@ -688,7 +774,14 @@ void socket_enable_reconnect(agent_context_t *ctx)
     
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
     g_socket_client->should_reconnect = true;
-    pthread_mutex_unlock(&g_socket_client->reconnect_lock);
+    g_socket_client->current_retry_delay = g_socket_client->base_retry_delay;
+    if (!g_socket_client->reconnect_thread_running) {
+        g_socket_client->reconnect_thread_running = true;
+        pthread_mutex_unlock(&g_socket_client->reconnect_lock);
+        pthread_create(&g_socket_client->reconnect_thread, NULL, socket_reconnect_thread, g_socket_client);
+    } else {
+        pthread_mutex_unlock(&g_socket_client->reconnect_lock);
+    }
 }
 
 /* 停止自动重连 */

@@ -87,8 +87,8 @@ static char *json_escape_string(const char *src, size_t max_len)
                 dst[j++] = 't';
                 break;
             default:
-                if (c < 0x20 || c >= 0x7F) {
-                    /* 控制字符或非ASCII用\uXXXX表示 */
+                if (c < 0x20 || c >= 0x80) {
+                    /* 控制字符和非ASCII用\uXXXX表示 */
                     j += snprintf(dst + j, max_len * 6 - j, "\\u%04x", c);
                 } else {
                     dst[j++] = c;
@@ -974,25 +974,56 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
         const char *filename = strrchr(archive, '/') ? strrchr(archive, '/') + 1 : archive;
         char *esc_filename = json_escape_string(filename, strlen(filename));
         
-        size_t json_size = encoded_len + 1024;
-        char *json = malloc(json_size);
-        if (json && esc_filename) {
-            int offset = 0;
-            offset += snprintf(json + offset, json_size - offset,
-                "{\"filename\":\"%s\",\"size\":%lld,\"content\":\"", esc_filename, (long long)fsize);
-            offset += snprintf(json + offset, json_size - offset, "%s", encoded);
-            offset += snprintf(json + offset, json_size - offset, "\"");
-            if (request_id) {
-                offset += snprintf(json + offset, json_size - offset, ",\"request_id\":\"%s\"", request_id);
-            }
-            snprintf(json + offset, json_size - offset, "}");
+        #define CHUNK_SIZE  (48 * 1024)  /* 每块48KB base64数据 */
+        size_t total_chunks = (encoded_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        
+        LOG_INFO("分块发送打包响应: 文件=%s, 大小=%lld, 编码后=%zu, 总块数=%zu", 
+                 filename, (long long)fsize, encoded_len, total_chunks);
+        
+        for (size_t chunk_idx = 0; chunk_idx < total_chunks; chunk_idx++) {
+            size_t chunk_start = chunk_idx * CHUNK_SIZE;
+            size_t chunk_end = (chunk_start + CHUNK_SIZE < encoded_len) ? chunk_start + CHUNK_SIZE : encoded_len;
+            size_t chunk_len = chunk_end - chunk_start;
             
-            LOG_INFO("发送打包响应: 文件=%s, 大小=%lld, 编码后=%zu", filename, (long long)fsize, encoded_len);
-            socket_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
-            free(json);
-        } else {
-            LOG_ERROR("JSON缓冲区或转义分配失败");
+            char *json = malloc(chunk_len + 256);
+            if (json && esc_filename) {
+                int offset = 0;
+                
+                if (chunk_idx == 0) {
+                    offset += snprintf(json + offset, chunk_len + 256 - offset,
+                        "{\"filename\":\"%s\",\"size\":%lld,", esc_filename, (long long)fsize);
+                } else {
+                    offset += snprintf(json + offset, chunk_len + 256 - offset, "{");
+                }
+                
+                offset += snprintf(json + offset, chunk_len + 256 - offset,
+                    "\"content\":\"");
+                memcpy(json + offset, encoded + chunk_start, chunk_len);
+                offset += chunk_len;
+                offset += snprintf(json + offset, chunk_len + 256 - offset, "\"");
+                
+                offset += snprintf(json + offset, chunk_len + 256 - offset,
+                    ",\"chunk_index\":%zu,\"total_chunks\":%zu", chunk_idx, total_chunks);
+                
+                if (request_id) {
+                    offset += snprintf(json + offset, chunk_len + 256 - offset, 
+                        ",\"request_id\":\"%s\"", request_id);
+                }
+                
+                if (chunk_idx == total_chunks - 1) {
+                    snprintf(json + offset, chunk_len + 256 - offset, "}");
+                } else {
+                    snprintf(json + offset, chunk_len + 256 - offset, ",\"complete\":false}");
+                }
+                
+                socket_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
+                free(json);
+            } else {
+                LOG_ERROR("JSON缓冲区分配失败");
+                break;
+            }
         }
+        
         if (esc_filename) free(esc_filename);
         free(encoded);
     } else {
