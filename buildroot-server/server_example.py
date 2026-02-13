@@ -17,6 +17,7 @@ import os
 import hashlib
 import time
 import ssl
+import uuid
 from datetime import datetime
 from typing import Dict, Set, Any, Optional, Tuple, List, Union
 from pathlib import Path
@@ -495,7 +496,11 @@ class ConnectionManager:
             str, Dict[str, Any]
         ] = {}  # device_id -> {"type": "websocket"|"socket", "connection": obj}
         self.web_consoles: Set[WebSocketServerProtocol] = set()
+        self.console_info: Dict[WebSocketServerProtocol, Dict[str, Any]] = {}
         self.pty_sessions: Dict[str, Dict[int, asyncio.Queue]] = {}
+        self.request_sessions: Dict[
+            str, Dict[str, str]
+        ] = {}  # request_id -> {console_id, device_id}
         self.file_transfer = file_transfer_manager
 
     def add_device(
@@ -515,11 +520,93 @@ class ConnectionManager:
 
     def add_console(self, websocket: WebSocketServerProtocol) -> None:
         """添加Web控制台"""
+        console_id = str(uuid.uuid4())[:8]
         self.web_consoles.add(websocket)
+        self.console_info[websocket] = {
+            "console_id": console_id,
+            "device_id": None,
+            "session_ids": set(),
+            "connected_time": time.time(),
+        }
+        logger.info(f"Web控制台连接: console_id={console_id}")
 
     def remove_console(self, websocket: WebSocketServerProtocol) -> None:
         """移除Web控制台"""
+        console_id = self.console_info.get(websocket, {}).get("console_id", "unknown")
         self.web_consoles.discard(websocket)
+        self.console_info.pop(websocket, None)
+        logger.info(f"Web控制台断开: console_id={console_id}")
+
+    def set_console_device(
+        self, websocket: WebSocketServerProtocol, device_id: str
+    ) -> None:
+        """设置控制台当前选中的设备"""
+        if websocket in self.console_info:
+            old_device = self.console_info[websocket].get("device_id")
+            self.console_info[websocket]["device_id"] = device_id
+            logger.info(
+                f"控制台 {self.console_info[websocket]['console_id']} 切换设备: {old_device} -> {device_id}"
+            )
+
+    def add_console_session(
+        self, websocket: WebSocketServerProtocol, session_id: int
+    ) -> None:
+        """记录控制台创建的session"""
+        if websocket in self.console_info:
+            self.console_info[websocket]["session_ids"].add(session_id)
+
+    def get_console_by_session(
+        self, device_id: str, session_id: int
+    ) -> Optional[WebSocketServerProtocol]:
+        """根据device_id和session_id查找对应的控制台"""
+        for websocket, info in self.console_info.items():
+            if info.get("device_id") == device_id and session_id in info.get(
+                "session_ids", set()
+            ):
+                return websocket
+        logger.warning(
+            f"get_console_by_session未找到: device_id={device_id}, session_id={session_id}, "
+            f"已注册sessions: {[(info.get('device_id'), info.get('session_ids')) for info in self.console_info.values()]}"
+        )
+        return None
+
+    def add_request_session(
+        self, request_id: str, console_id: str, device_id: str
+    ) -> None:
+        """记录request_id对应的控制台session"""
+        if not request_id:
+            return
+        self.request_sessions[request_id] = {
+            "console_id": console_id,
+            "device_id": device_id,
+        }
+        logger.debug(
+            f"注册request_session: request_id={request_id}, console_id={console_id}, device_id={device_id}"
+        )
+
+    def get_console_by_request(
+        self, request_id: str
+    ) -> Optional[WebSocketServerProtocol]:
+        """根据request_id查找对应的控制台"""
+        if not request_id or request_id not in self.request_sessions:
+            return None
+        req_info = self.request_sessions[request_id]
+        target_console_id = req_info.get("console_id")
+        target_device_id = req_info.get("device_id")
+
+        for websocket, info in self.console_info.items():
+            if (
+                info.get("console_id") == target_console_id
+                and info.get("device_id") == target_device_id
+            ):
+                return websocket
+        return None
+
+    def get_console_info(
+        self, websocket: WebSocketServerProtocol
+    ) -> Optional[Dict[str, Any]]:
+        """获取控制台信息"""
+        return self.console_info.get(websocket)
 
     def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
         """获取设备连接信息"""
@@ -701,7 +788,15 @@ class MessageHandler:
         )
 
         status_data = {"device_id": device_id, **data}
-        await self.broadcast_to_web_consoles(MessageType.SYSTEM_STATUS, status_data)
+        request_id = data.get("request_id")
+        if request_id:
+            await self.unicast_by_request_id(
+                MessageType.SYSTEM_STATUS,
+                status_data,
+                request_id,
+            )
+        else:
+            logger.warning(f"SYSTEM_STATUS缺少request_id，不发送")
 
     async def handle_log_upload(self, device_id: str, data: dict) -> None:
         """处理日志上传"""
@@ -731,13 +826,13 @@ class MessageHandler:
 
     async def handle_pty_data(self, device_id: str, data: dict) -> None:
         """处理PTY数据 (从设备到服务器)"""
-        session_id = data.get("session_id", -1)
+        session_id = int(data.get("session_id", -1))
         pty_data = data.get("data", "")
 
-        if (
-            device_id in self.conn_mgr.pty_sessions
-            and session_id in self.conn_mgr.pty_sessions[device_id]
-        ):
+        target_console = self.conn_mgr.get_console_by_session(device_id, session_id)
+        if target_console:
+            console_info = self.conn_mgr.get_console_info(target_console)
+            target_console_id = console_info.get("console_id") if console_info else None
             try:
                 await self.broadcast_to_web_consoles(
                     MessageType.PTY_DATA,
@@ -746,25 +841,18 @@ class MessageHandler:
                         "session_id": session_id,
                         "data": pty_data,
                     },
+                    target_console_id=target_console_id,
                 )
             except Exception:
                 pass
-
-    async def handle_pty_close(self, device_id: str, data: dict) -> None:
-        """处理PTY关闭"""
-        session_id = data.get("session_id", -1)
-        reason = data.get("reason", "unknown")
-        logger.info(f"PTY会话关闭 [{device_id}]: session={session_id}, reason={reason}")
-
-        if (
-            device_id in self.conn_mgr.pty_sessions
-            and session_id in self.conn_mgr.pty_sessions[device_id]
-        ):
-            del self.conn_mgr.pty_sessions[device_id][session_id]
+        else:
+            logger.warning(
+                f"未找到PTY session对应的console: device={device_id}, session={session_id}"
+            )
 
     async def handle_pty_create(self, device_id: str, data: dict) -> None:
         """处理PTY创建"""
-        session_id = data.get("session_id", -1)
+        session_id = int(data.get("session_id", -1))
         status = data.get("status", "unknown")
         rows = data.get("rows", 24)
         cols = data.get("cols", 80)
@@ -779,13 +867,23 @@ class MessageHandler:
         if session_id not in self.conn_mgr.pty_sessions[device_id]:
             self.conn_mgr.pty_sessions[device_id][session_id] = asyncio.Queue()
 
-        await self.broadcast_to_web_consoles(
-            MessageType.PTY_CREATE, {"device_id": device_id, **data}
-        )
+        target_console = self.conn_mgr.get_console_by_session(device_id, session_id)
+        if target_console:
+            console_info = self.conn_mgr.get_console_info(target_console)
+            target_console_id = console_info.get("console_id") if console_info else None
+            await self.broadcast_to_web_consoles(
+                MessageType.PTY_CREATE,
+                {"device_id": device_id, **data},
+                target_console_id=target_console_id,
+            )
+        else:
+            logger.warning(
+                f"未找到PTY会话对应的web控制台 [{device_id}]: session={session_id}"
+            )
 
     async def handle_pty_resize(self, device_id: str, data: dict) -> None:
         """处理PTY调整大小"""
-        session_id = data.get("session_id", -1)
+        session_id = int(data.get("session_id", -1))
         rows = data.get("rows", 24)
         cols = data.get("cols", 80)
 
@@ -793,10 +891,45 @@ class MessageHandler:
             f"PTY调整大小 [{device_id}]: session={session_id}, size={cols}x{rows}"
         )
 
-        # Forward resize message to web consoles
-        await self.broadcast_to_web_consoles(
-            MessageType.PTY_RESIZE, {"device_id": device_id, **data}
-        )
+        target_console = self.conn_mgr.get_console_by_session(device_id, session_id)
+        if target_console:
+            console_info = self.conn_mgr.get_console_info(target_console)
+            target_console_id = console_info.get("console_id") if console_info else None
+            await self.broadcast_to_web_consoles(
+                MessageType.PTY_RESIZE,
+                {"device_id": device_id, **data},
+                target_console_id=target_console_id,
+            )
+        else:
+            logger.warning(
+                f"未找到PTY resize对应的web控制台 [{device_id}]: session={session_id}"
+            )
+
+    async def handle_pty_close(self, device_id: str, data: dict) -> None:
+        """处理PTY关闭"""
+        session_id = int(data.get("session_id", -1))
+        reason = data.get("reason", "unknown")
+        logger.info(f"PTY会话关闭 [{device_id}]: session={session_id}, reason={reason}")
+
+        target_console = self.conn_mgr.get_console_by_session(device_id, session_id)
+        if target_console:
+            console_info = self.conn_mgr.get_console_info(target_console)
+            target_console_id = console_info.get("console_id") if console_info else None
+            await self.broadcast_to_web_consoles(
+                MessageType.PTY_CLOSE,
+                {"device_id": device_id, **data},
+                target_console_id=target_console_id,
+            )
+        else:
+            logger.warning(
+                f"未找到PTY close对应的web控制台 [{device_id}]: session={session_id}"
+            )
+
+        if (
+            device_id in self.conn_mgr.pty_sessions
+            and session_id in self.conn_mgr.pty_sessions[device_id]
+        ):
+            del self.conn_mgr.pty_sessions[device_id][session_id]
 
     async def handle_auth_result(self, device_id: str, data: dict) -> None:
         """处理认证结果（从设备到服务器）"""
@@ -1318,26 +1451,42 @@ class MessageHandler:
             await handlers[msg_type](device_id, json_data)
         elif msg_type == MessageType.FILE_DATA:
             logger.info(f"收到文件数据 [{device_id}]: {json_data}")
-            # Forward FILE_DATA messages to web consoles
-            await self.broadcast_to_web_consoles(
-                MessageType.FILE_DATA, {"device_id": device_id, **json_data}
-            )
+            request_id = json_data.get("request_id")
+            if request_id:
+                await self.unicast_by_request_id(
+                    MessageType.FILE_DATA,
+                    {"device_id": device_id, **json_data},
+                    request_id,
+                )
+            else:
+                logger.warning(f"FILE_DATA缺少request_id，不发送")
         elif msg_type == MessageType.FILE_LIST_RESPONSE:
-            await self.broadcast_to_web_consoles(
-                MessageType.FILE_LIST_RESPONSE, {"device_id": device_id, **json_data}
-            )
+            request_id = json_data.get("request_id")
+            if request_id:
+                await self.unicast_by_request_id(
+                    MessageType.FILE_LIST_RESPONSE,
+                    {"device_id": device_id, **json_data},
+                    request_id,
+                )
+            else:
+                logger.warning(f"FILE_LIST_RESPONSE缺少request_id，不发送")
         elif msg_type == MessageType.DOWNLOAD_PACKAGE:
             await self._handle_download_package(device_id, json_data)
         elif msg_type == MessageType.CMD_RESPONSE:
             logger.info(f"收到命令响应 [{device_id}]: {json_data}")
-            await self.broadcast_to_web_consoles(
-                MessageType.CMD_RESPONSE, {"device_id": device_id, **json_data}
-            )
+            request_id = json_data.get("request_id")
+            if request_id:
+                await self.unicast_by_request_id(
+                    MessageType.CMD_RESPONSE,
+                    {"device_id": device_id, **json_data},
+                    request_id,
+                )
+            else:
+                logger.warning(f"CMD_RESPONSE缺少request_id，不发送")
         elif msg_type == MessageType.AUTH:
             logger.debug(f"收到认证消息 [{device_id}]（已认证）")
         elif msg_type == MessageType.DEVICE_LIST:
             logger.info(f"设备列表查询 [{device_id}]: {json_data}")
-            # Send current device list to the requesting client
             device_list = self.conn_mgr.get_all_devices()
             response = self.create_message(
                 MessageType.DEVICE_LIST,
@@ -1350,8 +1499,43 @@ class MessageHandler:
         else:
             logger.warning(f"未知消息类型: 0x{msg_type:02X}")
 
-    async def broadcast_to_web_consoles(self, msg_type: int, data: dict) -> None:
-        """向所有web控制台广播消息"""
+    async def unicast_by_request_id(
+        self,
+        msg_type: int,
+        data: dict,
+        request_id: str,
+    ) -> None:
+        """根据request_id单播消息到对应的web控制台"""
+        target_console = self.conn_mgr.get_console_by_request(request_id)
+        if target_console:
+            console_info = self.conn_mgr.get_console_info(target_console)
+            target_console_id = console_info.get("console_id") if console_info else None
+            try:
+                message = self.create_message(msg_type, data)
+                await target_console.send(message)
+                logger.debug(
+                    f"单播消息 [0x{msg_type:02X}] by request_id={request_id} to console={target_console_id}"
+                )
+            except Exception as e:
+                logger.warning(f"单播消息失败: {e}")
+        else:
+            logger.warning(f"未找到request_id对应的console: request_id={request_id}")
+
+    async def broadcast_to_web_consoles(
+        self,
+        msg_type: int,
+        data: dict,
+        target_console_id: Optional[str] = None,
+        target_device_id: Optional[str] = None,
+    ) -> None:
+        """向web控制台发送消息（支持过滤）
+
+        Args:
+            msg_type: 消息类型
+            data: 消息数据
+            target_console_id: 如果指定，只发送给该console_id
+            target_device_id: 如果指定，只发送给关注该设备的console
+        """
         if not self.conn_mgr.web_consoles:
             return
 
@@ -1361,10 +1545,33 @@ class MessageHandler:
 
             for console in list(self.conn_mgr.web_consoles):
                 try:
-                    # 检查WebSocket连接状态
                     if hasattr(console, "state") and console.state.name != "OPEN":
                         logger.debug("Web控制台连接未开启，移除连接")
                         to_remove.append(console)
+                        continue
+
+                    console_info = self.conn_mgr.get_console_info(console)
+                    if not console_info:
+                        to_remove.append(console)
+                        continue
+
+                    if (
+                        target_console_id
+                        and console_info.get("console_id") != target_console_id
+                    ):
+                        logger.warning(
+                            f"broadcast skip by console_id: target={target_console_id}, console={console_info.get('console_id')}"
+                        )
+                        continue
+
+                    if (
+                        target_device_id
+                        and console_info.get("device_id") is not None
+                        and console_info.get("device_id") != target_device_id
+                    ):
+                        logger.warning(
+                            f"broadcast skip by device_id: target={target_device_id}, console_device={console_info.get('device_id')}"
+                        )
                         continue
 
                     if hasattr(console, "send") and callable(
@@ -1391,7 +1598,7 @@ class MessageHandler:
             for console in to_remove:
                 self.conn_mgr.remove_console(console)
         except Exception as e:
-            logger.error(f"广播消息失败: {e}")
+            logger.error(f"发送消息失败: {e}")
 
     async def _handle_download_package(self, device_id: str, json_data: dict) -> None:
         """处理打包下载响应，支持分块传输"""
@@ -1572,11 +1779,38 @@ class CloudServer:
                     try:
                         json_str = message[1:].decode("utf-8")
                         json_data = json.loads(json_str)
+
+                        console_id = json_data.pop("console_id", None)
                         device_id = json_data.get("device_id")
 
+                        console_info = self.conn_mgr.get_console_info(websocket)
+                        if console_info:
+                            if device_id:
+                                self.conn_mgr.set_console_device(websocket, device_id)
+                            session_id = json_data.get("session_id")
+                            if session_id:
+                                try:
+                                    self.conn_mgr.add_console_session(
+                                        websocket, int(session_id)
+                                    )
+                                except (ValueError, TypeError):
+                                    logger.warning(f"无效的session_id: {session_id}")
+                            request_id = json_data.get("request_id")
+                            if request_id and device_id:
+                                self.conn_mgr.add_request_session(
+                                    request_id,
+                                    console_info.get("console_id", ""),
+                                    device_id,
+                                )
+
                         device_info = device_id if device_id else "所有设备"
+                        actual_console_id = (
+                            console_info.get("console_id", console_id)
+                            if console_info
+                            else console_id
+                        )
                         logger.info(
-                            f"Web控制台收到消息 [0x{msg_type:02X}] for device: {device_info}, data: {json_str[:200]}"
+                            f"Web控制台 [{actual_console_id}] 收到消息 [0x{msg_type:02X}] for device: {device_info}, data: {json_str[:200]}"
                         )
 
                         if device_id:
@@ -1584,7 +1818,6 @@ class CloudServer:
                                 f"Web控制台消息 [0x{msg_type:02X}] 转发到设备: {device_id}"
                             )
 
-                            # 使用 send_to_device 方法发送消息（支持 WebSocket 和 Socket）
                             success = await self.msg_handler.send_to_device(
                                 device_id, msg_type, json_data
                             )
@@ -1593,7 +1826,6 @@ class CloudServer:
                             else:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
                         else:
-                            # Handle messages without device_id (like DEVICE_LIST requests)
                             if msg_type == MessageType.DEVICE_LIST:
                                 device_list = self.conn_mgr.get_all_devices()
                                 response = self.msg_handler.create_message(
