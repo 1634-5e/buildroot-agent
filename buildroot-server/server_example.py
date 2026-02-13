@@ -787,16 +787,14 @@ class MessageHandler:
             f"Load={data.get('load_1min', 0):.2f}"
         )
 
-        status_data = {"device_id": device_id, **data}
         request_id = data.get("request_id")
         if request_id:
+            status_data = {"device_id": device_id, **data}
             await self.unicast_by_request_id(
                 MessageType.SYSTEM_STATUS,
                 status_data,
                 request_id,
             )
-        else:
-            logger.warning(f"SYSTEM_STATUS缺少request_id，不发送")
 
     async def handle_log_upload(self, device_id: str, data: dict) -> None:
         """处理日志上传"""

@@ -1063,7 +1063,20 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            char *final_json = NULL;
+            if (request_id) {
+                size_t json_len = strlen(json);
+                size_t final_size = json_len + strlen(request_id) + 32;
+                final_json = malloc(final_size);
+                if (final_json) {
+                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
+                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
+                    free(final_json);
+                }
+            }
+            if (!final_json) {
+                socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            }
             free(json);
             LOG_INFO("系统状态已上报");
         }
@@ -1074,7 +1087,20 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            char *final_json = NULL;
+            if (request_id) {
+                size_t json_len = strlen(json);
+                size_t final_size = json_len + strlen(request_id) + 32;
+                final_json = malloc(final_size);
+                if (final_json) {
+                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
+                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
+                    free(final_json);
+                }
+            }
+            if (!final_json) {
+                socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+            }
             free(json);
             LOG_INFO("系统状态已上报");
         }
