@@ -3327,10 +3327,10 @@
              
              const files = Array.from(selectedFiles);
              
-             if (files.length === 1) {
-                 // Single file download
-                 downloadFile(files[0]);
-              } else {
+              if (files.length === 1) {
+                  // Single file download
+                  sendDownloadRequest(files[0]);
+               } else {
                   // Multiple files - send all as a single request for packaging
                   showToast(`正在打包 ${files.length} 个文件...`, 'info');
                   
@@ -4943,7 +4943,7 @@
             // Download currently previewed file or first selected file
             const files = Array.from(selectedFiles);
             if (files.length > 0) {
-                downloadFile(files[0]);
+                sendDownloadRequest(files[0]);
             } else {
                 showToast('请先选择文件', 'warning');
             }
@@ -5356,7 +5356,7 @@
             delete activeUploads[uploadId];
         }
 
-        function downloadFile(path) {
+        function sendDownloadRequest(path) {
             sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
                 path: path,
                 format: 'tar'
