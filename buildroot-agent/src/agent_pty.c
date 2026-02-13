@@ -246,6 +246,7 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     session->master_fd = -1;  /* 初始化为无效值 */
     session->child_pid = -1;
     session->active = false;
+    session->last_activity = time(NULL);
     
     /* 创建伪终端 */
     int master_fd;
@@ -362,6 +363,9 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
         return -1;
     }
     
+    /* 更新最后活动时间 */
+    session->last_activity = time(NULL);
+    
     /* Base64解码 */
     size_t decoded_len;
     unsigned char *decoded = base64_decode_pty(data, len, &decoded_len);
@@ -423,6 +427,7 @@ int pty_resize(agent_context_t *ctx, int session_id, int rows, int cols)
     
     session->rows = ws.ws_row;
     session->cols = ws.ws_col;
+    session->last_activity = time(NULL);
     
     /* 发送SIGWINCH信号 */
     if (session->child_pid > 0) {
@@ -558,4 +563,72 @@ int pty_list_sessions(agent_context_t *ctx)
     socket_send_json(ctx, MSG_TYPE_CMD_RESPONSE, json);
     
     return 0;
+}
+
+#define PTY_TIMEOUT_SEC (30 * 60)
+
+/* 检查并关闭超时的PTY会话 */
+void pty_check_timeout(agent_context_t *ctx)
+{
+    if (!ctx) return;
+    
+    time_t now = time(NULL);
+    
+    pthread_mutex_lock(&g_pty_lock);
+    
+    for (int i = 0; i < MAX_PTY_SESSIONS; i++) {
+        if (g_pty_sessions[i].active) {
+            if (now - g_pty_sessions[i].last_activity > PTY_TIMEOUT_SEC) {
+                LOG_WARN("PTY会话超时关闭: session_id=%d, timeout=%d秒",
+                         g_pty_sessions[i].session_id, PTY_TIMEOUT_SEC);
+                
+                int session_id = g_pty_sessions[i].session_id;
+                
+                g_pty_sessions[i].active = false;
+                
+                if (g_pty_sessions[i].master_fd >= 0) {
+                    close(g_pty_sessions[i].master_fd);
+                    g_pty_sessions[i].master_fd = -1;
+                }
+                
+                if (g_pty_sessions[i].child_pid > 0) {
+                    kill(g_pty_sessions[i].child_pid, SIGHUP);
+                    usleep(100000);
+                    kill(g_pty_sessions[i].child_pid, SIGKILL);
+                    waitpid(g_pty_sessions[i].child_pid, NULL, 0);
+                    g_pty_sessions[i].child_pid = -1;
+                }
+                
+                if (g_pty_sessions[i].read_thread) {
+                    pthread_join(g_pty_sessions[i].read_thread, NULL);
+                    g_pty_sessions[i].read_thread = 0;
+                }
+                
+                LOG_INFO("PTY会话已超时关闭: session_id=%d", session_id);
+            }
+        }
+    }
+    
+    pthread_mutex_unlock(&g_pty_lock);
+}
+
+/* PTY超时检查线程 */
+void *pty_timeout_thread(void *arg)
+{
+    agent_context_t *ctx = (agent_context_t *)arg;
+    
+    LOG_INFO("PTY超时检查线程启动");
+    
+    while (ctx && ctx->running) {
+        for (int i = 0; i < 60 && ctx && ctx->running; i++) {
+            sleep(1);
+        }
+        
+        if (ctx && ctx->running) {
+            pty_check_timeout(ctx);
+        }
+    }
+    
+    LOG_INFO("PTY超时检查线程退出");
+    return NULL;
 }

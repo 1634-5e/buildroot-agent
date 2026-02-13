@@ -201,6 +201,14 @@ int agent_start(void)
         pthread_detach(status_thd);
     }
     
+    /* 启动PTY超时检查线程 */
+    pthread_t pty_timeout_thd;
+    if (pthread_create(&pty_timeout_thd, NULL, pty_timeout_thread, g_agent_ctx) != 0) {
+        LOG_ERROR("创建PTY超时检查线程失败");
+    } else {
+        pthread_detach(pty_timeout_thd);
+    }
+    
     LOG_INFO("Agent已启动");
     
     /* 启动更新检查线程（如果启用）*/

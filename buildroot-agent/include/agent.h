@@ -211,11 +211,12 @@ typedef struct {
 typedef struct {
     int session_id;             /* 会话ID */
     int master_fd;              /* PTY master fd */
-    pid_t child_pid;            /* 子进程PID */
+    pid_t child_pid;           /* 子进程PID */
     pthread_t read_thread;      /* 读取线程 */
-    bool active;                /* 是否活跃 */
-    int rows;                   /* 终端行数 */
-    int cols;                   /* 终端列数 */
+    bool active;               /* 是否活跃 */
+    int rows;                  /* 终端行数 */
+    int cols;                  /* 终端列数 */
+    time_t last_activity;       /* 最后活动时间戳 */
 } pty_session_t;
 
 /* Agent上下文结构 */
@@ -291,6 +292,7 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
 int pty_resize(agent_context_t *ctx, int session_id, int rows, int cols);
 int pty_close_session(agent_context_t *ctx, int session_id);
 void pty_cleanup_all(agent_context_t *ctx);
+void *pty_timeout_thread(void *arg);
 
 /* agent_protocol.c */
 int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len);

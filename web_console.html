@@ -2387,6 +2387,25 @@
                     showToast('连接错误，尝试重新连接...', 'warning');
                 }
             };
+            
+            // 页面卸载时发送 PTY_CLOSE 消息
+            window.addEventListener('beforeunload', (event) => {
+                if (ptySessionId && isConnected && currentDevice) {
+                    const msg = JSON.stringify({ session_id: ptySessionId });
+                    const blob = new Blob([msg], { type: 'application/json' });
+                    navigator.sendBeacon(
+                        `?device_id=${currentDevice}&msg_type=0x13`,
+                        blob
+                    );
+                }
+            });
+            
+            // 页面可见性变化时（后台挂起）发送 PTY_CLOSE
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden' && ptySessionId && isConnected && currentDevice) {
+                    sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId });
+                }
+            });
 
             ws.onmessage = async (event) => {
                 try {
