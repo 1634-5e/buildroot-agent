@@ -3330,15 +3330,15 @@
              if (files.length === 1) {
                  // Single file download
                  downloadFile(files[0]);
-             } else {
-                 // Multiple files - send all as a single request for packaging
-                 showToast(`正在打包 ${files.length} 个文件...`, 'info');
-                 
-                 // Send a single request with all file paths to the agent
-                 sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
-                     paths: files,  // Send array of paths
-                     format: 'tar.gz'
-                 });
+              } else {
+                  // Multiple files - send all as a single request for packaging
+                  showToast(`正在打包 ${files.length} 个文件...`, 'info');
+                  
+                  // Send a single request with all file paths to the agent
+                  sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
+                      paths: files,  // Send array of paths
+                      format: 'tar'
+                  });
              }
          }
 
@@ -5359,7 +5359,7 @@
         function downloadFile(path) {
             sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
                 path: path,
-                format: 'tar.gz'
+                format: 'tar'
             });
             showToast('开始下载...', 'info');
         }

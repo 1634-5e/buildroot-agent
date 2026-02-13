@@ -8,12 +8,13 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <ctype.h>
+
+#define MD5_DIGEST_LENGTH 16
+#define SHA256_DIGEST_LENGTH 32
 
 /* Base64解码表 */
 static const int base64_decode_table[128] = {
@@ -212,73 +213,23 @@ int tcp_can_resume(const char *file_path, const char *output_path) {
     return 1;
 }
 
-/* 计算文件MD5 */
+/* 计算文件MD5 (已禁用) */
 int tcp_calc_md5(const char *filepath, char *md5_str) {
     if (!filepath || !md5_str) {
         return -1;
     }
-    
-    FILE *fp = fopen(filepath, "rb");
-    if (!fp) {
-        LOG_ERROR("无法打开文件: %s", filepath);
-        return -1;
-    }
-    
-    MD5_CTX md5_ctx;
-    MD5_Init(&md5_ctx);
-    
-    unsigned char buf[8192];
-    size_t bytes_read;
-    while ((bytes_read = fread(buf, 1, sizeof(buf), fp)) > 0) {
-        MD5_Update(&md5_ctx, buf, bytes_read);
-    }
-    
-    fclose(fp);
-    
-    unsigned char md5_digest[MD5_DIGEST_LENGTH];
-    MD5_Final(md5_digest, &md5_ctx);
-    
-    /* 转换为十六进制字符串 */
-    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
-        sprintf(md5_str + i * 2, "%02x", md5_digest[i]);
-    }
-    md5_str[MD5_DIGEST_LENGTH * 2] = '\0';
-    
+    /* 不再支持MD5计算 */
+    strcpy(md5_str, "");
     return 0;
 }
 
-/* 计算文件SHA256 */
+/* 计算文件SHA256 (已禁用) */
 int tcp_calc_sha256(const char *filepath, char *sha256_str) {
     if (!filepath || !sha256_str) {
         return -1;
     }
-    
-    FILE *fp = fopen(filepath, "rb");
-    if (!fp) {
-        LOG_ERROR("无法打开文件: %s", filepath);
-        return -1;
-    }
-    
-    SHA256_CTX sha256_ctx;
-    SHA256_Init(&sha256_ctx);
-    
-    unsigned char buf[8192];
-    size_t bytes_read;
-    while ((bytes_read = fread(buf, 1, sizeof(buf), fp)) > 0) {
-        SHA256_Update(&sha256_ctx, buf, bytes_read);
-    }
-    
-    fclose(fp);
-    
-    unsigned char sha256_digest[SHA256_DIGEST_LENGTH];
-    SHA256_Final(sha256_digest, &sha256_ctx);
-    
-    /* 转换为十六进制字符串 */
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        sprintf(sha256_str + i * 2, "%02x", sha256_digest[i]);
-    }
-    sha256_str[SHA256_DIGEST_LENGTH * 2] = '\0';
-    
+    /* 不再支持SHA256计算 */
+    strcpy(sha256_str, "");
     return 0;
 }
 

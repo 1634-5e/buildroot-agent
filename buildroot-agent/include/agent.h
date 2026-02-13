@@ -339,6 +339,7 @@ bool json_get_bool(const char *json, const char *key, bool default_val);
 /* agent_util.c */
 void agent_log(int level, const char *fmt, ...);
 void set_log_level(int level);
+int set_log_file(const char *path);
 char *get_device_id(void);
 uint64_t get_timestamp_ms(void);
 int mkdir_recursive(const char *path, mode_t mode);

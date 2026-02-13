@@ -350,9 +350,13 @@ bool json_get_bool(const char *json, const char *key, bool default_val)
 /* 处理认证结果 */
 static void handle_auth_result(agent_context_t *ctx, const char *data)
 {
+    LOG_DEBUG("收到认证响应JSON: %s", data ? data : "null");
+
     bool success = json_get_bool(data, "success", false);
     char *message = json_get_string(data, "message");
-    
+
+    LOG_DEBUG("解析认证结果: success=%d, message=%s", success, message ? message : "null");
+
     if (success) {
         ctx->authenticated = true;
         LOG_INFO("认证成功: %s", message ? message : "");
@@ -360,7 +364,7 @@ static void handle_auth_result(agent_context_t *ctx, const char *data)
         ctx->authenticated = false;
         LOG_ERROR("认证失败: %s", message ? message : "unknown");
     }
-    
+
     if (message) free(message);
 }
 
@@ -772,13 +776,13 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
     char archive[320];
     int ret = -1;
     
-    if (format && strcmp(format, "tar.gz") == 0) {
-        snprintf(archive, sizeof(archive), "%s.tar.gz", tmpfile);
+    if (format && strcmp(format, "tar") == 0) {
+        snprintf(archive, sizeof(archive), "%s.tar", tmpfile);
         char cmd[4096]; // Increased size for multiple files
         
         if (paths_array && paths_count > 0) {
             // Handle multiple files
-            strcpy(cmd, "cd / && tar -czf '");
+            strcpy(cmd, "cd / && tar -cf '");
             strcat(cmd, archive);
             strcat(cmd, "' ");
             
@@ -839,27 +843,27 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
                 *last_slash = '\0';  // Split parent dir
                 // If parent_dir is empty after split, it was an absolute path like /filename
                 if (parent_dir[0] == '\0') {
-                    snprintf(cmd, sizeof(cmd), "cd / && tar -czf '%s' '%s' 2>&1", archive, item_name);
+                    snprintf(cmd, sizeof(cmd), "cd / && tar -cf '%s' '%s' 2>&1", archive, item_name);
                 } else {
-                    snprintf(cmd, sizeof(cmd), "cd '%s' && tar -czf '%s' '%s' 2>&1", 
+                    snprintf(cmd, sizeof(cmd), "cd '%s' && tar -cf '%s' '%s' 2>&1", 
                             parent_dir, archive, item_name);
                 }
             } else {
                 // No slash found, so it's relative to root
-                snprintf(cmd, sizeof(cmd), "cd / && tar -czf '%s' '%s' 2>&1", archive, normalized_check + 1);
+                snprintf(cmd, sizeof(cmd), "cd / && tar -cf '%s' '%s' 2>&1", archive, normalized_check + 1);
             }
         } else {
             LOG_ERROR("打包请求: 无法处理路径参数");
             goto cleanup;
         }
         
-        LOG_DEBUG("执行压缩: %s", cmd);
+        LOG_DEBUG("执行打包: %s", cmd);
         ret = system(cmd);
         if (ret != 0) {
             LOG_ERROR("tar命令失败: ret=%d, errno=%d", ret, errno);
             LOG_ERROR("命令: %s", cmd);
         } else {
-            LOG_INFO("tar压缩完成");
+            LOG_INFO("tar打包完成");
         }
     } else {
         snprintf(archive, sizeof(archive), "%s.zip", tmpfile);
@@ -1068,12 +1072,23 @@ cleanup:
 int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
 {
     if (!ctx || !data || len < 1) return -1;
-    
-    /* 消息格式: 类型(1字节) + JSON数据 */
+
+    /* 消息格式: 类型(1字节) + 长度(2字节,大端) + JSON数据 */
+    if (len < 3) {
+        LOG_ERROR("消息太短: %zu字节", len);
+        return -1;
+    }
+
     msg_type_t type = (msg_type_t)(unsigned char)data[0];
-    const char *json_data = data + 1;
-    
-    LOG_DEBUG("收到消息: type=0x%02X, len=%zu", (unsigned char)type, len);
+    uint16_t json_len = (data[1] << 8) | data[2];
+    const char *json_data = data + 3;
+
+    if (len < (size_t)(3 + json_len)) {
+        LOG_ERROR("消息长度不匹配: 期望%u字节, 实际%zu字节", 3 + json_len, len);
+        return -1;
+    }
+
+    LOG_DEBUG("收到消息: type=0x%02X, json_len=%u", (unsigned char)type, json_len);
     
     switch (type) {
     case MSG_TYPE_AUTH_RESULT:
@@ -1199,7 +1214,7 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
                      g_agent_ctx->config.update_temp_path, (long long)now);
             snprintf(download_path, sizeof(download_path),
-                     "%s/agent-update-%lld.tar.gz",
+                     "%s/agent-update-%lld.tar",
                      temp_dir, (long long)now);
             
             /* 创建临时目录 */

@@ -56,7 +56,7 @@ static void *heartbeat_thread(void *arg)
     LOG_INFO("心跳线程启动");
     
     while (ctx->running) {
-        if (ctx->connected && ctx->authenticated) {
+        if (ctx->connected) {
             char *heartbeat = protocol_create_heartbeat(ctx);
             if (heartbeat) {
                 socket_send_json(ctx, MSG_TYPE_HEARTBEAT, heartbeat);
@@ -74,6 +74,33 @@ static void *heartbeat_thread(void *arg)
     }
     
     LOG_INFO("心跳线程退出");
+    return NULL;
+}
+
+/* 更新检查线程 */
+static void *update_check_thread(void *arg)
+{
+    agent_context_t *ctx = (agent_context_t *)arg;
+    
+    LOG_INFO("更新检查线程启动");
+    
+    while (ctx->running) {
+        if (ctx->connected) {
+            int rc = update_check_version(ctx);
+            if (rc != 0) {
+                LOG_DEBUG("更新检查失败: %d", rc);
+            }
+        }
+        
+        /* 分段sleep，每1秒检查一次停止标志 */
+        int sleep_time = ctx->config.update_check_interval > 0 ?
+                        ctx->config.update_check_interval : DEFAULT_UPDATE_CHECK_INTERVAL;
+        for (int i = 0; i < sleep_time && ctx->running; i++) {
+            sleep(1);
+        }
+    }
+    
+    LOG_INFO("更新检查线程退出");
     return NULL;
 }
 
@@ -168,7 +195,7 @@ int agent_start(void)
     /* 启动更新检查线程（如果启用）*/
     if (g_agent_ctx->config.enable_auto_update) {
         pthread_t update_thread;
-        if (pthread_create(&update_thread, NULL, heartbeat_thread, g_agent_ctx) == 0) {
+        if (pthread_create(&update_thread, NULL, update_check_thread, g_agent_ctx) == 0) {
             LOG_INFO("更新检查线程启动");
             pthread_detach(update_thread);
         } else {

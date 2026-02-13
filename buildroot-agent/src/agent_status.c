@@ -760,8 +760,8 @@ void *status_thread(void *arg)
     LOG_INFO("状态采集线程启动");
     
     while (ctx->running) {
-        /* 等待连接和认证 */
-        if (ctx->connected && ctx->authenticated) {
+        /* 等待连接 */
+        if (ctx->connected) {
             system_status_t status;
             
             if (status_collect(&status) == 0) {

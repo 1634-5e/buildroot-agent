@@ -32,27 +32,11 @@ if(STATIC_LINK)
     )
     
     # 静态链接时需要的基本系统库
-    find_library(DL_LIB dl)
-    find_library(RESOLVE_LIB resolve)
-    find_library(CRYPTO_LIB crypto)
-    find_library(SSL_LIB ssl)
-    find_library(Z_LIB z)
+    find_library(DL_LIB dl NAMES libdl.a)
     
     set(STATIC_DEPS)
     if(DL_LIB)
         list(APPEND STATIC_DEPS ${DL_LIB})
-    endif()
-    if(RESOLVE_LIB)
-        list(APPEND STATIC_DEPS ${RESOLVE_LIB})
-    endif()
-    if(CRYPTO_LIB)
-        list(APPEND STATIC_DEPS ${CRYPTO_LIB})
-    endif()
-    if(SSL_LIB)
-        list(APPEND STATIC_DEPS ${SSL_LIB})
-    endif()
-    if(Z_LIB)
-        list(APPEND STATIC_DEPS ${Z_LIB})
     endif()
     
     target_link_libraries(${PROJECT_NAME} 
@@ -67,9 +51,6 @@ else()
         pthread 
         util 
         dl
-        ssl
-        crypto
-        z
     )
     message(STATUS "Using dynamic linking without libcurl (TCP download mode)")
 endif()

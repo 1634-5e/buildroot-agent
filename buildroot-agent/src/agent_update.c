@@ -3,8 +3,6 @@
  */
 
 #include "agent.h"
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +10,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
+
+#define MD5_DIGEST_LENGTH 16
+#define SHA256_DIGEST_LENGTH 32
 
 /* 全局变量 */
 static update_status_t g_update_status = UPDATE_STATUS_IDLE;
@@ -309,7 +311,7 @@ static int extract_update_package(const char *package_path, const char *output_d
     
     char extract_cmd[1024];
     snprintf(extract_cmd, sizeof(extract_cmd),
-             "cd %s && tar -xzf %s 2>&1",
+             "cd %s && tar -xf %s 2>&1",
              output_dir, package_path);
     
     int rc = system(extract_cmd);

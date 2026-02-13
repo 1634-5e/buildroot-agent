@@ -25,3 +25,12 @@
 [2026-02-13 02:09:23] Configuration: /root/Projects/buildroot-agent/test_environment/agents/../config/agent-test.conf
 [2026-02-13 02:09:23] PID: 587352
 [2026-02-13 02:09:23] Heartbeat from Mock Agent v1.1.0
+[2026-02-13 00:22:01] Mock Agent v1.1.0 starting...
+[2026-02-13 00:22:01] Configuration: /root/projects/buildroot-agent/test_environment/agents/../config/agent-test.conf
+[2026-02-13 00:22:01] PID: 10197
+[2026-02-13 00:22:01] Heartbeat from Mock Agent v1.1.0
+[2026-02-13 00:22:03] Checking for updates...
+[2026-02-13 00:22:05] Mock Agent v1.1.0 starting...
+[2026-02-13 00:22:05] Configuration: /root/projects/buildroot-agent/test_environment/agents/../config/agent-test.conf
+[2026-02-13 00:22:05] PID: 10257
+[2026-02-13 00:22:05] Heartbeat from Mock Agent v1.1.0

@@ -580,9 +580,12 @@ class MessageHandler:
 
     @staticmethod
     def create_message(msg_type: int, data: dict) -> bytes:
-        """创建消息"""
-        json_data = json.dumps(data).encode("utf-8")
-        return bytes([msg_type]) + json_data
+        """创建消息: [type(1)] + [length(2, 大端)] + [JSON数据]"""
+        json_data = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        json_len = len(json_data)
+        msg = bytes([msg_type]) + json_len.to_bytes(2, 'big') + json_data
+        logger.debug(f"Created message: type=0x{msg_type:02X}, len={json_len}, data={json_data[:100] if json_data else b''}...")
+        return msg
 
     @staticmethod
     def parse_message(data: bytes) -> Tuple[Optional[int], Optional[dict]]:
@@ -624,6 +627,8 @@ class MessageHandler:
         token = data.get("token", "")
         version = data.get("version", "unknown")
 
+        logger.info(f"处理认证请求: {device_id}, token={token}, version={version}")
+
         if token in VALID_TOKENS:
             logger.info(f"设备认证成功: {device_id} (版本: {version})")
             self.conn_mgr.add_device(device_id, websocket)
@@ -632,7 +637,10 @@ class MessageHandler:
                 MessageType.AUTH_RESULT,
                 {"success": True, "message": f"欢迎, {VALID_TOKENS[token]}"},
             )
-            await self._safe_send(websocket, response)
+            logger.info(f"准备发送认证响应给 {device_id}, 消息长度={len(response)}, 类型=0x{MessageType.AUTH_RESULT:02X}")
+            send_result = await self._safe_send(websocket, response)
+            logger.info(f"_safe_send返回结果: {send_result}")
+            logger.info(f"认证响应{'已成功' if send_result else '发送失败'}给 {device_id}")
             return True
         else:
             logger.warning(f"设备认证失败: {device_id}:{token}, 无效Token")
@@ -644,14 +652,31 @@ class MessageHandler:
             return False
 
     async def _safe_send(
-        self, websocket: WebSocketServerProtocol, message: bytes
+        self, websocket, message: bytes
     ) -> bool:
-        """安全发送消息"""
+        """安全发送消息（支持WebSocket和Socket）"""
         try:
-            # 检查连接状态
-            if not hasattr(websocket, "state") or websocket.state.name != "OPEN":
-                logger.debug("WebSocket连接未开启，跳过发送")
+            # 检查是否是WebSocket连接
+            if hasattr(websocket, "state"):
+                if websocket.state.name != "OPEN":
+                    logger.debug("WebSocket连接未开启，跳过发送")
+                    return False
+
+            # 检查是否有send方法
+            if hasattr(websocket, "send") and callable(
+                getattr(websocket, "send", None)
+            ):
+                await websocket.send(message)
+                logger.debug(f"消息已发送，长度={len(message)}")
+                return True
+            else:
+                logger.error("WebSocket对象没有send方法")
                 return False
+        except Exception as e:
+            logger.error(f"发送消息失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
             if hasattr(websocket, "send") and callable(
                 getattr(websocket, "send", None)
