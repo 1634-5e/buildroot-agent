@@ -400,9 +400,12 @@ void log_watch_stop_all(void)
 int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length, const char *request_id)
 {
     if (!ctx || !filepath) return -1;
-    
+
     LOG_INFO("[FILE_READ] 读取文件: %s, offset=%d, length=%d, request_id=%s", filepath, offset, length, request_id ? request_id : "null");
-    
+
+    struct stat st;
+    int64_t mtime = 0;
+
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
         LOG_ERROR("[FILE_READ] 无法打开文件: %s", filepath);
@@ -412,57 +415,61 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
         socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return -1;
     }
-    
+
+    if (stat(filepath, &st) == 0) {
+        mtime = (int64_t)st.st_mtime;
+    }
+
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
-    
+
     if (offset < 0) offset = 0;
     if (length <= 0 || length > 32768) length = 32768; /* 最大32KB，base64编码后约43KB，低于65534字节限制 */
-    
+
     if (offset >= file_size) {
         fclose(fp);
         LOG_WARN("[FILE_READ] offset超出文件大小: offset=%d, file_size=%ld", offset, file_size);
         char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\",\"request_id\":\"%s\"}", filepath, offset, request_id ? request_id : "");
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\",\"mtime\":%lld,\"request_id\":\"%s\"}", filepath, offset, (long long)mtime, request_id ? request_id : "");
         socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
         return 0;
     }
-    
+
     fseek(fp, offset, SEEK_SET);
-    
+
     int read_len = length;
     if (offset + read_len > file_size) {
         read_len = file_size - offset;
     }
-    
+
     LOG_INFO("[FILE_READ] 准备读取 %d 字节 (offset=%d, file_size=%ld)", read_len, offset, file_size);
-    
+
     unsigned char *buffer = malloc(read_len);
     if (!buffer) {
         fclose(fp);
         LOG_ERROR("[FILE_READ] 内存分配失败");
         return -1;
     }
-    
+
     size_t actual_read = fread(buffer, 1, read_len, fp);
     fclose(fp);
-    
+
     LOG_INFO("[FILE_READ] 实际读取 %zu 字节", actual_read);
-    
+
     if (actual_read > 0) {
         size_t encoded_len;
         char *encoded = base64_encode(buffer, actual_read, &encoded_len);
         free(buffer);
-        
+
         if (encoded) {
             LOG_INFO("[FILE_READ] base64编码后长度: %zu", encoded_len);
             size_t json_size = encoded_len + 1024;
             char *json = malloc(json_size);
             if (json) {
                 snprintf(json, json_size,
-                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\",\"request_id\":\"%s\"}",
-                    filepath, offset, actual_read, encoded, request_id ? request_id : "");
-                LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu, request_id=%s", filepath, offset, actual_read, request_id ? request_id : "");
+                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\",\"mtime\":%lld,\"request_id\":\"%s\"}",
+                    filepath, offset, actual_read, encoded, (long long)mtime, request_id ? request_id : "");
+                LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu, mtime=%lld, request_id=%s", filepath, offset, actual_read, (long long)mtime, request_id ? request_id : "");
                 socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
                 free(json);
             } else {
@@ -475,7 +482,105 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
     } else {
         LOG_WARN("[FILE_READ] 没有读取到任何数据");
     }
-    
+
+    return 0;
+}
+
+/* 写入文件内容（带 mtime 比对） */
+int log_write_file(agent_context_t *ctx, const char *filepath, const char *content_b64, int64_t mtime, int force, const char *request_id)
+{
+    if (!ctx || !filepath) return -1;
+
+    LOG_INFO("[FILE_WRITE] 写入文件: %s, mtime=%lld, force=%d, request_id=%s", filepath, (long long)mtime, force, request_id ? request_id : "null");
+
+    /* 检查文件是否存在，如果存在则比对 mtime */
+    struct stat st;
+    if (stat(filepath, &st) == 0) {
+        int64_t current_mtime = (int64_t)st.st_mtime;
+        LOG_INFO("[FILE_WRITE] 文件存在，当前 mtime=%lld, 客户端 mtime=%lld", (long long)current_mtime, (long long)mtime);
+
+        /* 非强制模式 + 文件存在 + mtime 不匹配 → 拒绝写入 */
+        if (!force && mtime > 0 && current_mtime != mtime) {
+            LOG_WARN("[FILE_WRITE] 文件已被其他用户修改，拒绝写入");
+            char json[512];
+            snprintf(json, sizeof(json),
+                     "{\"filepath\":\"%s\",\"error\":\"文件已被其他用户修改\",\"mtime\":%lld,\"request_id\":\"%s\"}",
+                     filepath, (long long)current_mtime, request_id ? request_id : "");
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            return -1;
+        }
+
+        /* 非强制模式 + 文件存在 + mtime = 0 → 拒绝写入（文件存在但没有传 mtime） */
+        if (!force && mtime == 0) {
+            LOG_WARN("[FILE_WRITE] 文件存在但未提供 mtime，拒绝写入");
+            char json[512];
+            snprintf(json, sizeof(json),
+                     "{\"filepath\":\"%s\",\"error\":\"文件已修改，请重新加载\",\"mtime\":%lld,\"request_id\":\"%s\"}",
+                     filepath, (long long)current_mtime, request_id ? request_id : "");
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            return -1;
+        }
+
+        /* force = 1 → 强制覆盖，允许写入 */
+        if (force) {
+            LOG_INFO("[FILE_WRITE] 强制覆盖模式，跳过 mtime 检查");
+        }
+    } else {
+        LOG_INFO("[FILE_WRITE] 文件不存在，将创建新文件");
+    }
+
+    /* 解码 base64 内容 */
+    size_t content_b64_len = strlen(content_b64);
+    /* base64 解码后的长度约为原长的 3/4 */
+    size_t max_decoded_len = (content_b64_len * 3) / 4;
+    unsigned char *content = malloc(max_decoded_len + 1);
+    if (!content) {
+        LOG_ERROR("[FILE_WRITE] 内存分配失败");
+        char json[512];
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"内存分配失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        return -1;
+    }
+
+    size_t decoded_len = base64_decode(content_b64, content);
+    if (decoded_len == 0) {
+        LOG_ERROR("[FILE_WRITE] base64 解码失败");
+        free(content);
+        char json[512];
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"base64 解码失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        return -1;
+    }
+
+    LOG_INFO("[FILE_WRITE] 解码成功，内容长度: %zu 字节", decoded_len);
+
+    /* 写入文件 */
+    int result = write_file_content(filepath, (const char *)content, decoded_len);
+    free(content);
+
+    if (result != 0) {
+        LOG_ERROR("[FILE_WRITE] 写入文件失败");
+        char json[512];
+        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"写入文件失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        return -1;
+    }
+
+    /* 获取写入后的 mtime */
+    int64_t new_mtime = 0;
+    if (stat(filepath, &st) == 0) {
+        new_mtime = (int64_t)st.st_mtime;
+    }
+
+    LOG_INFO("[FILE_WRITE] 写入成功，新 mtime=%lld", (long long)new_mtime);
+
+    /* 返回成功响应 */
+    char json[512];
+    snprintf(json, sizeof(json),
+             "{\"filepath\":\"%s\",\"success\":true,\"mtime\":%lld,\"request_id\":\"%s\"}",
+             filepath, (long long)new_mtime, request_id ? request_id : "");
+    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+
     return 0;
 }
 

@@ -514,6 +514,20 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
     } else if (strcmp(action, "read") == 0 && filepath) {
         LOG_INFO("[FILE_REQUEST] Calling log_read_file for %s", filepath);
         log_read_file(ctx, filepath, offset, length, request_id);
+    } else if (strcmp(action, "write") == 0 && filepath) {
+        char *content = json_get_string(data, "content");
+        int64_t mtime = json_get_int64(data, "mtime");
+        bool force_bool = json_get_bool(data, "force", false);
+        int force = force_bool ? 1 : 0;
+        if (content) {
+            log_write_file(ctx, filepath, content, mtime, force, request_id);
+            free(content);
+        } else {
+            LOG_ERROR("[FILE_REQUEST] write action missing content");
+            char json[512];
+            snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"缺少content参数\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        }
     } else {
         LOG_WARN("[FILE_REQUEST] Unknown action: %s", action);
     }

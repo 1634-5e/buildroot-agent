@@ -276,6 +276,7 @@ void log_watch_stop(agent_context_t *ctx, const char *filepath);
 void log_watch_stop_all(void);
 int log_list_files(agent_context_t *ctx, const char *filepath, const char *request_id);
 int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int length, const char *request_id);
+int log_write_file(agent_context_t *ctx, const char *filepath, const char *content_b64, int64_t mtime, int force, const char *request_id);
 
 /* agent_script.c */
 int script_save(const char *script_id, const char *content, const char *path);
@@ -351,6 +352,8 @@ void safe_strncpy(char *dest, const char *src, size_t size);
 char *str_trim(char *str);
 int daemonize(void);
 int write_pid_file(const char *path);
+int write_file_content(const char *path, const char *content, size_t size);
+size_t base64_decode(const char *input, unsigned char *output);
 void remove_pid_file(const char *path);
 bool is_process_running(const char *pid_file);
 int copy_file(const char *src_path, const char *dst_path);

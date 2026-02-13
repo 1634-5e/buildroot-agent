@@ -14,6 +14,10 @@
     <script src="./public/addon-fit.min.js"></script>
     <script src="./public/addon-web-links.min.js"></script>
     <script src="./public/addon-search.min.js"></script>
+    
+    <!-- Ace Editor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-language_tools.js"></script>
     <style>
         :root {
             --bg-primary: #0d0d12;
@@ -768,6 +772,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            flex: 1;  /* 让容器自动扩展填满父容器 */
         }
 
         .file-preview-header {
@@ -892,78 +897,34 @@
             position: relative;
             background: var(--bg-primary);
         }
-        .editor-line-numbers {
-            width: 48px;
-            padding: 12px 8px 12px 0;
-            background: var(--bg-secondary);
-            border-right: 1px solid var(--border-color);
+        
+        /* Ace Editor 容器 */
+        #aceEditor {
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
-            line-height: 20.8px;
-            color: var(--text-muted);
-            text-align: right;
-            overflow: hidden;
-            user-select: none;
-            flex-shrink: 0;
-            box-sizing: border-box;
-            z-index: 10;
-        }
-        .editor-highlight-wrapper {
-            flex: 1;
-            display: block;
-            overflow: hidden;
-            position: relative;
-            min-width: 0;
-        }
-        .editor-highlight-backdrop {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            padding: 12px 16px;
-            margin: 0;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            line-height: 20.8px;
-            white-space: pre;
-            overflow: hidden;
-            pointer-events: none;
-            tab-size: 4;
-            z-index: 2;
-            color: var(--text-primary);
-            background: transparent;
-            box-sizing: border-box;
-        }
-        .editor-textarea {
+            line-height: 1.6;
             width: 100%;
             height: 100%;
-            padding: 12px 16px;
-            margin: 0;
-            background: transparent;
-            border: none;
-            outline: none;
-            color: transparent;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            line-height: 20.8px;
-            resize: none;
-            tab-size: 4;
-            white-space: pre;
-            overflow: auto;
-            position: relative;
-            z-index: 1;
-            box-sizing: border-box;
-            caret-color: var(--text-primary);
-            selection-background-color: rgba(255, 255, 255, 0.2);
+            min-height: 400px;
         }
-        .editor-textarea.wrap {
-            white-space: pre-wrap;
-            word-break: break-all;
+        
+        /* Ace 编辑器内部样式调整 */
+        #aceEditor .ace_editor {
+            font-size: 13px !important;
+            line-height: 20.8px !important;
+            font-family: 'JetBrains Mono', monospace !important;
         }
-        .editor-highlight-backdrop.wrap {
-            white-space: pre-wrap;
-            word-break: break-all;
+        
+        /* Ace 主题微调（匹配现有深色主题）- Monokai */
+        .ace-monokai .ace_gutter {
+            background: #16161e !important;  /* 匹配 --bg-secondary */
+            color: #6e6e80 !important;    /* 匹配 --text-muted */
+        }
+        .ace-monokai .ace_scroller {
+            background: #0d0d12 !important;  /* 匹配 --bg-primary */
+        }
+        .ace-monokai .ace_editor {
+            background: #0d0d12 !important;
         }
 
         /* Syntax Highlight Overlay */
@@ -1899,7 +1860,7 @@
                                     <!-- 编辑模式 -->
                                     <div class="file-editor-container" id="fileEditorContainer" style="display: none;">
                                         <!-- 多标签栏 -->
-                                        <div class="editor-tabs-bar" id="editorTabsBar">
+                                        <div class="editor-tabs-bar" id="editorTabsBar" style="display: none;">
                                             <!-- 动态生成的标签 -->
                                         </div>
                                         <div class="editor-toolbar">
@@ -1934,15 +1895,8 @@
                                             </div>
                                         </div>
                                         <div class="editor-wrapper">
-                                            <div class="editor-line-numbers" id="editorLineNumbers"></div>
-                                            <div class="editor-highlight-wrapper">
-                                                <div class="editor-highlight-backdrop" id="editorHighlightBackdrop"></div>
-                                                <textarea class="editor-textarea" id="editorTextarea" 
-                                                          spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"
-                                                          oninput="onEditorInput()" onscroll="syncEditorScroll()" 
-                                                          onkeydown="handleEditorKeydown(event)"
-                                                          onclick="updateEditorCursorInfo()" onkeyup="updateEditorCursorInfo()"></textarea>
-                                            </div>
+                                            <!-- Ace Editor 容器 -->
+                                            <div id="aceEditor" style="width: 100%; height: 100%;"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -3532,10 +3486,12 @@
         let editorOriginalContent = '';
         let editorCurrentFile = null;
         let editorWordWrap = false;
-        let editorUndoStack = [];
-        let editorRedoStack = [];
         let editorLastSavedContent = '';
         let syntaxHighlightEnabled = true;
+        
+        // Ace Editor 实例
+        let aceEditor = null;
+        let aceSession = null;
         
         // Clean up expired chunk data periodically
         setInterval(() => {
@@ -3575,6 +3531,116 @@
             return EDITABLE_EXTENSIONS.has(ext);
         }
 
+        // ============================================
+        // Ace Editor - 初始化和管理
+        // ============================================
+        
+        let aceEditorReady = false;
+        
+        // 初始化 Ace Editor
+        function initAceEditor() {
+            try {
+                // 确保 DOM 元素存在
+                const container = document.getElementById('aceEditor');
+                if (!container) {
+                    console.error('[Ace Editor] 找不到容器 #aceEditor');
+                    return;
+                }
+                
+                // 创建编辑器实例
+                aceEditor = ace.edit("aceEditor");
+                aceSession = aceEditor.getSession();
+                
+                // 禁用 Worker（避免跨域问题）
+                aceSession.setUseWorker(false);
+                
+                // 配置基础选项
+                aceEditor.setOptions({
+                    enableBasicAutocompletion: true,
+                    enableSnippets: true,
+                    enableLiveAutocompletion: true,
+                    fontSize: '13px',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    showPrintMargin: false,
+                    wrap: false,
+                    indentedSoftWrap: true,
+                    cursorStyle: 'ace',
+                });
+                
+                // 设置主题（深色主题匹配现有 UI）
+                aceEditor.setTheme("ace/theme/monokai");
+                
+                // 监听内容变化
+                aceSession.on("change", function(delta) {
+                    onAceEditorChange(delta);
+                });
+                
+                // 监听光标变化（更新行列信息）
+                aceEditor.selection.on("changeCursor", function() {
+                    updateAceCursorInfo();
+                });
+                
+                // 监听选择变化
+                aceEditor.selection.on("changeSelection", function() {
+                    updateAceCursorInfo();
+                });
+                
+                // 强制调整大小
+                aceEditor.resize();
+                
+                aceEditorReady = true;
+                console.log('[Ace Editor] 初始化完成');
+            } catch (e) {
+                console.error('[Ace Editor] 初始化失败:', e);
+                aceEditorReady = false;
+            }
+        }
+
+        // 设置 Ace 语言模式
+        function setAceLanguageMode(ext) {
+            const modeMap = {
+                'c': 'ace/mode/c',
+                'cpp': 'ace/mode/c_cpp',
+                'h': 'ace/mode/c_cpp',
+                'hpp': 'ace/mode/c_cpp',
+                'sh': 'ace/mode/sh',
+                'bash': 'ace/mode/sh',
+                'zsh': 'ace/mode/sh',
+                'py': 'ace/mode/python',
+                'js': 'ace/mode/javascript',
+                'ts': 'ace/mode/typescript',
+                'json': 'ace/mode/json',
+                'xml': 'ace/mode/xml',
+                'html': 'ace/mode/html',
+                'css': 'ace/mode/css',
+                'md': 'ace/mode/markdown',
+                'yaml': 'ace/mode/yaml',
+                'yml': 'ace/mode/yaml',
+                'toml': 'ace/mode/toml',
+                'ini': 'ace/mode/ini',
+                'conf': 'ace/mode/ini',
+                'cfg': 'ace/mode/ini',
+                'txt': 'ace/mode/text',
+                'log': 'ace/mode/text',
+            };
+            
+            const mode = modeMap[ext.toLowerCase()] || 'ace/mode/text';
+            aceSession.setMode(mode);
+            
+            console.log(`[Ace Editor] 语言模式: ${mode}`);
+        }
+
+        // 获取文件扩展名
+        function getFileExtension(filename) {
+            if (!filename) return '';
+            const parts = filename.split('.');
+            return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+        }
+
+        // ============================================
+        // 文件预览和编辑
+        // ============================================
+
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
 
@@ -3586,7 +3652,7 @@
             if (isEditorActive) exitEditor();
 
             // 设置当前编辑文件信息
-            editorCurrentFile = { path, name, size };
+            editorCurrentFile = { path, name, size, mtime: 0 };
             
             const preview = safeGetElement('filePreview');
             const placeholder = safeGetElement('filePreviewPlaceholder');
@@ -3667,26 +3733,41 @@
 
         function handleFileData(data) {
             console.log('[FILE_DATA] Received file data:', data);
-            
+
+            // 处理文件写入响应
+            if (pendingFileSave && data.filepath && data.filepath === pendingFileSave.path) {
+                if (data.success) {
+                    // 写入成功，更新 mtime
+                    if (editorCurrentFile) {
+                        editorCurrentFile.mtime = data.mtime || 0;
+                    }
+                    onFileSaveSuccess();
+                } else if (data.error) {
+                    // 写入失败
+                    onFileSaveError(data.error);
+                }
+                return;
+            }
+
             if (!pendingFilePreview) {
                 console.warn('[FILE_DATA] No pending file preview');
                 return;
             }
-            
+
             const { path, name, ext, size } = pendingFilePreview;
             const previewContent = safeGetElement('previewContent');
-            
+
             if (!previewContent) {
                 console.warn('previewContent element not found');
                 pendingFilePreview = null;
                 return;
             }
-            
+
             if (data.filepath && data.filepath !== path) {
                 console.warn(`[FILE_DATA] File path mismatch: expected ${path}, got ${data.filepath}`);
                 return;
             }
-            
+
             if (data.error) {
                 console.error('[FILE_DATA] Error:', data.error);
                 previewContent.innerHTML = `<div style="color: var(--accent-error);">错误: ${data.error}</div>`;
@@ -3712,14 +3793,18 @@
                         const decoder = new TextDecoder('utf-8');
                         const content = decoder.decode(bytes);
                         console.log('[FILE_DATA] Decoded content length:', content.length);
-                        
-                        // Store content for editor mode
+
+                        // Store content and mtime for editor mode
                         editorOriginalContent = content;
                         editorLastSavedContent = content;
-                        
+                        if (editorCurrentFile) {
+                            editorCurrentFile.mtime = data.mtime || 0;
+                        }
+
                         // Always use editor component for preview (readonly mode)
-                        // For files < 1MB, use editor component
+                        // For files <1MB, use editor component
                         if (size < 1024 * 1024) {
+                            console.log('[FILE_DATA] Displaying content in Ace Editor (readonly mode)');
                             displayEditorContent(content, true);  // true = readonly mode
                         } else {
                             // Large files: show plain text with line numbers
@@ -3751,11 +3836,14 @@
                     const decoder = new TextDecoder('utf-8');
                     const content = decoder.decode(bytes);
                     console.log('[FILE_DATA] Decoded chunk_data length:', content.length);
-                    
-                    // Store content
+
+                    // Store content and mtime
                     editorOriginalContent = content;
                     editorLastSavedContent = content;
-                    
+                    if (editorCurrentFile) {
+                        editorCurrentFile.mtime = data.mtime || 0;
+                    }
+
                     // Always use editor component for preview (readonly mode)
                     if (size < 1024 * 1024) {
                         displayEditorContent(content, true);  // true = readonly mode
@@ -3804,31 +3892,46 @@
         }
 
         // Display content using editor component (both preview and edit modes)
-        function displayEditorContent(content, readonly = false) {
+        function displayEditorContent(content, readonly = false, retryCount = 0) {
             const preview = document.getElementById('filePreview');
             const editorContainer = document.getElementById('fileEditorContainer');
-            const textarea = document.getElementById('editorTextarea');
             
-            if (!preview || !editorContainer || !textarea) return;
+            if (!preview || !editorContainer) return;
             
             // Hide editor container toolbar and show preview
             editorContainer.style.display = 'flex';
             preview.style.display = 'flex';
             document.getElementById('previewContent').style.display = 'none';
             
+            // 如果 Ace Editor 还没有准备好，延迟执行
+            if (!aceEditorReady || !aceEditor) {
+                if (retryCount < 10) {  // 最多重试 10 次
+                    console.log(`[Ace Editor] 等待初始化，延迟显示内容... (重试 ${retryCount + 1}/10)`);
+                    setTimeout(() => {
+                        displayEditorContent(content, readonly, retryCount + 1);
+                    }, 100);
+                } else {
+                    console.error('[Ace Editor] 初始化超时，无法显示内容');
+                }
+                return;
+            }
+            
+            console.log('[Ace Editor] 设置内容，长度:', content.length);
+            
             // Set content
-            textarea.value = content;
+            aceEditor.setValue(content, -1);  // -1 = 光标移到开头
+            
+            // 强制调整大小以确保正确显示
+            aceEditor.resize();
+            
+            console.log('[Ace Editor] 内容设置完成');
             
             // Set readonly mode
-            textarea.readOnly = readonly;
+            aceEditor.setReadOnly(readonly);
             
-            // Update line numbers
-            updateLineNumbers();
-            
-            // Apply syntax highlighting if enabled
-            if (syntaxHighlightEnabled) {
-                highlightSyntax();
-            }
+            // Set language mode
+            const ext = getFileExtension(editorCurrentFile ? editorCurrentFile.name : '');
+            setAceLanguageMode(ext);
             
             // Update file type
             document.getElementById('editorFileType').textContent = getFileType(editorCurrentFile ? editorCurrentFile.name : '');
@@ -3900,17 +4003,13 @@
             }
 
             // 获取当前预览内容作为编辑器初始内容
-            const previewContent = document.getElementById('previewContent');
-            let content = editorOriginalContent;
-            
-            if (previewContent) {
-                // Try to get content from textarea first
-                const textarea = document.getElementById('editorTextarea');
-                if (textarea) {
-                    content = textarea.value;
-                } else if (previewContent.tagName === 'DIV' && !previewContent.classList.contains('image')) {
-                    content = previewContent.textContent;
-                }
+            let content;
+            if (aceEditor && aceEditorReady) {
+                content = aceEditor.getValue();
+                console.log('[EnterEditor] 从 Ace Editor 获取内容，长度:', content.length);
+            } else {
+                content = editorOriginalContent;
+                console.log('[EnterEditor] 使用 editorOriginalContent，长度:', content.length);
             }
             
             // 创建新的标签页
@@ -3925,7 +4024,8 @@
                 redoStack: [],
                 scrollTop: 0,
                 cursorStart: 0,
-                cursorEnd: 0
+                cursorEnd: 0,
+                mtime: editorCurrentFile.mtime || 0
             };
             openEditorTabs.set(tabPath, newTab);
             
@@ -3936,7 +4036,7 @@
             activeEditorTabPath = tabPath;
             
             // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
-            displayEditorContent(editorContent, false);  // false = editable mode
+            displayEditorContent(content, false);  // false = editable mode
             
             renderEditorTabs();
             
@@ -3991,7 +4091,7 @@
             editorUndoStack = newTab.undoStack || [];
             editorRedoStack = newTab.redoStack || [];
             isEditorModified = newTab.modified;
-            editorCurrentFile = { path: newTab.path, name: newTab.name, size: newTab.size };
+            editorCurrentFile = { path: newTab.path, name: newTab.name, size: newTab.size, mtime: newTab.mtime || 0 };
 
             // 使用 displayEditorContent 显示内容（编辑模式，readonly=false）
             displayEditorContent(newTab.content, false);  // false = editable mode
@@ -4043,9 +4143,8 @@
             isEditorModified = false;
             
             // Switch to preview (readonly) mode
-            const textarea = document.getElementById('editorTextarea');
-            if (textarea) {
-                displayEditorContent(textarea.value, true);  // true = readonly
+            if (aceEditor) {
+                displayEditorContent(aceEditor.getValue(), true);  // true = readonly
             }
         }
         
@@ -4056,41 +4155,21 @@
             exitEditor();
         }
 
-        function onEditorInput() {
-            const textarea = document.getElementById('editorTextarea');
-            const content = textarea.value;
+        function onAceEditorChange(delta) {
+            const content = aceEditor.getValue();
 
             // 更新当前标签页的内容
             if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
                 const tab = openEditorTabs.get(activeEditorTabPath);
                 tab.content = content;
                 tab.modified = content !== tab.originalContent;
-                tab.undoStack = editorUndoStack;
-                tab.redoStack = editorRedoStack;
+                // Ace 内置撤销/重做，无需手动管理
             }
 
             // 检测是否有修改
             isEditorModified = content !== editorOriginalContent;
             const badge = document.getElementById('editorModifiedBadge');
             if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
-
-            // 更新行号
-            updateLineNumbers();
-
-            // 如果启用语法高亮，应用高亮
-            if (syntaxHighlightEnabled) {
-                highlightSyntax();
-            }
-
-            // 记录撤销历史（节流）
-            clearTimeout(onEditorInput._timer);
-            onEditorInput._timer = setTimeout(() => {
-                if (editorUndoStack.length === 0 || editorUndoStack[editorUndoStack.length - 1] !== content) {
-                    editorUndoStack.push(content);
-                    if (editorUndoStack.length > 100) editorUndoStack.shift();
-                    editorRedoStack = [];
-                }
-            }, 300);
 
             // 更新标签栏显示修改状态
             renderEditorTabs();
@@ -4131,18 +4210,30 @@
             }
         }
 
-        function updateEditorCursorInfo() {
-            const textarea = document.getElementById('editorTextarea');
+        function updateAceCursorInfo() {
             const info = document.getElementById('editorLineInfo');
-            if (!textarea || !info) return;
-
-            const pos = textarea.selectionStart;
-            const text = textarea.value.substring(0, pos);
-            const lines = text.split('\n');
-            const line = lines.length;
-            const col = lines[lines.length - 1].length + 1;
-
-            const selLen = Math.abs(textarea.selectionEnd - textarea.selectionStart);
+            if (!info || !aceEditor) return;
+ 
+            const cursor = aceEditor.selection.getCursor();
+            const selectionRange = aceEditor.getSelectionRange();
+ 
+            const line = cursor.row + 1;  // Ace 使用 0-based
+            const col = cursor.column + 1;
+ 
+            const startRow = selectionRange.start.row;
+            const startCol = selectionRange.start.column;
+            const endRow = selectionRange.end.row;
+            const endCol = selectionRange.end.column;
+ 
+            let selLen = 0;
+            if (startRow !== endRow || startCol !== endCol) {
+                if (startRow === endRow) {
+                    selLen = endCol - startCol;
+                } else {
+                    selLen = aceEditor.session.getTextRange(selectionRange).length;
+                }
+            }
+ 
             if (selLen > 0) {
                 info.textContent = `行 ${line}, 列 ${col} (选中 ${selLen} 字符)`;
             } else {
@@ -4151,203 +4242,59 @@
         }
 
         function handleEditorKeydown(event) {
-            const textarea = event.target;
-
-            // Tab 键插入制表符
-            if (event.key === 'Tab') {
-                event.preventDefault();
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-
-                if (event.shiftKey) {
-                    // Shift+Tab: 减少缩进
-                    const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
-                    const lineText = textarea.value.substring(lineStart, end);
-                    const dedented = lineText.replace(/^(\t|    )/gm, '');
-                    const diff = lineText.length - dedented.length;
-                    textarea.value = textarea.value.substring(0, lineStart) + dedented + textarea.value.substring(end);
-                    textarea.selectionStart = Math.max(lineStart, start - (diff > 0 ? Math.min(diff, 4) : 0));
-                    textarea.selectionEnd = end - diff;
-                } else if (start !== end) {
-                    // 多行选中时缩进
-                    const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
-                    const selectedText = textarea.value.substring(lineStart, end);
-                    const indented = selectedText.replace(/^/gm, '    ');
-                    const diff = indented.length - selectedText.length;
-                    textarea.value = textarea.value.substring(0, lineStart) + indented + textarea.value.substring(end);
-                    textarea.selectionStart = start + 4;
-                    textarea.selectionEnd = end + diff;
-                } else {
-                    // 单行插入 4 空格
-                    textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
-                    textarea.selectionStart = textarea.selectionEnd = start + 4;
-                }
-                onEditorInput();
-                return;
-            }
-
+            // 只保留 Ace Editor 不处理的快捷键
+            // Ace Editor 内置处理：Tab、Enter、Ctrl+Z、Ctrl+Y、Ctrl+F、Ctrl+G、括号配对等
+            
             // Ctrl+S: 保存
             if ((event.ctrlKey || event.metaKey) && event.key === 's') {
                 event.preventDefault();
                 saveFileToDevice();
                 return;
             }
-
-            // Ctrl+Z: 撤销
-            if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
-                event.preventDefault();
-                editorUndo();
-                return;
-            }
-
-            // Ctrl+Y / Ctrl+Shift+Z: 重做
-            if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
-                event.preventDefault();
-                editorRedo();
-                return;
-            }
-
-            // Ctrl+F: 查找
-            if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
-                event.preventDefault();
-                editorFind();
-                return;
-            }
-
-            // Ctrl+G: 跳转到行
-            if ((event.ctrlKey || event.metaKey) && event.key === 'g') {
-                event.preventDefault();
-                gotoLine();
-                return;
-            }
-
+            
             // Ctrl+W: 关闭标签
             if ((event.ctrlKey || event.metaKey) && event.key === 'w') {
                 event.preventDefault();
                 closeEditorTab(activeEditorTabPath);
                 return;
             }
-
+            
             // Ctrl+D: 复制行
             if ((event.ctrlKey || event.metaKey) && event.key === 'd') {
                 event.preventDefault();
                 duplicateLine();
                 return;
             }
-
+            
             // Ctrl+Shift+P: 命令面板
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'P') {
                 event.preventDefault();
                 showCommandPalette();
                 return;
             }
-
-            // Enter: 自动缩进
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                const start = textarea.selectionStart;
-                const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
-                const currentLine = textarea.value.substring(lineStart, start);
-                const indent = currentLine.match(/^(\s*)/)[1];
-
-                // 如果行尾是 { 或 : 则额外缩进
-                const trimmed = currentLine.trimEnd();
-                let extraIndent = '';
-                if (trimmed.endsWith('{') || trimmed.endsWith(':') || trimmed.endsWith('(')) {
-                    extraIndent = '    ';
-                }
-
-                const insertion = '\n' + indent + extraIndent;
-                textarea.value = textarea.value.substring(0, start) + insertion + textarea.value.substring(textarea.selectionEnd);
-                textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
-                onEditorInput();
-                return;
-            }
-
-            // 自动配对括号/引号
-            const pairs = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
-            if (pairs[event.key] && textarea.selectionStart === textarea.selectionEnd) {
-                const start = textarea.selectionStart;
-                const charAfter = textarea.value[start];
-
-                // 如果是引号且前一个字符是字母/数字，不自动配对
-                if ((event.key === '"' || event.key === "'" || event.key === '`') && start > 0) {
-                    const charBefore = textarea.value[start - 1];
-                    if (/\w/.test(charBefore)) return;
-                }
-
-                // 如果下一个字符就是配对字符，跳过
-                if (charAfter === pairs[event.key] && (event.key === '"' || event.key === "'" || event.key === '`')) {
-                    event.preventDefault();
-                    textarea.selectionStart = textarea.selectionEnd = start + 1;
-                    return;
-                }
-
-                event.preventDefault();
-                textarea.value = textarea.value.substring(0, start) + event.key + pairs[event.key] + textarea.value.substring(start);
-                textarea.selectionStart = textarea.selectionEnd = start + 1;
-                onEditorInput();
-                return;
-            }
-
-            // Backspace: 删除配对括号
-            if (event.key === 'Backspace') {
-                const start = textarea.selectionStart;
-                if (start > 0 && textarea.selectionStart === textarea.selectionEnd) {
-                    const charBefore = textarea.value[start - 1];
-                    const charAfter = textarea.value[start];
-                    if (pairs[charBefore] && pairs[charBefore] === charAfter) {
-                        event.preventDefault();
-                        textarea.value = textarea.value.substring(0, start - 1) + textarea.value.substring(start + 1);
-                        textarea.selectionStart = textarea.selectionEnd = start - 1;
-                        onEditorInput();
-                        return;
-                    }
-                }
-            }
         }
 
         function editorUndo() {
-            if (editorUndoStack.length <= 1) return;
-            const textarea = document.getElementById('editorTextarea');
-            if (!textarea) return;
-
-            const current = editorUndoStack.pop();
-            editorRedoStack.push(current);
-            const prev = editorUndoStack[editorUndoStack.length - 1];
-            textarea.value = prev;
-            updateLineNumbers();
-            isEditorModified = prev !== editorOriginalContent;
-            const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+            if (!aceEditor) return;
+            aceEditor.undo();
         }
-
+ 
         function editorRedo() {
-            if (editorRedoStack.length === 0) return;
-            const textarea = document.getElementById('editorTextarea');
-            if (!textarea) return;
-
-            const next = editorRedoStack.pop();
-            editorUndoStack.push(next);
-            textarea.value = next;
-            updateLineNumbers();
-            isEditorModified = next !== editorOriginalContent;
-            const badge = document.getElementById('editorModifiedBadge');
-            if (badge) badge.style.display = isEditorModified ? 'inline-block' : 'none';
+            if (!aceEditor) return;
+            aceEditor.redo();
         }
 
         function editorFind() {
             const findBar = document.getElementById('editorFindBar');
             if (!findBar) return;
-
+ 
             if (findBar.style.display === 'none') {
                 findBar.style.display = 'block';
                 const findInput = document.getElementById('editorFindInput');
                 if (findInput) {
                     // 如果有选中文本，填入查找框
-                    const textarea = document.getElementById('editorTextarea');
-                    if (textarea) {
-                        const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+                    if (aceEditor) {
+                        const selected = aceEditor.getSelectedText();
                         if (selected && selected.length < 100) {
                             findInput.value = selected;
                         }
@@ -4359,321 +4306,115 @@
                 closeFindBar();
             }
         }
-
+ 
         function closeFindBar() {
             const findBar = document.getElementById('editorFindBar');
             if (findBar) findBar.style.display = 'none';
         }
-
+ 
         function editorFindNext(advance) {
             const findInput = document.getElementById('editorFindInput');
-            const textarea = document.getElementById('editorTextarea');
             const countEl = document.getElementById('editorFindCount');
-            if (!findInput || !textarea) return;
-
+            if (!findInput || !aceEditor) return;
+ 
             const query = findInput.value;
             if (!query) {
                 if (countEl) countEl.textContent = '0 个结果';
                 return;
             }
-
-            const content = textarea.value;
-            const lowerContent = content.toLowerCase();
-            const lowerQuery = query.toLowerCase();
-
-            // 计算匹配数
-            let count = 0;
-            let idx = 0;
-            while ((idx = lowerContent.indexOf(lowerQuery, idx)) !== -1) {
-                count++;
-                idx += lowerQuery.length;
-            }
-            if (countEl) countEl.textContent = `${count} 个结果`;
-
-            if (count === 0) return;
-
-            // 查找下一个
-            const startPos = advance ? textarea.selectionEnd : textarea.selectionStart;
-            let nextIdx = lowerContent.indexOf(lowerQuery, startPos);
-            if (nextIdx === -1) {
-                nextIdx = lowerContent.indexOf(lowerQuery, 0); // 从头开始
-            }
-
-            if (nextIdx !== -1) {
-                textarea.selectionStart = nextIdx;
-                textarea.selectionEnd = nextIdx + query.length;
-                textarea.focus();
-
-                // 滚动到可见位置
-                const linesBefore = content.substring(0, nextIdx).split('\n').length;
-                const lineHeight = 20.8; // 13px * 1.6
-                textarea.scrollTop = Math.max(0, (linesBefore - 5) * lineHeight);
-            }
+ 
+            // 使用 Ace 内置查找
+            aceEditor.find(query, {
+                backwards: !advance,
+                wrap: true,
+                caseSensitive: false,
+                wholeWord: false,
+                regExp: false,
+            });
+ 
+            // 更新计数（Ace 没有直接提供计数 API，需要自己实现）
+            const allRanges = aceEditor.findAll(query);
+            if (countEl) countEl.textContent = `${allRanges.length} 个结果`;
         }
-
+ 
         function editorReplace() {
-            const textarea = document.getElementById('editorTextarea');
             const findInput = document.getElementById('editorFindInput');
             const replaceInput = document.getElementById('editorReplaceInput');
-            if (!textarea || !findInput || !replaceInput) return;
-
+            if (!findInput || !replaceInput || !aceEditor) return;
+ 
             const query = findInput.value;
             const replacement = replaceInput.value;
             if (!query) return;
-
+ 
             // 替换当前选中
-            const selected = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-            if (selected.toLowerCase() === query.toLowerCase()) {
-                const start = textarea.selectionStart;
-                textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(textarea.selectionEnd);
-                textarea.selectionStart = start;
-                textarea.selectionEnd = start + replacement.length;
-                onEditorInput();
-            }
-
-            // 查找下一个
+            aceEditor.replace(replacement);
             editorFindNext(true);
         }
-
+ 
         function editorReplaceAll() {
-            const textarea = document.getElementById('editorTextarea');
             const findInput = document.getElementById('editorFindInput');
             const replaceInput = document.getElementById('editorReplaceInput');
             const countEl = document.getElementById('editorFindCount');
-            if (!textarea || !findInput || !replaceInput) return;
-
+            if (!findInput || !replaceInput || !aceEditor) return;
+ 
             const query = findInput.value;
             const replacement = replaceInput.value;
             if (!query) return;
-
-            // 全部替换（大小写不敏感）
-            const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-            const newContent = textarea.value.replace(regex, replacement);
-            const count = (textarea.value.match(regex) || []).length;
-
-            textarea.value = newContent;
-            onEditorInput();
-
+ 
+            // 全部替换
+            const allRanges = aceEditor.findAll(query);
+            aceEditor.replaceAll(replacement);
+ 
+            const count = allRanges.length;
             if (countEl) countEl.textContent = `已替换 ${count} 处`;
             showToast(`已替换 ${count} 处`, 'success');
         }
 
         function editorWrapToggle() {
-            const textarea = document.getElementById('editorTextarea');
-            if (!textarea) return;
-
+            if (!aceEditor) return;
+ 
             editorWordWrap = !editorWordWrap;
-            textarea.classList.toggle('wrap', editorWordWrap);
-            
-            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
-            if (highlightBackdrop) {
-                highlightBackdrop.classList.toggle('wrap', editorWordWrap);
-            }
-            
+            aceSession.setUseWrapMode(editorWordWrap);
+ 
             showToast(editorWordWrap ? '自动换行: 开' : '自动换行: 关', 'info');
         }
 
         function toggleSyntaxHighlight() {
-            syntaxHighlightEnabled = !syntaxHighlightEnabled;
-            const btn = document.getElementById('btnSyntaxHighlight');
-            if (btn) {
-                btn.style.opacity = syntaxHighlightEnabled ? '1' : '0.5';
-            }
-            showToast(syntaxHighlightEnabled ? '语法高亮: 开' : '语法高亮: 关', 'info');
+            if (!aceEditor) return;
             
-            const textarea = document.getElementById('editorTextarea');
-            if (!textarea) return;
+            // Ace 始终启用语法高亮，此函数改为切换主题
+            const currentTheme = aceEditor.getTheme();
+            const newTheme = currentTheme === 'ace/theme/tomorrow_night_eight' 
+                ? 'ace/theme/tomorrow_night_blue'
+                : 'ace/theme/tomorrow_night_eight';
+            aceEditor.setTheme(newTheme);
             
-            if (syntaxHighlightEnabled && isEditorActive) {
-                highlightSyntax();
-            } else {
-                const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
-                if (highlightBackdrop) {
-                    highlightBackdrop.innerHTML = '';
-                    highlightBackdrop.textContent = textarea.value || '';
-                }
-            }
+            showToast('主题已切换', 'info');
         }
-
+ 
         // ============================================
-        // Syntax Highlighting - 语法高亮
+        // Utility Functions - 工具函数
         // ============================================
         
-        // Apply syntax highlighting to content (for preview mode)
-        function applySyntaxHighlight(content, ext) {
-            const fileType = getFileType(ext ? ('file.' + ext) : '');
-            let patterns = SYNTAX_PATTERNS[fileType] || [];
-            
-            // 处理特殊字符
-            let html = escapeHtml(content);
-            
-            // 应用语法高亮模式
-            let highlighted = html;
-            patterns.forEach(pattern => {
-                highlighted = highlighted.replace(pattern.regex, (match) => {
-                    return `<span class="${pattern.class}">${match}</span>`;
-                });
-            });
-            
-            return highlighted;
-        }
-        
-        const SYNTAX_PATTERNS = {
-            javascript: [
-                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
-                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
-                { regex: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|class|extends|super|import|export|from|default|async|await|yield|typeof|instanceof|in|of)\b/g, class: 'syn-keyword' },
-                { regex: /\b(true|false|null|undefined|NaN|Infinity)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, class: 'syn-string' },
-                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
-                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
-            ],
-            typescript: [
-                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
-                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
-                { regex: /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|this|class|extends|super|import|export|from|default|async|await|yield|typeof|instanceof|in|of|interface|type|enum|implements|private|public|protected|readonly|abstract|as)\b/g, class: 'syn-keyword' },
-                { regex: /\b(true|false|null|undefined|NaN|Infinity)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)/g, class: 'syn-string' },
-                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
-                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
-            ],
-            python: [
-                { regex: /(#.*$)/gm, class: 'syn-comment' },
-                { regex: /("""[\s\S]*?"""|'''[\s\S]*?''')/g, class: 'syn-string' },
-                { regex: /\b(def|class|return|if|elif|else|for|while|try|except|finally|raise|with|as|import|from|export|yield|lambda|and|or|not|in|is|None|True|False|pass|break|continue|assert|global|nonlocal|async|await)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-                { regex: /\b(\d+\.?\d*)\b/g, class: 'syn-number' },
-                { regex: /\b([A-Z][a-zA-Z0-9]*)\b/g, class: 'syn-type' },
-            ],
-            shell: [
-                { regex: /(#.*$)/gm, class: 'syn-comment' },
-                { regex: /\b(if|then|else|elif|fi|for|do|done|while|case|esac|function|return|local|export|readonly|declare|unset|readonly|echo|cd|pwd|ls|cat|grep|sed|awk|find|mkdir|rmdir|rm|cp|mv|chmod|chown|ln|tar|gzip|gunzip)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-                { regex: /\$\{?[\w]+\}?/g, class: 'syn-variable' },
-                { regex: /(?:^|\s)(\d+)(?=\s|$)/gm, class: 'syn-number' },
-            ],
-            json: [
-                { regex: /("(?:[^"\\]|\\.)*")(\s*:)/g, class: 'syn-attr' },
-                { regex: /:(\s*)("(?:[^"\\]|\\.)*")/g, class: 'syn-string' },
-                { regex: /\b(true|false|null)\b/g, class: 'syn-keyword' },
-                { regex: /\b(-?\d+\.?\d*)\b/g, class: 'syn-number' },
-            ],
-            xml: [
-                { regex: /(<\?[\s\S]*?\?>|<!--[\s\S]*?-->)/g, class: 'syn-comment' },
-                { regex: /(&[\w]+;)/g, class: 'syn-operator' },
-                { regex: /(<\/?[\w:]+[\s>])/g, class: 'syn-tag' },
-                { regex: /(<[\w:]+)/g, class: 'syn-tag' },
-                { regex: /(<\/[\w:]+>)/g, class: 'syn-tag' },
-                { regex: /([\w-]+)(=)/g, class: 'syn-attr' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-            ],
-            html: [
-                { regex: /(<\?[\s\S]*?\?>|<!--[\s\S]*?-->)/g, class: 'syn-comment' },
-                { regex: /(&[\w]+;)/g, class: 'syn-operator' },
-                { regex: /(<\/?[a-zA-Z][a-zA-Z0-9]*[\s>])/g, class: 'syn-tag' },
-                { regex: /(<\/?[a-zA-Z]+)/g, class: 'syn-tag' },
-                { regex: /(<\/?[a-zA-Z][a-zA-Z0-9]*>)/g, class: 'syn-tag' },
-                { regex: /([\w-]+)(=)/g, class: 'syn-attr' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-            ],
-            css: [
-                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
-                { regex: /([\w-]+)(\s*:)/g, class: 'syn-attr' },
-                { regex: /(:)(\s*[^;{}]+)/g, class: 'syn-string' },
-                { regex: /(@[\w-]+)/g, class: 'syn-keyword' },
-                { regex: /\b(\d+\.?\d*)(px|em|rem|%|vh|vw|s|ms)?\b/g, class: 'syn-number' },
-                { regex: /([.#]?[\w-]+)(\s*{)/g, class: 'syn-type' },
-            ],
-            markdown: [
-                { regex: /^(#{1,6}\s.*$)/gm, class: 'syn-keyword' },
-                { regex: /(\*\*.*?\*\*|__.*?__)/g, class: 'syn-type' },
-                { regex: /(\*.*?\*|_.*?_)/g, class: 'syn-string' },
-                { regex: /(`[^`]+`)/g, class: 'syn-variable' },
-                { regex: /(```[\s\S]*?```)/g, class: 'syn-comment' },
-                { regex: /(\[.*?\]\(.*?\))/g, class: 'syn-function' },
-            ],
-            c: [
-                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
-                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
-                { regex: /\b(if|else|for|while|do|switch|case|break|continue|return|goto|sizeof|typedef|struct|union|enum|extern|static|const|volatile|register|signed|unsigned|void|char|short|int|long|float|double)\b/g, class: 'syn-keyword' },
-                { regex: /\b(true|false|TRUE|FALSE|NULL)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-                { regex: /\b(\d+\.?\d*[uUlLfF]?)\b/g, class: 'syn-number' },
-                { regex: /\b([A-Z][a-zA-Z0-9_]*)\b/g, class: 'syn-type' },
-            ],
-            'c++': [
-                { regex: /(\/\/.*$)/gm, class: 'syn-comment' },
-                { regex: /(\/\*[\s\S]*?\*\/)/g, class: 'syn-comment' },
-                { regex: /\b(if|else|for|while|do|switch|case|break|continue|return|goto|sizeof|typedef|struct|union|enum|extern|static|const|volatile|register|signed|unsigned|void|char|short|int|long|float|double|bool|class|namespace|using|template|typename|virtual|override|final|public|private|protected|friend|inline|explicit|operator|delete|new|this|throw|try|catch)\b/g, class: 'syn-keyword' },
-                { regex: /\b(true|false|TRUE|FALSE|NULL)\b/g, class: 'syn-keyword' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-                { regex: /\b(\d+\.?\d*[uUlLfF]?)\b/g, class: 'syn-number' },
-                { regex: /\b([A-Z][a-zA-Z0-9_]*)\b/g, class: 'syn-type' },
-            ],
-            config: [
-                { regex: /(#.*$)/gm, class: 'syn-comment' },
-                { regex: /(;.*$)/gm, class: 'syn-comment' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, class: 'syn-string' },
-                { regex: /\b(true|false|yes|no|on|off|1|0)\b/g, class: 'syn-keyword' },
-                { regex: /([\w.-]+)(\s*[=:])/g, class: 'syn-attr' },
-            ],
-        };
-
+        // 获取文件类型用于显示（不用于语法高亮，Ace 自动检测）
         function getFileType(filename) {
             if (!filename) return 'plaintext';
             const ext = filename.split('.').pop().toLowerCase();
             const typeMap = {
-                'js': 'javascript', 'ts': 'typescript', 'py': 'python', 'sh': 'shell',
-                'bash': 'shell', 'zsh': 'shell', 'json': 'json', 'xml': 'xml',
-                'html': 'html', 'htm': 'html', 'css': 'css', 'md': 'markdown',
-                'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml', 'ini': 'ini',
-                'conf': 'config', 'cfg': 'config', 'c': 'c', 'cpp': 'c++',
-                'h': 'c-header', 'java': 'java', 'go': 'go', 'rs': 'rust',
-                'rb': 'ruby', 'php': 'php', 'lua': 'lua', 'sql': 'sql',
-                'log': 'log', 'txt': 'plaintext'
+                'js': 'JavaScript', 'ts': 'TypeScript', 'py': 'Python', 'sh': 'Shell',
+                'bash': 'Shell', 'zsh': 'Shell', 'json': 'JSON', 'xml': 'XML',
+                'html': 'HTML', 'htm': 'HTML', 'css': 'CSS', 'md': 'Markdown',
+                'yaml': 'YAML', 'yml': 'YAML', 'toml': 'TOML', 'ini': 'INI',
+                'conf': 'Config', 'cfg': 'Config', 'c': 'C', 'cpp': 'C++',
+                'h': 'C Header', 'hpp': 'C++ Header', 'java': 'Java', 'go': 'Go', 'rs': 'Rust',
+                'rb': 'Ruby', 'php': 'PHP', 'lua': 'Lua', 'sql': 'SQL',
+                'log': 'Log', 'txt': 'Plain Text'
             };
-            return typeMap[ext] || 'plaintext';
-        }
-
-        function highlightSyntax() {
-            const textarea = document.getElementById('editorTextarea');
-            const highlightBackdrop = document.getElementById('editorHighlightBackdrop');
-            if (!textarea || !highlightBackdrop) return;
-
-            const content = textarea.value;
-            const fileType = getFileType(editorCurrentFile ? editorCurrentFile.name : '');
-
-            // 获取语言模式
-            let patterns = SYNTAX_PATTERNS[fileType] || [];
-            
-            // 处理特殊字符
-            let html = escapeHtml(content);
-            
-            // 应用语法高亮模式（注意：避免重复高亮）
-            let highlighted = html;
-            // 限制正则表达式处理，避免栈溢出
-            if (patterns.length > 0 && content.length < 100000) {
-                patterns.forEach(pattern => {
-                    try {
-                        highlighted = highlighted.replace(pattern.regex, (match) => {
-                            return `<span class="${pattern.class}">${match}</span>`;
-                        });
-                    } catch (e) {
-                        console.warn('Syntax highlighting error for pattern:', pattern.class, e);
-                    }
-                });
-            }
-
-            highlightBackdrop.innerHTML = highlighted;
-            
-            // 同步滚动
-            highlightBackdrop.style.wordWrap = editorWordWrap ? 'break-word' : 'normal';
-            highlightBackdrop.scrollTop = textarea.scrollTop;
-            highlightBackdrop.scrollLeft = textarea.scrollLeft;
+            return typeMap[ext] || 'Plain Text';
         }
 
         // ============================================
-        // File Save - 保存文件到设备
+        // File Preview - 文件预览
         // ============================================
         let pendingFileSave = null;
 
@@ -4683,10 +4424,7 @@
                 return;
             }
 
-            const textarea = document.getElementById('editorTextarea');
-            if (!textarea) return;
-
-            const content = textarea.value;
+            const content = aceEditor ? aceEditor.getValue() : '';
 
             // 没有修改
             if (content === editorOriginalContent) {
@@ -4712,6 +4450,8 @@
                 action: 'write',
                 filepath: editorCurrentFile.path,
                 content: encoded,
+                mtime: editorCurrentFile.mtime || 0,
+                force: false,  // 正常保存，非强制模式
                 encoding: 'utf-8',
                 request_id: 'save-' + Date.now()
             });
@@ -4734,11 +4474,9 @@
                 btnSave.textContent = '💾 保存';
             }
 
-            const textarea = document.getElementById('editorTextarea');
-            if (textarea) {
-                editorOriginalContent = textarea.value;
-                editorLastSavedContent = textarea.value;
-            }
+            const content = aceEditor ? aceEditor.getValue() : '';
+            editorOriginalContent = content;
+            editorLastSavedContent = content;
 
             isEditorModified = false;
             const badge = document.getElementById('editorModifiedBadge');
@@ -4747,12 +4485,108 @@
             // 更新当前标签页的状态
             if (activeEditorTabPath && openEditorTabs.has(activeEditorTabPath)) {
                 const tab = openEditorTabs.get(activeEditorTabPath);
-                tab.originalContent = textarea.value;
+                tab.originalContent = content;
                 tab.modified = false;
+                tab.mtime = editorCurrentFile.mtime || 0;
                 renderEditorTabs();
             }
 
             showToast(`已保存: ${editorCurrentFile?.name || '文件'}`, 'success');
+        }
+
+        function onFileSaveError(error) {
+            pendingFileSave = null;
+
+            const btnSave = document.getElementById('btnSaveFile');
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.textContent = '💾 保存';
+            }
+
+            // 检查是否是文件被修改的错误
+            if (error && error.includes('已被其他用户修改')) {
+                showFileConflictDialog(error);
+            } else if (error && error.includes('已修改，请重新加载')) {
+                // mtime = 0 时返回的错误
+                showFileConflictDialog(error);
+            } else {
+                showToast('保存失败: ' + (error || '未知错误'), 'error');
+            }
+        }
+
+        function showFileConflictDialog(error) {
+            const overlay = document.getElementById('fileConflictDialog');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                const errorMsg = document.getElementById('fileConflictError');
+                if (errorMsg) {
+                    errorMsg.textContent = error || '文件已被其他用户修改';
+                }
+            } else {
+                // 如果对话框不存在，动态创建
+                const div = document.createElement('div');
+                div.id = 'fileConflictDialog';
+                div.className = 'modal-overlay';
+                div.style.cssText = 'display: flex;';
+                div.innerHTML = `
+                    <div class="modal" style="max-width: 450px;">
+                        <div class="modal-header">
+                            <div class="modal-title">⚠️ 文件冲突</div>
+                        </div>
+                        <div class="modal-body">
+                            <p id="fileConflictError" style="color: var(--text-primary); margin-bottom: 16px;">${error || '文件已被其他用户修改'}</p>
+                            <p style="color: var(--text-muted); font-size: 13px;">选择是否覆盖服务器上的文件？</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn" onclick="cancelFileSave()">取消</button>
+                            <button class="btn btn-primary" onclick="confirmFileSave(true)">🔄 强制覆盖</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(div);
+            }
+        }
+
+        function cancelFileSave() {
+            const overlay = document.getElementById('fileConflictDialog');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+            showToast('保存已取消', 'info');
+        }
+
+        function confirmFileSave(force) {
+            const overlay = document.getElementById('fileConflictDialog');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+
+            if (!force || !editorCurrentFile) return;
+
+            const content = aceEditor ? aceEditor.getValue() : '';
+            const btnSave = document.getElementById('btnSaveFile');
+            if (btnSave) {
+                btnSave.disabled = true;
+                btnSave.textContent = '⏳ 保存中...';
+            }
+
+            pendingFileSave = {
+                path: editorCurrentFile.path,
+                name: editorCurrentFile.name,
+                content: content
+            };
+
+            // 发送文件写入请求（强制覆盖，force = true）
+            const encoded = btoa(unescape(encodeURIComponent(content)));
+            sendMessage(MSG_TYPES.FILE_REQUEST, {
+                action: 'write',
+                filepath: editorCurrentFile.path,
+                content: encoded,
+                mtime: 0,  // 强制覆盖时不需要比对 mtime
+                force: true,  // 强制模式
+                encoding: 'utf-8',
+                request_id: 'save-force-' + Date.now()
+            });
         }
 
         // ============================================
@@ -6101,6 +5935,10 @@
         document.addEventListener('DOMContentLoaded', () => {
             // 加载并应用保存的设置
             applySettings();
+            
+            // 初始化 Ace Editor
+            initAceEditor();
+            
             connectWebSocket();
 
             // 文件拖拽上传
