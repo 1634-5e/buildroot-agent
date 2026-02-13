@@ -1416,26 +1416,27 @@ class MessageHandler:
         chunk_data = self.download_chunks[request_id]
         chunk_data["chunks"][chunk_index] = content
 
-        complete = json_data.get("complete", chunk_index == total_chunks - 1)
+        chunk_info = {
+            "device_id": device_id,
+            "filename": chunk_data["filename"],
+            "size": chunk_data["size"],
+            "content": content,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks,
+            "request_id": request_id,
+        }
 
-        if complete or all(chunk is not None for chunk in chunk_data["chunks"]):
-            full_content = "".join(chunk_data["chunks"])
-            final_data = {
-                "device_id": device_id,
-                "filename": chunk_data["filename"],
-                "size": chunk_data["size"],
-                "content": full_content,
-            }
-            logger.info(
-                f"打包响应组装完成 [{device_id}]: filename={chunk_data['filename']}, size={chunk_data['size']}"
-            )
-            await self.broadcast_to_web_consoles(
-                MessageType.DOWNLOAD_PACKAGE, final_data
-            )
+        if chunk_index == 0:
+            chunk_info["is_first"] = True
+            logger.info(f"转发首块到Web: {chunk_index + 1}/{total_chunks}")
+        elif chunk_index == total_chunks - 1:
+            chunk_info["is_last"] = True
+            logger.info(f"转发末块到Web: {chunk_index + 1}/{total_chunks}, 删除会话")
             del self.download_chunks[request_id]
         else:
-            remaining = sum(1 for c in chunk_data["chunks"] if c is None)
-            logger.debug(f"等待更多分块: {remaining}块未收到")
+            logger.debug(f"转发中间块到Web: {chunk_index + 1}/{total_chunks}")
+
+        await self.broadcast_to_web_consoles(MessageType.DOWNLOAD_PACKAGE, chunk_info)
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
         """发送消息到设备（支持 WebSocket 和 Socket）"""

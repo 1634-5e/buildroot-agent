@@ -5727,43 +5727,98 @@
              if (statusIcon) statusIcon.style.color = success ? 'var(--accent-success)' : 'var(--accent-error)';
          }
          
-         function handleDownloadPackage(data) {
-             console.log('Handling download package:', data);
-             
-             if (!data.filename || !data.content || !data.size) {
-                 console.error('Download package data missing required fields:', data);
-                 showToast('下载包数据不完整', 'error');
-                 return;
-             }
-             
-             try {
-                 // Decode base64 content
-                 const binaryData = atob(data.content);
-                 const bytes = new Uint8Array(binaryData.length);
-                 for (let i = 0; i < binaryData.length; i++) {
-                     bytes[i] = binaryData.charCodeAt(i);
-                 }
-                 
-                 // Create blob and download
-                 const blob = new Blob([bytes], { type: 'application/gzip' });
-                 const url = URL.createObjectURL(blob);
-                 
-                 const a = document.createElement('a');
-                 a.href = url;
-                 a.download = data.filename;
-                 document.body.appendChild(a);
-                 a.click();
-                 document.body.removeChild(a);
-                 
-                 URL.revokeObjectURL(url);
-                 
-                 showToast(`文件已下载: ${data.filename}`, 'success');
-                 console.log('File downloaded successfully:', data.filename);
-             } catch (error) {
-                 console.error('Error downloading file:', error);
-                 showToast('下载失败: ' + error.message, 'error');
-             }
-         }
+          // 分块下载缓冲区: { request_id: { chunks: [], total: 0, filename: "", size: 0 } }
+          const downloadChunks = {};
+
+          function handleDownloadPackage(data) {
+              console.log('Handling download package:', data);
+              
+              // 检查是否是分块数据
+              if (data.chunk_index !== undefined && data.total_chunks !== undefined) {
+                  handleChunkedDownload(data);
+                  return;
+              }
+              
+              // 旧格式：直接下载
+              if (!data.filename || !data.content || !data.size) {
+                  console.error('Download package data missing required fields:', data);
+                  showToast('下载包数据不完整', 'error');
+                  return;
+              }
+              
+              try {
+                  downloadFile(data.filename, data.content);
+              } catch (error) {
+                  console.error('Error downloading file:', error);
+                  showToast('下载失败: ' + error.message, 'error');
+              }
+          }
+          
+          function handleChunkedDownload(data) {
+              const request_id = data.request_id || 'default';
+              const chunk_index = data.chunk_index;
+              const total_chunks = data.total_chunks;
+              
+              if (!downloadChunks[request_id]) {
+                  downloadChunks[request_id] = {
+                      chunks: new Array(total_chunks),
+                      total: total_chunks,
+                      filename: data.filename,
+                      size: data.size
+                  };
+                  console.log(`开始接收分块文件: ${data.filename}, 共${total_chunks}块`);
+              }
+              
+              const chunkData = downloadChunks[request_id];
+              chunkData.chunks[chunk_index] = data.content;
+              
+              console.log(`收到分块 ${chunk_index + 1}/${total_chunks}`);
+              
+              // 检查是否接收完成
+              const isComplete = chunkData.chunks.every(c => c !== undefined && c !== null);
+              
+              if (isComplete || data.is_last) {
+                  const fullContent = chunkData.chunks.join('');
+                  console.log(`分块接收完成: ${chunkData.filename}, 大小: ${chunkData.size}`);
+                  
+                  try {
+                      downloadFile(chunkData.filename, fullContent);
+                      showToast(`文件已下载: ${chunkData.filename}`, 'success');
+                  } catch (error) {
+                      console.error('Error downloading file:', error);
+                      showToast('下载失败: ' + error.message, 'error');
+                  }
+                  
+                  delete downloadChunks[request_id];
+              } else {
+                  const remaining = chunkData.chunks.filter(c => c === undefined || c === null).length;
+                  console.log(`等待更多分块，还需${remaining}块`);
+              }
+          }
+          
+          function downloadFile(filename, content) {
+              // Decode base64 content
+              const binaryData = atob(content);
+              const bytes = new Uint8Array(binaryData.length);
+              for (let i = 0; i < binaryData.length; i++) {
+                  bytes[i] = binaryData.charCodeAt(i);
+              }
+              
+              // Create blob and download
+              const blob = new Blob([bytes], { type: 'application/gzip' });
+              const url = URL.createObjectURL(blob);
+              
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              
+              URL.revokeObjectURL(url);
+              
+              console.log('File downloaded successfully:', filename);
+          }
 
         function closeModal() {
             document.getElementById('scriptModal').classList.remove('active');
