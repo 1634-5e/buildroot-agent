@@ -1611,7 +1611,7 @@
             <div class="sidebar-header">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div class="sidebar-title">设备列表</div>
-                    <button class="btn btn-sm" onclick="reconnectWebSocket()" style="padding: 4px 8px; font-size: 12px;" title="重新连接服务器">
+                    <button class="btn btn-sm" id="reconnectBtn" onclick="reconnectWebSocket()" style="padding: 4px 8px; font-size: 12px;" title="重新连接服务器">
                         🔄
                     </button>
                 </div>
@@ -1659,7 +1659,6 @@
                     </div>
                     <div class="detail-actions">
                         <button class="btn btn-sm" onclick="disconnectDevice()">断开</button>
-                        <button class="btn btn-danger btn-sm" onclick="rebootDevice()">重启</button>
                     </div>
                 </div>
 
@@ -1697,7 +1696,6 @@
                                 <div class="terminal-controls">
                                     <button class="terminal-btn" onclick="terminalSearchToggle()" title="搜索 (Ctrl+Shift+F)">🔍</button>
                                     <button class="terminal-btn" onclick="clearTerminal()">清空</button>
-                                    <button class="terminal-btn" onclick="reconnectTerminal()">重连</button>
                                 </div>
                             </div>
                             <div class="terminal-search-bar" id="terminalSearchBar">
@@ -2268,6 +2266,7 @@
 
         function updateConnectionStatus(connected) {
             const statusEl = safeGetElement('connectionStatusText');
+            const reconnectBtn = safeGetElement('reconnectBtn');
             if (!statusEl) {
                 console.warn('connectionStatusText element not found');
                 return;
@@ -2276,6 +2275,11 @@
             if (connected) {
                 statusEl.className = 'connection-status online';
                 statusEl.innerHTML = '<span class="connection-dot"></span><span>已连接</span>';
+                if (reconnectBtn) {
+                    reconnectBtn.disabled = true;
+                    reconnectBtn.style.opacity = '0.5';
+                    reconnectBtn.style.cursor = 'not-allowed';
+                }
             } else {
                 statusEl.className = 'connection-status';
                 if (isReconnecting && reconnectAttempts > 0) {
@@ -2286,6 +2290,11 @@
                     `;
                 } else {
                     statusEl.innerHTML = '<span class="connection-dot"></span><span>未连接</span>';
+                }
+                if (reconnectBtn) {
+                    reconnectBtn.disabled = false;
+                    reconnectBtn.style.opacity = '1';
+                    reconnectBtn.style.cursor = 'pointer';
                 }
             }
         }
