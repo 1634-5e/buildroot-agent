@@ -530,12 +530,24 @@ class ConnectionManager:
         }
         logger.info(f"Web控制台连接: console_id={console_id}")
 
-    def remove_console(self, websocket: WebSocketServerProtocol) -> None:
-        """移除Web控制台"""
+    def remove_console(
+        self, websocket: WebSocketServerProtocol
+    ) -> Tuple[Optional[str], Set[int]]:
+        """移除Web控制台，返回设备ID和会话IDs以便清理PTY"""
         console_id = self.console_info.get(websocket, {}).get("console_id", "unknown")
-        self.web_consoles.discard(websocket)
-        self.console_info.pop(websocket, None)
-        logger.info(f"Web控制台断开: console_id={console_id}")
+        device_id = None
+        session_ids = set()
+
+        if websocket in self.console_info:
+            device_id = self.console_info[websocket].get("device_id")
+            session_ids = self.console_info[websocket].get("session_ids", set()).copy()
+            self.web_consoles.discard(websocket)
+            self.console_info.pop(websocket, None)
+
+        logger.info(
+            f"Web控制台断开: console_id={console_id}, device_id={device_id}, sessions={session_ids}"
+        )
+        return device_id, session_ids
 
     def set_console_device(
         self, websocket: WebSocketServerProtocol, device_id: str
@@ -1868,12 +1880,40 @@ class CloudServer:
                 logger.info(
                     f"Web控制台断开: {remote}, code: {e.code}, reason: {e.reason}"
                 )
-                self.conn_mgr.remove_console(websocket)
+                device_id, session_ids = self.conn_mgr.remove_console(websocket)
+                if (
+                    device_id
+                    and session_ids
+                    and self.conn_mgr.is_device_connected(device_id)
+                ):
+                    for session_id in session_ids:
+                        await self.msg_handler.send_to_device(
+                            device_id,
+                            MessageType.PTY_CLOSE,
+                            {
+                                "session_id": session_id,
+                                "reason": "console disconnected",
+                            },
+                        )
         except Exception as e:
             logger.error(f"连接处理错误: {e}")
         finally:
             if not is_device:
-                self.conn_mgr.remove_console(websocket)
+                device_id, session_ids = self.conn_mgr.remove_console(websocket)
+                if (
+                    device_id
+                    and session_ids
+                    and self.conn_mgr.is_device_connected(device_id)
+                ):
+                    for session_id in session_ids:
+                        await self.msg_handler.send_to_device(
+                            device_id,
+                            MessageType.PTY_CLOSE,
+                            {
+                                "session_id": session_id,
+                                "reason": "console disconnected",
+                            },
+                        )
 
     async def notify_device_list_update(self) -> None:
         """通知web控制台设备列表更新"""
