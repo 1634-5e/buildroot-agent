@@ -12,13 +12,12 @@
 #include <fcntl.h>
 #include <signal.h>
 
-#define MD5_DIGEST_LENGTH 16
 #define SHA256_DIGEST_LENGTH 32
 
 /* 全局变量 */
 static update_status_t g_update_status = UPDATE_STATUS_IDLE;
-static pthread_mutex_t g_update_lock = PTHREAD_MUTEX_INITIALIZER;
-static update_info_t g_update_info;
+pthread_mutex_t g_update_lock = PTHREAD_MUTEX_INITIALIZER;
+update_info_t g_update_info;
 static pthread_t g_update_thread;
 static bool g_update_thread_running = false;
 
@@ -161,8 +160,122 @@ int update_download_package(const char *url, const char *output_path, progress_c
     return tcp_download_file(g_agent_ctx, url, output_path, &config);
 }
 
+/* 后台下载和安装线程 */
+void *update_download_and_install_thread(void *arg)
+{
+    typedef struct {
+        char download_url[512];
+        char download_path[512];
+        char sha256_checksum[65];
+        char request_id[64];
+    } download_task_t;
+    
+    download_task_t *task = (download_task_t *)arg;
+    if (!task) {
+        LOG_ERROR("下载任务为空");
+        return NULL;
+    }
+    
+    LOG_INFO("后台下载线程启动: %s", task->download_url);
+    
+    /* 执行下载 */
+    int rc = update_download_package(
+        task->download_url,
+        task->download_path,
+        download_progress_callback,
+        g_agent_ctx
+    );
+    
+    if (rc != 0) {
+        LOG_ERROR("下载失败: %s", task->download_url);
+        
+        /* 发送错误通知 */
+        char *error_json = malloc(256);
+        snprintf(error_json, 256,
+                 "{\"status\":\"failed\",\"error\":\"download_failed\",\"request_id\":\"%s\"}",
+                 task->request_id);
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+        free(error_json);
+        free(task);
+        return NULL;
+    }
+    
+    LOG_INFO("下载完成，开始校验: %s", task->download_path);
+    
+    /* 发送进度：下载完成 */
+    char *progress_json = malloc(256);
+    snprintf(progress_json, 256,
+             "{\"status\":\"downloaded\",\"request_id\":\"%s\",\"progress\":100}",
+             task->request_id);
+    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
+    free(progress_json);
+    
+    /* 校验文件 */
+    LOG_INFO("开始校验文件: SHA256=%s",
+             task->sha256_checksum[0] ? task->sha256_checksum : "(none)");
+    
+    if (!tcp_verify_checksum(task->download_path, task->sha256_checksum[0] ? task->sha256_checksum : NULL)) {
+        LOG_ERROR("文件校验失败");
+        
+        /* 发送校验失败通知 */
+        char *error_json = malloc(256);
+        snprintf(error_json, 256,
+                 "{\"status\":\"verify_failed\",\"request_id\":\"%s\",\"error\":\"checksum_mismatch\"}",
+                 task->request_id);
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+        free(error_json);
+        free(task);
+        return NULL;
+    }
+    
+    LOG_INFO("文件校验通过");
+    
+    /* 发送校验成功通知 */
+    char *verify_json = malloc(256);
+    snprintf(verify_json, 256,
+             "{\"status\":\"verified\",\"request_id\":\"%s\",\"path\":\"%s\"}",
+             task->request_id,
+             task->download_path);
+    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, verify_json);
+    free(verify_json);
+    
+    /* 发送安装通知 */
+    char *install_json = malloc(256);
+    snprintf(install_json, 256,
+             "{\"status\":\"installing\",\"request_id\":\"%s\",\"path\":\"%s\"}",
+             task->request_id,
+             task->download_path);
+    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
+    free(install_json);
+    
+    /* 开始安装 */
+    LOG_INFO("开始安装更新包: %s", task->download_path);
+    int install_rc = update_install_package(task->download_path);
+    if (install_rc != 0) {
+        LOG_ERROR("安装失败: %d", install_rc);
+        /* 错误通知已在update_install_package内部发送 */
+    } else {
+        LOG_INFO("安装成功，准备重启...");
+        
+        /* 发送完成通知给服务器 */
+        char *complete_json = malloc(256);
+        snprintf(complete_json, 256,
+                 "{\"status\":\"complete\",\"request_id\":\"%s\"}",
+                 task->request_id);
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, complete_json);
+        free(complete_json);
+        
+        /* 延迟2秒后自动重启 */
+        sleep(2);
+        update_restart_agent();
+    }
+    
+    free(task);
+    return NULL;
+}
+
 /* 校验下载文件 */
-int update_verify_package(const char *filepath, const char *expected_md5, const char *expected_sha256)
+int update_verify_package(const char *filepath)
 {
     LOG_INFO("校验文件: %s", filepath);
     
@@ -189,33 +302,13 @@ int update_verify_package(const char *filepath, const char *expected_md5, const 
         return -1;
     }
     
-    /* 校验MD5 */
-    if (expected_md5 && strlen(expected_md5) > 0) {
-        char actual_md5[MD5_DIGEST_LENGTH * 2 + 1];
-        if (tcp_calc_md5(filepath, actual_md5) == 0) {
-            if (strcmp(actual_md5, expected_md5) != 0) {
-                LOG_ERROR("MD5校验失败: 期望 %s, 实际 %s", expected_md5, actual_md5);
-                pthread_mutex_lock(&g_update_lock);
-                g_update_status = UPDATE_STATUS_FAILED;
-                pthread_mutex_unlock(&g_update_lock);
-                return -1;
-            }
-            LOG_INFO("MD5校验通过: %s", actual_md5);
-        } else {
-            LOG_ERROR("MD5计算失败");
-            pthread_mutex_lock(&g_update_lock);
-            g_update_status = UPDATE_STATUS_FAILED;
-            pthread_mutex_unlock(&g_update_lock);
-            return -1;
-        }
-    }
-    
-    /* 校验SHA256（可选）*/
-    if (expected_sha256 && strlen(expected_sha256) > 0) {
+    /* 校验SHA256 */
+    if (strlen(g_update_info.sha256_checksum) > 0) {
         char actual_sha256[SHA256_DIGEST_LENGTH * 2 + 1];
         if (tcp_calc_sha256(filepath, actual_sha256) == 0) {
-            if (strcmp(actual_sha256, expected_sha256) != 0) {
-                LOG_ERROR("SHA256校验失败: 期望 %s, 实际 %s", expected_sha256, actual_sha256);
+            if (strcmp(actual_sha256, g_update_info.sha256_checksum) != 0) {
+                LOG_ERROR("SHA256校验失败: 期望 %s, 实际 %s", 
+                         g_update_info.sha256_checksum, actual_sha256);
                 pthread_mutex_lock(&g_update_lock);
                 g_update_status = UPDATE_STATUS_FAILED;
                 pthread_mutex_unlock(&g_update_lock);
@@ -301,25 +394,48 @@ int update_backup_current_version(const char *backup_dir, char *backup_path)
 /* 解压更新包 */
 static int extract_update_package(const char *package_path, const char *output_dir)
 {
-    LOG_INFO("解压更新包到: %s", output_dir);
-    
+    LOG_INFO("解压更新包: %s -> %s", package_path, output_dir);
+
     /* 创建输出目录 */
     if (mkdir_recursive(output_dir, 0755) != 0) {
         LOG_ERROR("创建临时目录失败: %s", output_dir);
         return -1;
     }
-    
-    char extract_cmd[1024];
-    snprintf(extract_cmd, sizeof(extract_cmd),
-             "cd %s && tar -xf %s 2>&1",
-             output_dir, package_path);
-    
-    int rc = system(extract_cmd);
-    if (rc != 0) {
-        LOG_ERROR("解压失败: %d", rc);
+
+    /* 验证包文件存在 */
+    struct stat pkg_st;
+    if (stat(package_path, &pkg_st) != 0) {
+        LOG_ERROR("包文件不存在: %s", package_path);
         return -1;
     }
-    
+    LOG_INFO("包文件大小: %lld 字节", (long long)pkg_st.st_size);
+
+    /* 使用 tar 命令解压（使用绝对路径） */
+    char extract_cmd[1024];
+    snprintf(extract_cmd, sizeof(extract_cmd),
+             "tar -xf '%s' -C '%s' 2>&1",
+             package_path, output_dir);
+
+    LOG_INFO("执行解压命令: %s", extract_cmd);
+    int rc = system(extract_cmd);
+
+    if (rc != 0) {
+        LOG_WARN("tar命令返回非零: %d", rc);
+    }
+
+    /* 验证是否成功解压了文件 */
+    char new_binary[512];
+    snprintf(new_binary, sizeof(new_binary), "%s/buildroot-agent", output_dir);
+
+    struct stat st;
+    if (stat(new_binary, &st) != 0) {
+        LOG_ERROR("未找到解压后的二进制文件: %s", new_binary);
+        return -1;
+    }
+
+    LOG_INFO("验证成功: 找到二进制文件 %s (大小: %lld 字节)",
+             new_binary, (long long)st.st_size);
+
     return 0;
 }
 
@@ -330,13 +446,15 @@ static char *get_current_binary_path(void)
     if (!path) {
         return NULL;
     }
-    
-    if (readlink("/proc/self/exe", path, sizeof(path)) < 0) {
-        LOG_ERROR("无法获取当前二进制路径");
+
+    ssize_t len = readlink("/proc/self/exe", path, 511);
+    if (len < 0) {
+        LOG_ERROR("无法获取当前二进制路径: %s", strerror(errno));
         free(path);
         return NULL;
     }
-    
+    path[len] = '\0';  /* 确保以 NULL 结尾 */
+
     return path;
 }
 
@@ -349,22 +467,22 @@ static int install_new_binary(const char *new_binary_path)
         return -1;
     }
     
-    char *temp_binary = (char *)malloc(strlen(current_binary) + 5);
+    char *temp_binary = (char *)malloc(strlen(current_binary) + 16);
     if (!temp_binary) {
         free(current_binary);
         return -1;
     }
-    
-    char *backup_binary = (char *)malloc(strlen(current_binary) + 7);
+
+    char *backup_binary = (char *)malloc(strlen(current_binary) + 16);
     if (!backup_binary) {
         free(current_binary);
         free(temp_binary);
         return -1;
     }
-    
+
     /* 创建临时文件路径 */
-    sprintf(temp_binary, "%s.new", current_binary);
-    sprintf(backup_binary, "%s.backup", current_binary);
+    snprintf(temp_binary, strlen(current_binary) + 16, "%s.new", current_binary);
+    snprintf(backup_binary, strlen(current_binary) + 16, "%s.backup", current_binary);
     
     LOG_INFO("安装新版本: %s -> %s", new_binary_path, current_binary);
     
@@ -423,10 +541,27 @@ static int install_new_binary(const char *new_binary_path)
     }
     
     LOG_INFO("安装成功，备份位置: %s", backup_binary);
+
+    /* 保存备份路径供回退使用 */
+    char backup_path_file[512];
+    snprintf(backup_path_file, sizeof(backup_path_file),
+             "%s/.last_backup", DEFAULT_UPDATE_BACKUP_PATH);
+
+    mkdir_recursive(DEFAULT_UPDATE_BACKUP_PATH, 0755);
+
+    FILE *bp_fp = fopen(backup_path_file, "w");
+    if (bp_fp) {
+        fprintf(bp_fp, "%s\n", backup_binary);
+        fclose(bp_fp);
+        LOG_DEBUG("备份路径已保存到: %s", backup_path_file);
+    } else {
+        LOG_WARN("无法保存备份路径: %s", backup_path_file);
+    }
+
     free(current_binary);
     free(temp_binary);
     free(backup_binary);
-    
+
     return 0;
 }
 
@@ -529,6 +664,9 @@ void update_restart_agent(void)
 {
     LOG_INFO("准备重启 Agent...");
     
+    /* 删除PID文件，避免子进程启动时冲突 */
+    remove_pid_file("/tmp/buildroot-agent.pid");
+    
     /* 停止服务 */
     agent_stop();
     
@@ -545,31 +683,172 @@ void update_restart_agent(void)
         return;
     }
     
+    /* 处理.backup后缀（如果读到备份路径，移除后缀）*/
+    char *backup_suffix = strstr(binary_path, ".backup");
+    if (backup_suffix) {
+        LOG_WARN("检测到.backup后缀，移除后缀: %s", binary_path);
+        *backup_suffix = '\0';
+    }
+    
+    /* 计算备份路径 */
+    char *backup_path = (char *)malloc(strlen(binary_path) + 16);
+    if (!backup_path) {
+        LOG_ERROR("分配备份路径内存失败");
+        free(binary_path);
+        return;
+    }
+    snprintf(backup_path, strlen(binary_path) + 16, "%s.backup", binary_path);
+    
+    /* 保存备份路径到文件（供回退使用）*/
+    char backup_path_file[512];
+    snprintf(backup_path_file, sizeof(backup_path_file),
+             "%s/.last_backup", DEFAULT_UPDATE_BACKUP_PATH);
+    
+    mkdir_recursive(DEFAULT_UPDATE_BACKUP_PATH, 0755);
+    
+    FILE *bp_fp = fopen(backup_path_file, "w");
+    if (bp_fp) {
+        fprintf(bp_fp, "%s\n", backup_path);
+        fclose(bp_fp);
+        LOG_INFO("备份路径已保存: %s", backup_path);
+    } else {
+        LOG_WARN("无法保存备份路径: %s (%s)", backup_path_file, strerror(errno));
+    }
+    
+    /* 预检查：验证备份文件是否存在（用于回退）*/
+    struct stat backup_stat;
+    if (stat(backup_path, &backup_stat) == 0) {
+        LOG_INFO("备份文件存在: %s (大小: %lld bytes)", backup_path, (long long)backup_stat.st_size);
+    } else {
+        LOG_WARN("备份文件不存在: %s (回退不可用)", backup_path);
+    }
+    
+    /* 预检查：验证二进制文件 */
+    struct stat binary_stat;
+    if (stat(binary_path, &binary_stat) != 0) {
+        LOG_ERROR("二进制文件不存在: %s (%s)", binary_path, strerror(errno));
+        free(binary_path);
+        free(backup_path);
+        return;
+    }
+    
+    if (!S_ISREG(binary_stat.st_mode)) {
+        LOG_ERROR("二进制文件不是常规文件: %s", binary_path);
+        free(binary_path);
+        free(backup_path);
+        return;
+    }
+    
+    if (access(binary_path, X_OK) != 0) {
+        LOG_ERROR("二进制文件没有执行权限: %s", binary_path);
+        free(binary_path);
+        free(backup_path);
+        return;
+    }
+    
+    LOG_INFO("二进制文件检查通过: %s (大小: %lld bytes, 权限: 0%o, 备份: %s)",
+             binary_path, (long long)binary_stat.st_size, binary_stat.st_mode & 0777, backup_path);
+    
+    /* 预检查：验证配置文件（警告但不阻止启动）*/
+    struct stat config_stat;
+    if (stat(config_file, &config_stat) != 0) {
+        LOG_WARN("配置文件不存在: %s (将使用默认配置)", config_file);
+    } else {
+        LOG_INFO("配置文件存在: %s", config_file);
+    }
+    
     /* 启动新进程 */
     pid_t pid = fork();
     if (pid < 0) {
         LOG_ERROR("fork失败: %s", strerror(errno));
+        free(binary_path);
         return;
     }
     
     if (pid == 0) {
         /* 子进程：启动新版本 */
+        
+        /* 打开错误日志文件（在重定向前）*/
+        int error_log_fd = open("/tmp/agent_restart_error.log",
+                               O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        
         setsid();
         
-        /* 重定向标准输入/输出/错误 */
+        /* 重定向标准错误到日志文件 */
+        if (error_log_fd >= 0) {
+            dup2(error_log_fd, STDERR_FILENO);
+            close(error_log_fd);
+            
+            /* 写入启动信息 */
+            const char *restart_msg = "=== Agent Restart Log ===\n";
+            write(STDERR_FILENO, restart_msg, strlen(restart_msg));
+            
+            char start_info[512];
+            time_t now = time(NULL);
+            struct tm *tm_info = localtime(&now);
+            char time_str[64];
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+            snprintf(start_info, sizeof(start_info),
+                     "Time: %s\nBinary: %s\nConfig: %s\n",
+                     time_str, binary_path, config_file);
+            write(STDERR_FILENO, start_info, strlen(start_info));
+        }
+        
+        /* 重定向标准输入和输出到 /dev/null */
         int null_fd = open("/dev/null", O_RDWR);
         dup2(null_fd, STDIN_FILENO);
         dup2(null_fd, STDOUT_FILENO);
-        dup2(null_fd, STDERR_FILENO);
         close(null_fd);
         
         /* 启动agent */
-        execl(binary_path, binary_path, "-c", config_file, NULL);
+        execl(binary_path, binary_path, "-c", config_file, "--force", NULL);
         
-        /* 如果执行到这里，说明exec失败 */
-        LOG_ERROR("exec失败: %s", strerror(errno));
-        exit(1);
+        /* 如果执行到这里，说明exec失败，尝试回退 */
+        char err_msg[1024];
+        snprintf(err_msg, sizeof(err_msg),
+                 "EXEC FAILED!\nError: %s (errno=%d)\nBinary: %s\nConfig: %s\nTrying to rollback to: %s\n",
+                 strerror(errno), errno, binary_path, config_file, backup_path);
+        write(STDERR_FILENO, err_msg, strlen(err_msg));
+        
+        /* 尝试回退 */
+        if (access(backup_path, F_OK | X_OK) == 0) {
+            LOG_INFO("尝试回退到备份: %s", backup_path);
+            
+            /* 复制备份文件 */
+            int src_fd = open(backup_path, O_RDONLY);
+            if (src_fd >= 0) {
+                off_t size = lseek(src_fd, 0, SEEK_END);
+                lseek(src_fd, 0, SEEK_SET);
+                
+                int dst_fd = open(binary_path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+                if (dst_fd >= 0) {
+                    char *buf = malloc(65536);
+                    if (buf) {
+                        ssize_t bytes;
+                        while ((bytes = read(src_fd, buf, 65536)) > 0) {
+                            write(dst_fd, buf, bytes);
+                        }
+                        free(buf);
+                    }
+                    close(dst_fd);
+                    
+                    char rollback_msg[256];
+                    snprintf(rollback_msg, sizeof(rollback_msg),
+                             "Rollback successful: %s -> %s\n", backup_path, binary_path);
+                    write(STDERR_FILENO, rollback_msg, strlen(rollback_msg));
+                    
+                    /* 尝试启动备份版本 */
+                    execl(binary_path, binary_path, "-c", config_file, "--force", NULL);
+                }
+                close(src_fd);
+            }
+        }
+        _exit(1);
     }
+    
+    /* 释放二进制路径内存 */
+    free(binary_path);
+    free(backup_path);
     
     /* 父进程：等待并退出 */
     LOG_INFO("新进程已启动 (PID: %d)", pid);
@@ -580,10 +859,10 @@ void update_restart_agent(void)
     if (kill(pid, 0) == 0) {
         LOG_INFO("Agent重启成功");
     } else {
-        LOG_ERROR("新进程启动失败，可能需要手动干预");
+        LOG_ERROR("新进程启动失败，请检查 /tmp/agent_restart_error.log");
     }
     
-    /* 父进程退出，让主进程重新启动 */
+    /* 父进程退出 */
     _exit(0);
 }
 

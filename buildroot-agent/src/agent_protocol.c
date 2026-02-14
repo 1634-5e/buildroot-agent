@@ -1236,8 +1236,9 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             char *has_update_str = json_get_string(json_data, "has_update");
             char *latest_version = json_get_string(json_data, "latest_version");
             char *download_url = json_get_string(json_data, "download_url");
-            char *md5_checksum = json_get_string(json_data, "md5_checksum");
+            char *sha256_checksum = json_get_string(json_data, "sha256_checksum");
             char *release_notes = json_get_string(json_data, "release_notes");
+            char *arch = json_get_string(json_data, "arch");
             int mandatory = json_get_bool(json_data, "mandatory", false);
             
             if (!has_update_str || strcmp(has_update_str, "true") != 0) {
@@ -1247,9 +1248,21 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             
             LOG_INFO("发现新版本: %s", latest_version);
             LOG_INFO("下载URL: %s", download_url);
-            LOG_INFO("MD5校验和: %s", md5_checksum);
+            LOG_INFO("SHA256校验和: %s", sha256_checksum);
             LOG_INFO("更新说明: %s", release_notes);
             LOG_INFO("是否强制更新: %s", mandatory ? "是" : "否");
+            LOG_INFO("架构: %s", arch ? arch : "unknown");
+            
+            /* 保存到全局更新信息 */
+            pthread_mutex_lock(&g_update_lock);
+            g_update_info.has_update = true;
+            strncpy(g_update_info.latest_version, latest_version ? latest_version : "", sizeof(g_update_info.latest_version) - 1);
+            strncpy(g_update_info.download_url, download_url ? download_url : "", sizeof(g_update_info.download_url) - 1);
+            strncpy(g_update_info.sha256_checksum, sha256_checksum ? sha256_checksum : "", sizeof(g_update_info.sha256_checksum) - 1);
+            strncpy(g_update_info.release_notes, release_notes ? release_notes : "", sizeof(g_update_info.release_notes) - 1);
+            strncpy(g_update_info.arch, arch ? arch : "x86_64", sizeof(g_update_info.arch) - 1);
+            g_update_info.mandatory = mandatory;
+            pthread_mutex_unlock(&g_update_lock);
             
             /* 如果配置了自动确认，或者强制更新，自动请求下载 */
             if ((!g_agent_ctx->config.update_require_confirm) || mandatory) {
@@ -1257,8 +1270,10 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
                 /* 发送下载请求 */
                 char *json = malloc(256);
                 snprintf(json, 256,
-                         "{\"version\":\"%s\",\"request_id\":\"update-%lld\"}",
-                         latest_version, (long long)get_timestamp_ms());
+                         "{\"version\":\"%s\",\"arch\":\"%s\",\"request_id\":\"update-%lld\"}",
+                         latest_version, 
+                         arch ? arch : "x86_64", 
+                         (long long)get_timestamp_ms());
                 int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_DOWNLOAD, json);
                 free(json);
                 
@@ -1303,46 +1318,46 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             /* 创建临时目录 */
             mkdir_recursive(temp_dir, 0755);
             
-            /* 开始下载 */
-            int rc = update_download_package(
-                download_url,
-                download_path,
-                download_progress_callback,
-                g_agent_ctx
-            );
+            /* 获取校验和 */
+            char *sha256_checksum = json_get_string(json_data, "sha256_checksum");
             
-            if (rc == 0) {
-                LOG_INFO("下载成功，开始安装");
-                
-                /* 发送进度：下载完成 */
-                char *progress_json = malloc(256);
-                snprintf(progress_json, 256,
-                         "{\"status\":\"downloaded\",\"request_id\":\"%s\",\"progress\":100}",
-                         request_id ? request_id : "unknown");
-                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
-                free(progress_json);
-                
-                /* 发送安装通知 */
-                char *install_json = malloc(256);
-                snprintf(install_json, 256,
-                         "{\"status\":\"installing\",\"request_id\":\"%s\",\"path\":\"%s\"}",
-                         request_id ? request_id : "unknown",
-                         download_path);
-                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
-                free(install_json);
-                
-                /* 开始安装 */
-                update_install_package(download_path);
-            } else {
-                LOG_ERROR("下载失败");
+            /* 在后台线程中执行下载、校验和安装 */
+            typedef struct {
+                char download_url[512];
+                char download_path[512];
+                char sha256_checksum[65];
+                char request_id[64];
+            } download_task_t;
+            
+            download_task_t *task = malloc(sizeof(download_task_t));
+            if (!task) {
+                LOG_ERROR("无法分配下载任务内存");
+                break;
+            }
+            
+            strncpy(task->download_url, download_url, sizeof(task->download_url) - 1);
+            strncpy(task->download_path, download_path, sizeof(task->download_path) - 1);
+            strncpy(task->sha256_checksum, sha256_checksum ? sha256_checksum : "", 
+                    sizeof(task->sha256_checksum) - 1);
+            strncpy(task->request_id, request_id ? request_id : "unknown", 
+                    sizeof(task->request_id) - 1);
+            
+            pthread_t download_thread;
+            if (pthread_create(&download_thread, NULL, 
+                              (void* (*)(void*))update_download_and_install_thread, task) != 0) {
+                LOG_ERROR("创建下载线程失败");
+                free(task);
                 
                 /* 发送错误通知 */
                 char *error_json = malloc(256);
                 snprintf(error_json, 256,
-                         "{\"status\":\"failed\",\"error\":\"download_failed\",\"request_id\":\"%s\"}",
+                         "{\"status\":\"failed\",\"error\":\"thread_create_failed\",\"request_id\":\"%s\"}",
                          request_id ? request_id : "unknown");
                 socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
                 free(error_json);
+            } else {
+                LOG_INFO("下载线程已启动");
+                pthread_detach(download_thread);
             }
             break;
         }

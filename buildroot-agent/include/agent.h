@@ -18,9 +18,8 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
-/* 版本信息 */
-#define AGENT_VERSION       "1.0.0"
-#define AGENT_NAME          "buildroot-agent"
+/* 版本信息 - 从生成的 version.h 获取 */
+#include "version.h"
 
 /* 默认配置 */
 #define DEFAULT_SERVER_ADDR     "127.0.0.1:8766"
@@ -125,12 +124,16 @@ typedef struct {
     int64_t version_code;               /* 版本号（用于比较）*/
     int64_t file_size;                  /* 文件大小（字节）*/
     char download_url[512];             /* 下载URL */
-    char md5_checksum[64];             /* MD5 校验和 */
-    char sha256_checksum[128];          /* SHA256 校验和（可选）*/
+    char sha256_checksum[128];          /* SHA256 校验和 */
     char release_notes[1024];           /* 更新说明 */
     bool mandatory;                     /* 是否强制更新 */
     char request_id[64];               /* 请求ID（用于进度跟踪）*/
+    char arch[32];                      /* 架构标识 */
 } update_info_t;
+
+/* 更新管理全局变量声明（在 agent_update.c 中定义）*/
+extern pthread_mutex_t g_update_lock;
+extern update_info_t g_update_info;
 
 /* 下载进度结构 */
 typedef struct {
@@ -316,22 +319,22 @@ int tcp_download_init(void);
 void tcp_download_cleanup(void);
 int tcp_download_file(agent_context_t *ctx, const char *file_path, const char *output_path, tcp_download_config_t *config);
 int tcp_can_resume(const char *file_path, const char *output_path);
-int tcp_calc_md5(const char *filepath, char *md5_str);
 int tcp_calc_sha256(const char *filepath, char *sha256_str);
-bool tcp_verify_checksum(const char *filepath, const char *expected_md5, const char *expected_sha256);
+bool tcp_verify_checksum(const char *filepath, const char *expected_sha256);
 int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t len);
 
 /* agent_update.c */
 int update_check_version(agent_context_t *ctx);
 int update_request_update(agent_context_t *ctx);
 int update_download_package(const char *url, const char *output_path, progress_callback_t callback, void *user_data);
-int update_verify_package(const char *filepath, const char *expected_md5, const char *expected_sha256);
+int update_verify_package(const char *filepath);
 int update_backup_current_version(const char *backup_dir, char *backup_path);
 int update_install_package(const char *package_path);
 void update_restart_agent(void);
 int update_rollback_to_backup(const char *backup_path);
 int update_report_status(agent_context_t *ctx, update_status_t status, const char *message, int progress);
 void download_progress_callback(const char *url, int progress, int64_t downloaded, int64_t total_size, void *user_data);
+void *update_download_and_install_thread(void *arg);
 
 /* JSON 解析函数 */
 char *json_get_string(const char *json, const char *key);

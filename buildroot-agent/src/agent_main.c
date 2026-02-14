@@ -293,6 +293,7 @@ static void print_help(const char *prog)
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
     printf("  -g, --generate        生成默认配置文件\n");
+    printf("  -f, --force           强制启动（忽略PID文件检查）\n");
     printf("  -h, --help            显示帮助信息\n");
     printf("  -V, --version         显示版本信息\n");
     printf("\n");
@@ -318,6 +319,7 @@ int main(int argc, char *argv[])
     bool daemon_mode = false;
     bool verbose = false;
     bool generate_config = false;
+    bool force_mode = false;
     
     /* 解析命令行参数 */
     static struct option long_options[] = {
@@ -327,13 +329,14 @@ int main(int argc, char *argv[])
         {"daemon",   no_argument,       0, 'd'},
         {"verbose",  no_argument,       0, 'v'},
         {"generate", no_argument,       0, 'g'},
+        {"force",    no_argument,       0, 'f'},
         {"help",     no_argument,       0, 'h'},
         {"version",  no_argument,       0, 'V'},
         {0, 0, 0, 0}
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:s:t:dvghV", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:s:t:dvghVf", long_options, NULL)) != -1) {
         switch (opt) {
         case 'c':
             config_path = optarg;
@@ -352,6 +355,9 @@ int main(int argc, char *argv[])
             break;
         case 'g':
             generate_config = true;
+            break;
+        case 'f':
+            force_mode = true;
             break;
         case 'h':
             print_help(argv[0]);
@@ -378,6 +384,12 @@ int main(int argc, char *argv[])
             fprintf(stderr, "生成配置文件失败\n");
             return 1;
         }
+    }
+    
+    /* 如果是强制模式，删除旧的PID文件 */
+    if (force_mode) {
+        printf("强制模式：删除旧PID文件\n");
+        remove_pid_file(PID_FILE);
     }
     
     /* 检查是否已运行 */

@@ -1,0 +1,15 @@
+{
+  "manifest_version": "1.0",
+  "channel": "stable",
+  "latest_version": "1.1.0",
+  "release_date": "2024-02-14T00:00:00Z",
+  "changes": ["添加自更新功能", "优化内存使用"],
+  "architectures": {
+    "x86_64": {
+      "file": "buildroot-agent-1.1.0-x86_64.tar",
+      "size": 1228800,
+      "sha256": "44eacb5027fefcfefbf86c571be5fa6f64c1a19f9851db5e3bddb9ffb6f8a8c2",
+      "mandatory": false
+    }
+  }
+}

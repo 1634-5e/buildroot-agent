@@ -74,7 +74,7 @@ class MessageType:
     FILE_UPLOAD_ACK = 0x42  # 分片确认
     FILE_UPLOAD_COMPLETE = 0x43  # 上传完成
     FILE_DOWNLOAD_START = 0x44  # 开始下载请求
-    FILE_DOWNLOAD_DATA = 0x45  # 下载数据分片
+    FILE_DOWNLOAD_CHUNK = 0x45  # 下载数据分片（新版文件传输协议）
     FILE_DOWNLOAD_ACK = 0x46  # 下载确认
     FILE_TRANSFER_STATUS = 0x47  # 传输状态/进度
     # 更新管理消息类型
@@ -1262,17 +1262,6 @@ class MessageHandler:
                     },
                 )
                 return
-            await self.send_to_device(
-                device_id,
-                MessageType.FILE_DOWNLOAD_DATA,
-                {
-                    "action": "download_error",
-                    "file_path": file_path,
-                    "request_id": request_id,
-                    "error": f"文件不存在: {full_path}",
-                },
-            )
-            return
 
             file_size = os.path.getsize(full_path)
 
@@ -1313,13 +1302,20 @@ class MessageHandler:
                 f.seek(offset)
                 data_chunk = f.read(chunk_size)
 
+            # 计算实际读取的字节数
+            actual_size = len(data_chunk)
+
             # Base64编码数据
             import base64
 
             data_b64 = base64.b64encode(data_chunk).decode("utf-8")
 
             # 检查是否为最后一块
-            is_final = (offset + len(data_chunk)) >= file_size
+            is_final = (offset + actual_size) >= file_size
+
+            logger.debug(
+                f"[{device_id}] 读取数据块: offset={offset}, chunk_size={chunk_size}, actual={actual_size}, file_size={file_size}, is_final={is_final}"
+            )
 
             # 发送数据块响应
             response = self.create_message(
@@ -1329,7 +1325,7 @@ class MessageHandler:
                     "file_path": file_path,
                     "offset": offset,
                     "data": data_b64,
-                    "size": len(data_chunk),
+                    "size": actual_size,
                     "is_final": is_final,
                     "total_size": file_size,
                     "request_id": request_id,

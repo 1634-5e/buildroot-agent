@@ -12,8 +12,8 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <errno.h>
 
-#define MD5_DIGEST_LENGTH 16
 #define SHA256_DIGEST_LENGTH 32
 
 /* 下载会话状态 */
@@ -43,6 +43,7 @@ typedef struct download_session {
     progress_callback_t callback;    /* 进度回调 */
     void *user_data;                 /* 用户数据 */
     pthread_mutex_t mutex;           /* 互斥锁 */
+    pthread_cond_t cond;             /* 条件变量 - 用于等待下载完成 */
     time_t last_activity;            /* 最后活动时间 */
     struct download_session *next;   /* 链表指针 */
 } download_session_t;
@@ -97,6 +98,12 @@ static download_session_t *create_session(const char *file_path, const char *out
         return NULL;
     }
     
+    if (pthread_cond_init(&session->cond, NULL) != 0) {
+        pthread_mutex_destroy(&session->mutex);
+        free(session);
+        return NULL;
+    }
+    
     return session;
 }
 
@@ -118,6 +125,7 @@ static void remove_session(const char *session_id) {
             download_session_t *to_remove = *current;
             *current = (*current)->next;
             
+            pthread_cond_destroy(&to_remove->cond);
             pthread_mutex_destroy(&to_remove->mutex);
             if (to_remove->fp) {
                 fclose(to_remove->fp);
@@ -179,67 +187,68 @@ int tcp_can_resume(const char *file_path, const char *output_path) {
     return 1;
 }
 
-/* 计算文件MD5 (已禁用) */
-int tcp_calc_md5(const char *filepath, char *md5_str) {
-    if (!filepath || !md5_str) {
-        return -1;
-    }
-    /* 不再支持MD5计算 */
-    strcpy(md5_str, "");
-    return 0;
-}
-
-/* 计算文件SHA256 (已禁用) */
-int tcp_calc_sha256(const char *filepath, char *sha256_str) {
+/* 计算文件SHA256 */
+int tcp_calc_sha256(const char *filepath, char *sha256_str)
+{
     if (!filepath || !sha256_str) {
         return -1;
     }
-    /* 不再支持SHA256计算 */
-    strcpy(sha256_str, "");
+    
+    /* 使用系统 sha256sum 命令 */
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "sha256sum \"%s\"", filepath);
+    
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        LOG_ERROR("无法执行sha256sum命令: %s", strerror(errno));
+        return -1;
+    }
+    
+    /* sha256sum 输出格式: "e3b0c44298f1b7192a1d8f35a6c6a8a3a9b2c1b7c9e8c8c3c5a6  filename" */
+    char output[128];
+    if (fgets(output, sizeof(output), fp)) {
+        /* 提取空格前的校验和 */
+        char *space_pos = strchr(output, ' ');
+        if (space_pos) {
+            *space_pos = '\0';
+        }
+        strncpy(sha256_str, output, 64);
+        sha256_str[64] = '\0';
+    } else {
+        LOG_ERROR("无法读取sha256sum输出");
+        pclose(fp);
+        return -1;
+    }
+    
+    pclose(fp);
     return 0;
 }
 
-/* 验证校验和 */
-bool tcp_verify_checksum(
-    const char *filepath,
-    const char *expected_md5,
-    const char *expected_sha256)
+/* 验证SHA256校验和 */
+bool tcp_verify_checksum(const char *filepath, const char *expected_sha256)
 {
     if (!filepath) {
         return false;
     }
     
-    /* 验证MD5 */
-    if (expected_md5 && strlen(expected_md5) > 0) {
-        char actual_md5[MD5_DIGEST_LENGTH * 2 + 1];
-        if (tcp_calc_md5(filepath, actual_md5) == 0) {
-            if (strcmp(actual_md5, expected_md5) != 0) {
-                LOG_ERROR("MD5校验失败: 期望 %s, 实际 %s", expected_md5, actual_md5);
-                return false;
-            }
-            LOG_INFO("MD5校验通过: %s", actual_md5);
-        } else {
-            LOG_ERROR("MD5计算失败");
-            return false;
-        }
+    if (!expected_sha256 || strlen(expected_sha256) == 0) {
+        return true;  /* 没有提供期望值，跳过校验 */
     }
     
-    /* 验证SHA256（可选）*/
-    if (expected_sha256 && strlen(expected_sha256) > 0) {
-        char actual_sha256[SHA256_DIGEST_LENGTH * 2 + 1];
-        if (tcp_calc_sha256(filepath, actual_sha256) == 0) {
-            if (strcmp(actual_sha256, expected_sha256) != 0) {
-                LOG_ERROR("SHA256校验失败: 期望 %s, 实际 %s", expected_sha256, actual_sha256);
-                return false;
-            }
-            LOG_INFO("SHA256校验通过: %s", actual_sha256);
-        } else {
-            LOG_ERROR("SHA256计算失败");
+    /* 校验SHA256 */
+    char actual_sha256[SHA256_DIGEST_LENGTH * 2 + 1];
+    if (tcp_calc_sha256(filepath, actual_sha256) == 0) {
+        if (strcmp(actual_sha256, expected_sha256) != 0) {
+            LOG_ERROR("SHA256校验失败: 期望 %s, 实际 %s", 
+                     expected_sha256, actual_sha256);
             return false;
         }
+        LOG_INFO("SHA256校验通过: %s", actual_sha256);
+        return true;
+    } else {
+        LOG_ERROR("SHA256计算失败");
+        return false;
     }
-    
-    return true;
 }
 
 /* 启动文件下载 */
@@ -309,6 +318,47 @@ int tcp_download_file(agent_context_t *ctx, const char *file_path, const char *o
     }
     
     LOG_INFO("下载请求已发送，会话ID: %s", session->session_id);
+
+    /* 等待下载完成 */
+    LOG_INFO("等待下载完成，初始状态=%d", session->state);
+    pthread_mutex_lock(&session->mutex);
+    LOG_DEBUG("已获取mutex，开始等待条件变量");
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 300; /* 5分钟超时 */
+
+    int wait_count = 0;
+    while (session->state != DOWNLOAD_STATE_COMPLETED &&
+           session->state != DOWNLOAD_STATE_ERROR) {
+        LOG_DEBUG("等待条件变量[%d], 当前状态=%d", ++wait_count, session->state);
+        int rc = pthread_cond_timedwait(&session->cond, &session->mutex, &ts);
+        if (rc == ETIMEDOUT) {
+            LOG_ERROR("下载等待超时（5分钟），当前状态=%d", session->state);
+            session->state = DOWNLOAD_STATE_ERROR;
+            pthread_mutex_unlock(&session->mutex);
+            remove_session(session->session_id);
+            return -1;
+        } else if (rc != 0) {
+            LOG_ERROR("条件变量等待错误: %s (rc=%d)", strerror(rc), rc);
+            pthread_mutex_unlock(&session->mutex);
+            remove_session(session->session_id);
+            return -1;
+        }
+        LOG_DEBUG("条件变量被触发，当前状态=%d", session->state);
+    }
+    pthread_mutex_unlock(&session->mutex);
+    LOG_INFO("下载等待结束，最终状态=%d (COMPLETED=%d, ERROR=%d)",
+             session->state, DOWNLOAD_STATE_COMPLETED, DOWNLOAD_STATE_ERROR);
+    
+    /* 检查下载结果 */
+    if (session->state == DOWNLOAD_STATE_ERROR) {
+        LOG_ERROR("下载过程中发生错误");
+        remove_session(session->session_id);
+        return -1;
+    }
+    
+    LOG_INFO("下载完成: %s", session->output_path);
     return 0;
 }
 
@@ -325,6 +375,8 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         return -1;
     }
     
+    LOG_DEBUG("处理下载响应: action=%s", action);
+    
     if (strcmp(action, "file_data") == 0) {
         /* 处理文件数据块 */
         char *session_id = json_get_string(data, "request_id");
@@ -334,6 +386,9 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         int data_size = json_get_int(data, "size", 0);
         bool is_final = json_get_bool(data, "is_final", false);
         long long total_size = json_get_int64(data, "total_size");
+
+        LOG_DEBUG("收到文件数据块: session_id=%s, offset=%lld, size=%d, is_final=%d, total_size=%lld",
+                  session_id ? session_id : "null", (long long)offset, data_size, is_final, (long long)total_size);
         
         if (!session_id || !file_path || !data_b64) {
             LOG_ERROR("下载响应缺少必要字段");
@@ -349,10 +404,13 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         
         pthread_mutex_lock(&session->mutex);
         
-        /* 更新文件大小信息 */
-        if (total_size > 0 && session->file_size == 0) {
+        /* 更新文件大小信息 - 始终设置以确保一致性 */
+        if (total_size > 0) {
+            if (session->file_size == 0) {
+                LOG_INFO("文件总大小: %lld 字节", (long long)total_size);
+            }
             session->file_size = total_size;
-            LOG_INFO("文件总大小: %lld 字节", (long long)total_size);
+            LOG_DEBUG("设置文件大小: file_size=%lld", (long long)session->file_size);
         }
         
         /* 验证偏移量 */
@@ -393,26 +451,37 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         }
         
         /* 检查是否完成 */
+        LOG_DEBUG("检查下载完成: is_final=%d, downloaded=%lld, file_size=%lld, offset=%lld, actual_size=%d",
+                  is_final, (long long)session->downloaded, (long long)session->file_size,
+                  (long long)offset, data_size);
         if (is_final || (session->file_size > 0 && session->downloaded >= session->file_size)) {
+            LOG_INFO("下载完成条件满足: is_final=%d, downloaded=%lld/%lld",
+                     is_final, (long long)session->downloaded, (long long)session->file_size);
             session->state = DOWNLOAD_STATE_COMPLETED;
             fclose(session->fp);
             session->fp = NULL;
-            
+
             LOG_INFO("下载完成: %s", session->output_path);
-            
+            LOG_INFO("下载状态: 已下载 %lld / %lld 字节",
+                     (long long)session->downloaded, (long long)session->file_size);
+
             /* 最终进度回调 */
             if (session->callback) {
+                LOG_DEBUG("调用最终进度回调");
                 session->callback(session->file_path, 100, session->downloaded,
                                  session->file_size, session->user_data);
             }
-            
-            /* 移除会话 */
+
+            LOG_DEBUG("设置状态为COMPLETED=%d，准备发送条件信号", DOWNLOAD_STATE_COMPLETED);
+            /* 通知等待的线程 */
+            pthread_cond_signal(&session->cond);
+            LOG_DEBUG("条件信号已发送");
             pthread_mutex_unlock(&session->mutex);
-            remove_session(session_id);
+            LOG_DEBUG("下载完成处理结束，mutex已释放");
         } else {
             session->state = DOWNLOAD_STATE_DOWNLOADING;
             pthread_mutex_unlock(&session->mutex);
-            
+
             /* 请求下一个数据块 */
             char next_request[1024];
             snprintf(next_request, sizeof(next_request),
@@ -422,9 +491,14 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
                      "\"chunk_size\":%d,"
                      "\"request_id\":\"%s\"}",
                      file_path, (long long)session->offset, session->chunk_size, session_id);
-            
+
             /* 发送下一个数据块请求 */
-            socket_send_json(ctx, MSG_TYPE_FILE_DOWNLOAD_REQUEST, next_request);
+            int send_rc = socket_send_json(ctx, MSG_TYPE_FILE_DOWNLOAD_REQUEST, next_request);
+            if (send_rc != 0) {
+                LOG_ERROR("发送下一个数据块请求失败: rc=%d", send_rc);
+            } else {
+                LOG_DEBUG("已发送下一个数据块请求: offset=%lld", (long long)session->offset);
+            }
         }
         
     } else if (strcmp(action, "download_error") == 0) {
@@ -435,9 +509,11 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         if (session_id) {
             download_session_t *session = find_session(session_id);
             if (session) {
+                pthread_mutex_lock(&session->mutex);
                 session->state = DOWNLOAD_STATE_ERROR;
                 LOG_ERROR("下载错误: %s", error_msg ? error_msg : "未知错误");
-                remove_session(session_id);
+                pthread_cond_signal(&session->cond);
+                pthread_mutex_unlock(&session->mutex);
             }
         }
     }

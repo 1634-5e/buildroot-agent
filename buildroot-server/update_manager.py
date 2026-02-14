@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 class UpdateManager:
     """更新管理器 - 处理Agent更新请求"""
 
-    def __init__(self, updates_dir: str = "../test_packages/updates"):
+    def __init__(self, updates_dir: str = "updates"):
         self.updates_dir = Path(updates_dir)
         self.update_metadata = self._load_update_metadata()
 
     def _load_update_metadata(self) -> Dict[str, Any]:
         """加载更新元数据"""
-        metadata_file = self.updates_dir / "updates.json"
+        metadata_file = self.updates_dir / "manifest.json"
         if metadata_file.exists():
             try:
                 with open(metadata_file, "r", encoding="utf-8") as f:
@@ -34,36 +34,16 @@ class UpdateManager:
             except Exception as e:
                 logger.error(f"加载更新元数据失败: {e}")
 
-        # 返回默认元数据
+        # 返回默认元数据（标准格式）
         logger.warning("使用默认更新元数据")
         return {
-            "channels": {
-                "stable": {"versions": {}, "latest_version": "1.0.0"},
-                "beta": {"latest_version": "1.0.0"},
-                "dev": {"latest_version": "1.0.0"},
-            },
-            "current_default": "stable",
-            "update_policy": {
-                "auto_update_enabled": True,
-                "require_confirmation": True,
-                "backup_enabled": True,
-                "rollback_enabled": True,
-                "checksum_verification": True,
-            },
+            "manifest_version": "1.0",
+            "channel": "stable",
+            "latest_version": "1.0.0",
+            "release_date": datetime.utcnow().isoformat() + "Z",
+            "changes": [],
+            "architectures": {},
         }
-
-    def _get_version_info(
-        self, version: str, channel: str = "stable"
-    ) -> Optional[Dict[str, Any]]:
-        """获取指定版本信息"""
-        try:
-            channels = self.update_metadata.get("channels", {})
-            channel_data = channels.get(channel, {})
-            versions = channel_data.get("versions", {})
-            return versions.get(version)
-        except Exception as e:
-            logger.error(f"获取版本信息失败: {e}")
-            return None
 
     def _compare_versions(self, v1: str, v2: str) -> int:
         """比较版本号 - 返回: -1(v1<v2), 0(v1==v2), 1(v1>v2)"""
@@ -80,34 +60,6 @@ class UpdateManager:
         except:
             return 0
 
-    def _get_package_checksums(self, filename: str) -> Dict[str, str]:
-        """获取包的校验和"""
-        checksums = {}
-        package_path = self.updates_dir / filename
-
-        if package_path.exists():
-            # 读取MD5文件
-            md5_file = self.updates_dir / f"{filename}.md5"
-            if md5_file.exists():
-                try:
-                    with open(md5_file, "r") as f:
-                        md5_line = f.readline().strip()
-                        checksums["md5"] = md5_line.split()[0]
-                except:
-                    pass
-
-            # 读取SHA256文件
-            sha256_file = self.updates_dir / f"{filename}.sha256"
-            if sha256_file.exists():
-                try:
-                    with open(sha256_file, "r") as f:
-                        sha256_line = f.readline().strip()
-                        checksums["sha256"] = sha256_line.split()[0]
-                except:
-                    pass
-
-        return checksums
-
     async def handle_update_check(
         self, device_id: str, json_data: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -115,16 +67,15 @@ class UpdateManager:
         try:
             current_version = json_data.get("current_version", "1.0.0")
             channel = json_data.get("channel", "stable")
-            device_id_request = json_data.get("device_id", device_id)
+            arch = json_data.get("arch", "x86_64")
 
             logger.info(
-                f"[{device_id}] 检查更新: 当前版本={current_version}, 渠道={channel}"
+                f"[{device_id}] 检查更新: 当前版本={current_version}, 渠道={channel}, 架构={arch}"
             )
 
-            # 获取渠道信息
-            channels = self.update_metadata.get("channels", {})
-            channel_data = channels.get(channel, {})
-            latest_version = channel_data.get("latest_version", "1.0.0")
+            # 获取最新版本信息
+            latest_version = self.update_metadata.get("latest_version", "1.0.0")
+            manifest_channel = self.update_metadata.get("channel", "stable")
 
             # 检查是否有更新
             has_update = self._compare_versions(latest_version, current_version) > 0
@@ -134,33 +85,41 @@ class UpdateManager:
                 "current_version": current_version,
                 "latest_version": latest_version,
                 "channel": channel,
+                "arch": arch,
                 "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
             }
 
             if has_update:
-                # 获取最新版本信息
-                version_info = self._get_version_info(latest_version, channel)
-                if version_info:
-                    filename = version_info.get(
-                        "file", f"agent-update-{latest_version}.tar.gz"
+                # 从 architectures 获取架构特定的信息
+                architectures = self.update_metadata.get("architectures", {})
+                arch_info = architectures.get(arch)
+
+                if arch_info:
+                    filename = arch_info.get(
+                        "file", f"buildroot-agent-{latest_version}-{arch}.tar"
                     )
-                    checksums = self._get_package_checksums(filename)
+                    changes = self.update_metadata.get("changes", [])
 
                     response.update(
                         {
                             "version_code": int(
                                 latest_version.replace(".", "")
                             ),  # 简单的版本号转换
-                            "file_size": version_info.get("size", 0),
+                            "file_size": arch_info.get("size", 0),
                             "download_url": filename,  # 相对路径，由服务器处理
-                            "md5_checksum": checksums.get("md5", ""),
-                            "sha256_checksum": checksums.get("sha256", ""),
-                            "release_notes": version_info.get("description", ""),
-                            "mandatory": version_info.get("mandatory", False),
-                            "release_date": version_info.get("release_date", ""),
-                            "changes": version_info.get("changes", []),
+                            "sha256_checksum": arch_info.get("sha256", ""),
+                            "release_notes": f"更新到版本 {latest_version}",
+                            "mandatory": arch_info.get("mandatory", False),
+                            "release_date": self.update_metadata.get(
+                                "release_date", ""
+                            ),
+                            "changes": changes,
                         }
                     )
+                else:
+                    logger.warning(f"[{device_id}] 未找到架构 {arch} 的更新信息")
+                    response["has_update"] = "false"
+                    response["error"] = f"不支持架构: {arch}"
 
             logger.info(
                 f"[{device_id}] 更新检查结果: has_update={response['has_update']}, latest={latest_version}"
@@ -188,18 +147,20 @@ class UpdateManager:
                 f"[{device_id}] 请求下载更新: version={version}, request_id={request_id}"
             )
 
-            # 获取版本信息
-            channel = json_data.get("channel", "stable")
-            version_info = self._get_version_info(version, channel)
+            # 获取架构信息
+            arch = json_data.get("arch", "x86_64")
+            architectures = self.update_metadata.get("architectures", {})
+            arch_info = architectures.get(arch)
 
-            if not version_info:
+            if not arch_info:
                 return {
                     "status": "error",
-                    "error": f"版本 {version} 不存在",
+                    "error": f"不支持架构: {arch}",
                     "request_id": request_id,
                 }
 
-            filename = version_info.get("file", f"agent-update-{version}.tar.gz")
+            # 获取文件名
+            filename = arch_info.get("file", f"buildroot-agent-{version}-{arch}.tar")
             package_path = self.updates_dir / filename
 
             if not package_path.exists():
@@ -209,19 +170,18 @@ class UpdateManager:
                     "request_id": request_id,
                 }
 
-            # 获取校验和
-            checksums = self._get_package_checksums(filename)
+            # 从 manifest 直接获取 SHA256
+            sha256_checksum = arch_info.get("sha256", "")
 
             # 构建下载批准响应
             response = {
                 "status": "approved",
                 "download_url": filename,  # 文件名，服务器会处理
-                "file_size": version_info.get("size", package_path.stat().st_size),
-                "md5_checksum": checksums.get("md5", ""),
-                "sha256_checksum": checksums.get("sha256", ""),
+                "file_size": arch_info.get("size", package_path.stat().st_size),
+                "sha256_checksum": sha256_checksum,
                 "request_id": request_id,
                 "version": version,
-                "mandatory": version_info.get("mandatory", False),
+                "mandatory": arch_info.get("mandatory", False),
                 "approval_time": datetime.utcnow().isoformat() + "Z",
             }
 
