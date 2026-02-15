@@ -1,12 +1,18 @@
 /*
- * 日志上报模块
- * 支持上传日志文件、tail跟踪、实时监控
+ * agent_log.c - 日志文件操作模块
  */
 
-#include <stdio.h>
+#include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/inotify.h>
@@ -333,6 +339,7 @@ int log_watch_start(agent_context_t *ctx, const char *filepath, const char *requ
             return 0;
         }
     }
+
     
     if (slot < 0) {
         pthread_mutex_unlock(&g_log_lock);
@@ -410,9 +417,17 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
     if (!fp) {
         LOG_ERROR("[FILE_READ] 无法打开文件: %s", filepath);
         /* 返回错误消息 */
-        char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"无法打开文件\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
-        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "filepath", filepath);
+        cJSON_AddStringToObject(root, "error", "无法打开文件");
+        cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            free(json);
+        }
         return -1;
     }
 
@@ -429,9 +444,20 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
     if (offset >= file_size) {
         fclose(fp);
         LOG_WARN("[FILE_READ] offset超出文件大小: offset=%d, file_size=%ld", offset, file_size);
-        char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"offset\":%d,\"length\":0,\"chunk_data\":\"\",\"mtime\":%lld,\"request_id\":\"%s\"}", filepath, offset, (long long)mtime, request_id ? request_id : "");
-        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "filepath", filepath);
+        cJSON_AddNumberToObject(root, "offset", offset);
+        cJSON_AddNumberToObject(root, "length", 0);
+        cJSON_AddStringToObject(root, "chunk_data", "");
+        cJSON_AddNumberToObject(root, "mtime", (double)mtime);
+        cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            free(json);
+        }
         return 0;
     }
 
@@ -463,19 +489,24 @@ int log_read_file(agent_context_t *ctx, const char *filepath, int offset, int le
 
         if (encoded) {
             LOG_INFO("[FILE_READ] base64编码后长度: %zu", encoded_len);
-            size_t json_size = encoded_len + 1024;
-            char *json = malloc(json_size);
+            cJSON *root = cJSON_CreateObject();
+            cJSON_AddStringToObject(root, "filepath", filepath);
+            cJSON_AddNumberToObject(root, "offset", offset);
+            cJSON_AddNumberToObject(root, "length", (double)actual_read);
+            cJSON_AddStringToObject(root, "chunk_data", encoded);
+            cJSON_AddNumberToObject(root, "mtime", (double)mtime);
+            cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+            char *json = cJSON_Print(root);
+            cJSON_Delete(root);
+            free(encoded);
+            
             if (json) {
-                snprintf(json, json_size,
-                    "{\"filepath\":\"%s\",\"offset\":%d,\"length\":%zu,\"chunk_data\":\"%s\",\"mtime\":%lld,\"request_id\":\"%s\"}",
-                    filepath, offset, actual_read, encoded, (long long)mtime, request_id ? request_id : "");
                 LOG_INFO("[FILE_READ] 发送文件数据: filepath=%s, offset=%d, length=%zu, mtime=%lld, request_id=%s", filepath, offset, actual_read, (long long)mtime, request_id ? request_id : "");
                 socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
                 free(json);
             } else {
                 LOG_ERROR("[FILE_READ] JSON内存分配失败");
             }
-            free(encoded);
         } else {
             LOG_ERROR("[FILE_READ] base64编码失败");
         }
@@ -536,9 +567,17 @@ int log_write_file(agent_context_t *ctx, const char *filepath, const char *conte
     unsigned char *content = malloc(max_decoded_len + 1);
     if (!content) {
         LOG_ERROR("[FILE_WRITE] 内存分配失败");
-        char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"内存分配失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
-        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "filepath", filepath);
+        cJSON_AddStringToObject(root, "error", "内存分配失败");
+        cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            free(json);
+        }
         return -1;
     }
 
@@ -546,9 +585,17 @@ int log_write_file(agent_context_t *ctx, const char *filepath, const char *conte
     if (decoded_len == 0) {
         LOG_ERROR("[FILE_WRITE] base64 解码失败");
         free(content);
-        char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"base64 解码失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
-        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "filepath", filepath);
+        cJSON_AddStringToObject(root, "error", "base64 解码失败");
+        cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            free(json);
+        }
         return -1;
     }
 
@@ -560,9 +607,17 @@ int log_write_file(agent_context_t *ctx, const char *filepath, const char *conte
 
     if (result != 0) {
         LOG_ERROR("[FILE_WRITE] 写入文件失败");
-        char json[512];
-        snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"写入文件失败\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
-        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "filepath", filepath);
+        cJSON_AddStringToObject(root, "error", "写入文件失败");
+        cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            free(json);
+        }
         return -1;
     }
 
@@ -573,14 +628,21 @@ int log_write_file(agent_context_t *ctx, const char *filepath, const char *conte
     }
 
     LOG_INFO("[FILE_WRITE] 写入成功，新 mtime=%lld", (long long)new_mtime);
-
+    
     /* 返回成功响应 */
-    char json[512];
-    snprintf(json, sizeof(json),
-             "{\"filepath\":\"%s\",\"success\":true,\"mtime\":%lld,\"request_id\":\"%s\"}",
-             filepath, (long long)new_mtime, request_id ? request_id : "");
-    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
-
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "filepath", filepath);
+    cJSON_AddBoolToObject(root, "success", true);
+    cJSON_AddNumberToObject(root, "mtime", (double)new_mtime);
+    cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (json) {
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        free(json);
+    }
+    
     return 0;
 }
 
@@ -596,31 +658,38 @@ int log_list_files(agent_context_t *ctx, const char *log_dir, const char *reques
         return -1;
     }
     
-    char json[8192];
-    int offset = snprintf(json, sizeof(json), "{\"log_dir\":\"%s\",\"files\":[", dir);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "log_dir", dir);
+    cJSON *files = cJSON_CreateArray();
     
     struct dirent *entry;
-    int count = 0;
-    
     while ((entry = readdir(dp)) != NULL) {
-        if (entry->d_type == DT_REG) {  /* 只列出普通文件 */
+        if (entry->d_type == DT_REG) {
             char filepath[512];
             snprintf(filepath, sizeof(filepath), "%s/%s", dir, entry->d_name);
             
             struct stat st;
             if (stat(filepath, &st) == 0) {
-                offset += snprintf(json + offset, sizeof(json) - offset,
-                    "%s{\"name\":\"%s\",\"size\":%ld}",
-                    count > 0 ? "," : "", entry->d_name, (long)st.st_size);
-                count++;
+                cJSON *file = cJSON_CreateObject();
+                cJSON_AddStringToObject(file, "name", entry->d_name);
+                cJSON_AddNumberToObject(file, "size", (double)st.st_size);
+                cJSON_AddItemToArray(files, file);
             }
         }
     }
-    
     closedir(dp);
     
-    snprintf(json + offset, sizeof(json) - offset, "],\"request_id\":\"%s\"}", request_id ? request_id : "");
-    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+    cJSON_AddItemToObject(root, "files", files);
+    cJSON_AddStringToObject(root, "request_id", request_id ? request_id : "");
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (json) {
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        free(json);
+    }
     
     return 0;
 }
+    
+

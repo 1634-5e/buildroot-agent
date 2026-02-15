@@ -22,6 +22,9 @@
 #include <dirent.h>
 
 #include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
+
 
 /* 上一次的CPU时间，用于计算CPU使用率 */
 static unsigned long long prev_total = 0;
@@ -655,101 +658,66 @@ int status_collect(system_status_t *status)
     return 0;
 }
 
-/* 将状态转换为JSON (含进程列表) */
-char *status_to_json(system_status_t *status)
-{
-    if (!status) return NULL;
-    
-    /* 采集进程列表 */
-    #define MAX_PROCS 128
-    #define TOP_N 30
-    static proc_info_t procs[MAX_PROCS];
-    int proc_count = get_process_list(procs, MAX_PROCS);
-    int top_count = proc_count < TOP_N ? proc_count : TOP_N;
-    
-    /* 计算所需缓冲区大小: 基础字段~1K + 每个进程~150字节 */
-    size_t json_size = 2048 + (top_count * 160);
-    char *json = malloc(json_size);
-    if (!json) return NULL;
-    
-    int offset = snprintf(json, json_size,
-        "{"
-        "\"cpu_usage\":%.2f,"
-        "\"cpu_cores\":%d,"
-        "\"cpu_user\":%.2f,"
-        "\"cpu_system\":%.2f,"
-        "\"mem_total\":%.2f,"
-        "\"mem_used\":%.2f,"
-        "\"mem_free\":%.2f,"
-        "\"disk_total\":%.2f,"
-        "\"disk_used\":%.2f,"
-        "\"load_1min\":%.2f,"
-        "\"load_5min\":%.2f,"
-        "\"load_15min\":%.2f,"
-        "\"uptime\":%u,"
-        "\"net_rx_bytes\":%d,"
-        "\"net_tx_bytes\":%d,"
-        "\"hostname\":\"%s\","
-        "\"kernel_version\":\"%s\","
-        "\"ip_addr\":\"%s\","
-        "\"mac_addr\":\"%s\","
-        "\"timestamp\":%" PRIu64 ","
-        "\"proc_total\":%d,"
-        "\"processes\":[",
-        status->cpu_usage,
-        status->cpu_cores,
-        status->cpu_user,
-        status->cpu_system,
-        status->mem_total,
-        status->mem_used,
-        status->mem_free,
-        status->disk_total,
-        status->disk_used,
-        status->load_1min,
-        status->load_5min,
-        status->load_15min,
-        status->uptime,
-        status->net_rx_bytes,
-        status->net_tx_bytes,
-        status->hostname,
-        status->kernel_version,
-        status->ip_addr,
-        status->mac_addr,
-        get_timestamp_ms(),
-        proc_count
-    );
-    
-    /* 追加进程列表 JSON */
-    for (int i = 0; i < top_count && offset < (int)json_size - 200; i++) {
-        /* 转义进程名中的特殊字符 */
-        char safe_name[128];
-        int si = 0;
-        for (int j = 0; procs[i].name[j] && si < 120; j++) {
-            char c = procs[i].name[j];
-            if (c == '"' || c == '\\') {
-                safe_name[si++] = '\\';
-            }
-            safe_name[si++] = c;
-        }
-        safe_name[si] = '\0';
-        
-        offset += snprintf(json + offset, json_size - offset,
-            "%s{\"pid\":%d,\"name\":\"%s\",\"state\":\"%c\","
-            "\"cpu\":%.1f,\"mem\":%lu,\"time\":\"%s\"}",
-            i > 0 ? "," : "",
-            procs[i].pid,
-            safe_name,
-            procs[i].state,
-            procs[i].cpu,
-            procs[i].mem,
-            procs[i].time_str
-        );
-    }
-    
-    /* 闭合 JSON */
-    snprintf(json + offset, json_size - offset, "]}");
-    
-    return json;
+/* 将状态转换为JSON (含进程列表) */
+char *status_to_json(system_status_t *status)
+{
+    if (!status) return NULL;
+    
+    /* 采集进程列表 */
+    #define MAX_PROCS 128
+    #define TOP_N 30
+    static proc_info_t procs[MAX_PROCS];
+    int proc_count = get_process_list(procs, MAX_PROCS);
+    int top_count = proc_count < TOP_N ? proc_count : TOP_N;
+    
+    /* 使用cJSON构建JSON */
+    cJSON *root = cJSON_CreateObject();
+    
+    /* 添加基础系统状态字段 */
+    cJSON_AddNumberToObject(root, "cpu_usage", status->cpu_usage);
+    cJSON_AddNumberToObject(root, "cpu_cores", status->cpu_cores);
+    cJSON_AddNumberToObject(root, "cpu_user", status->cpu_user);
+    cJSON_AddNumberToObject(root, "cpu_system", status->cpu_system);
+    cJSON_AddNumberToObject(root, "mem_total", status->mem_total);
+    cJSON_AddNumberToObject(root, "mem_used", status->mem_used);
+    cJSON_AddNumberToObject(root, "mem_free", status->mem_free);
+    cJSON_AddNumberToObject(root, "disk_total", status->disk_total);
+    cJSON_AddNumberToObject(root, "disk_used", status->disk_used);
+    cJSON_AddNumberToObject(root, "load_1min", status->load_1min);
+    cJSON_AddNumberToObject(root, "load_5min", status->load_5min);
+    cJSON_AddNumberToObject(root, "load_15min", status->load_15min);
+    cJSON_AddNumberToObject(root, "uptime", (double)status->uptime);
+    cJSON_AddNumberToObject(root, "net_rx_bytes", status->net_rx_bytes);
+    cJSON_AddNumberToObject(root, "net_tx_bytes", status->net_tx_bytes);
+    cJSON_AddStringToObject(root, "hostname", status->hostname);
+    cJSON_AddStringToObject(root, "kernel_version", status->kernel_version);
+    cJSON_AddStringToObject(root, "ip_addr", status->ip_addr);
+    cJSON_AddStringToObject(root, "mac_addr", status->mac_addr);
+    cJSON_AddNumberToObject(root, "timestamp", (double)get_timestamp_ms());
+    cJSON_AddNumberToObject(root, "proc_total", proc_count);
+    
+    /* 创建进程数组 */
+    cJSON *processes = cJSON_CreateArray();
+    
+    for (int i = 0; i < top_count; i++) {
+        cJSON *proc = cJSON_CreateObject();
+        cJSON_AddNumberToObject(proc, "pid", procs[i].pid);
+        /* cJSON会自动转义进程名中的特殊字符（引号、反斜杠等）*/
+        cJSON_AddStringToObject(proc, "name", procs[i].name);
+        cJSON_AddStringToObject(proc, "state", &procs[i].state);
+        cJSON_AddNumberToObject(proc, "cpu", procs[i].cpu);
+        cJSON_AddNumberToObject(proc, "mem", (double)procs[i].mem);
+        cJSON_AddStringToObject(proc, "time", procs[i].time_str);
+        cJSON_AddItemToArray(processes, proc);
+    }
+    
+    cJSON_AddItemToObject(root, "processes", processes);
+    
+    /* 生成JSON字符串 */
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    return json;
 }
 
 /* 状态上报线程 */

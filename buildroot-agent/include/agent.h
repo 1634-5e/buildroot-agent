@@ -344,7 +344,8 @@ int update_notify_available(agent_context_t *ctx);
 /* 更新线程状态标志（外部变量） */
 extern bool g_update_thread_running;
 
-/* JSON 解析函数 */
+/* JSON 解析函数 - 已迁移到cJSON，以下声明仅保留用于向后兼容 */
+/* 注意: agent_protocol.c内部仍使用手写JSON函数，其他模块应使用cJSON */
 char *json_get_string(const char *json, const char *key);
 int json_get_int(const char *json, const char *key, int default_val);
 int64_t json_get_int64(const char *json, const char *key);

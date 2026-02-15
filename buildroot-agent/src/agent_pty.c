@@ -1,13 +1,21 @@
 /*
- * 交互式Shell (PTY) 模块
- * 使用伪终端实现远程交互式命令行
+ * agent_pty.c - PTY会话管理模块
  */
 
-#define _XOPEN_SOURCE 600
-#include <stdio.h>
+#include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <pty.h>
+#include <pthread.h>
+#include <errno.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
@@ -218,9 +226,17 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     
     if (!ctx->config.enable_pty) {
         LOG_WARN("PTY功能已禁用");
-        char json[256];
-        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY功能已禁用\"}", session_id);
-        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "session_id", session_id);
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "error", "PTY功能已禁用");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+            free(json);
+        }
         return -1;
     }
     
@@ -230,9 +246,17 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (find_pty_session(session_id) != NULL) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_WARN("PTY会话已存在: %d", session_id);
-        char json[256];
-        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY会话已存在\"}", session_id);
-        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "session_id", session_id);
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "error", "PTY会话已存在");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+            free(json);
+        }
         return -1;
     }
     
@@ -241,9 +265,17 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (!session) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_ERROR("PTY会话数已达上限");
-        char json[256];
-        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"PTY会话数已达上限\"}", session_id);
-        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "session_id", session_id);
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "error", "PTY会话数已达上限");
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+            free(json);
+        }
         return -1;
     }
     
@@ -271,9 +303,19 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     if (pid < 0) {
         pthread_mutex_unlock(&g_pty_lock);
         LOG_ERROR("forkpty失败: %s", strerror(errno));
-        char json[256];
-        snprintf(json, sizeof(json), "{\"session_id\":%d,\"success\":false,\"error\":\"forkpty失败: %s\"}", session_id, strerror(errno));
-        socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "forkpty失败: %s", strerror(errno));
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "session_id", session_id);
+        cJSON_AddBoolToObject(root, "success", false);
+        cJSON_AddStringToObject(root, "error", error_msg);
+        char *json = cJSON_Print(root);
+        cJSON_Delete(root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
+            free(json);
+        }
         return -1;
     }
     
@@ -564,27 +606,33 @@ int pty_list_sessions(agent_context_t *ctx)
     
     pthread_mutex_lock(&g_pty_lock);
     
-    char json[1024];
-    int offset = snprintf(json, sizeof(json), "{\"sessions\":[");
+    cJSON *root = cJSON_CreateObject();
+    cJSON *sessions = cJSON_CreateArray();
     int count = 0;
     
     for (int i = 0; i < MAX_PTY_SESSIONS; i++) {
         if (g_pty_sessions[i].active) {
-            offset += snprintf(json + offset, sizeof(json) - offset,
-                "%s{\"session_id\":%d,\"pid\":%d,\"rows\":%d,\"cols\":%d}",
-                count > 0 ? "," : "",
-                g_pty_sessions[i].session_id,
-                g_pty_sessions[i].child_pid,
-                g_pty_sessions[i].rows,
-                g_pty_sessions[i].cols);
+            cJSON *session = cJSON_CreateObject();
+            cJSON_AddNumberToObject(session, "session_id", g_pty_sessions[i].session_id);
+            cJSON_AddNumberToObject(session, "pid", g_pty_sessions[i].child_pid);
+            cJSON_AddNumberToObject(session, "rows", g_pty_sessions[i].rows);
+            cJSON_AddNumberToObject(session, "cols", g_pty_sessions[i].cols);
+            cJSON_AddItemToArray(sessions, session);
             count++;
         }
     }
     
     pthread_mutex_unlock(&g_pty_lock);
     
-    snprintf(json + offset, sizeof(json) - offset, "],\"count\":%d}", count);
-    socket_send_json(ctx, MSG_TYPE_CMD_RESPONSE, json);
+    cJSON_AddItemToObject(root, "sessions", sessions);
+    cJSON_AddNumberToObject(root, "count", count);
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (json) {
+        socket_send_json(ctx, MSG_TYPE_CMD_RESPONSE, json);
+        free(json);
+    }
     
     return 0;
 }

@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <pthread.h>
 #include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
 
 #define SCRIPT_OUTPUT_MAX   (64 * 1024)  /* 最大输出64KB */
 #define SCRIPT_TIMEOUT_SEC  300           /* 脚本超时时间 */
@@ -383,12 +385,10 @@ int script_list(agent_context_t *ctx)
         return -1;
     }
     
-    char json[4096];
-    int offset = snprintf(json, sizeof(json), "{\"scripts\":[");
+    cJSON *root = cJSON_CreateObject();
+    cJSON *scripts = cJSON_CreateArray();
     
     struct dirent *entry;
-    int count = 0;
-    
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type != DT_REG) continue;
         
@@ -397,17 +397,23 @@ int script_list(agent_context_t *ctx)
         
         struct stat st;
         if (stat(filepath, &st) == 0) {
-            offset += snprintf(json + offset, sizeof(json) - offset,
-                "%s{\"name\":\"%s\",\"size\":%ld,\"mtime\":%ld}",
-                count > 0 ? "," : "", entry->d_name, (long)st.st_size, (long)st.st_mtime);
-            count++;
+            cJSON *script = cJSON_CreateObject();
+            cJSON_AddStringToObject(script, "name", entry->d_name);
+            cJSON_AddNumberToObject(script, "size", (double)st.st_size);
+            cJSON_AddNumberToObject(script, "mtime", (double)st.st_mtime);
+            cJSON_AddItemToArray(scripts, script);
         }
     }
-    
     closedir(dir);
     
-    snprintf(json + offset, sizeof(json) - offset, "]}");
-    socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+    cJSON_AddItemToObject(root, "scripts", scripts);
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (json) {
+        socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+        free(json);
+    }
     
     return 0;
 }

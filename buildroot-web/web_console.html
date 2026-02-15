@@ -5405,6 +5405,7 @@
                 release_notes: data.release_notes,
                 file_size: data.file_size,
                 sha256_checksum: data.sha256_checksum,
+                download_url: data.download_url,
                 mandatory: data.mandatory === true || data.mandatory === 'true',
                 request_id: data.request_id
             };
@@ -5468,6 +5469,7 @@
             const approveData = {
                 device_id: pendingUpdate.device_id,
                 version: pendingUpdate.latest_version,
+                download_url: pendingUpdate.download_url,
                 action: 'approve',
                 request_id: pendingUpdate.request_id
             };

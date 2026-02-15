@@ -6,8 +6,8 @@
   "architectures": {
     "x86_64": {
       "file": "buildroot-agent-1.1.0-x86_64.tar",
-      "size": 1232896,
-      "sha256": "87ce0627cd65942364021746d6d1ee5fb247064c0cc06f61cfa2cddf2bdbc8f9",
+      "size": 1257984,
+      "sha256": "55337d94a806fc3de02a7fdff2b5af2a2fceaa439083f746def4c78489c1b80f",
       "mandatory": false
     },
     "armv7": {

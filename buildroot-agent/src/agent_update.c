@@ -3,6 +3,8 @@
  */
 
 #include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -77,15 +79,17 @@ static int send_update_progress(agent_context_t *ctx, int progress, const char *
 {
     if (!ctx) return -1;
     
-    char *json = malloc(512);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "progress", progress);
+    cJSON_AddStringToObject(root, "message", message ? message : "");
+    cJSON_AddStringToObject(root, "status", "downloading");
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
     if (!json) {
-        LOG_ERROR("内存分配失败");
+        LOG_ERROR("JSON生成失败");
         return -1;
     }
-    
-    snprintf(json, 512,
-             "{\"progress\":%d,\"message\":\"%s\",\"status\":\"downloading\"}",
-             progress, message ? message : "");
     
     int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, json);
     free(json);
@@ -102,19 +106,17 @@ int update_check_version(agent_context_t *ctx)
              AGENT_VERSION, ctx->config.update_channel);
     
     /* 构建检查请求JSON */
-    char *json = malloc(512);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "device_id", ctx->config.device_id);
+    cJSON_AddStringToObject(root, "current_version", AGENT_VERSION);
+    cJSON_AddStringToObject(root, "channel", ctx->config.update_channel);
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
     if (!json) {
-        LOG_ERROR("内存分配失败");
+        LOG_ERROR("JSON生成失败");
         return -1;
     }
-    
-    snprintf(json, 512,
-             "{\"device_id\":\"%s\","
-             "\"current_version\":\"%s\","
-             "\"channel\":\"%s\"}",
-             ctx->config.device_id,
-             AGENT_VERSION,
-             ctx->config.update_channel);
     
     /* 发送检查请求到服务器 */
     int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_CHECK, json);
@@ -195,12 +197,17 @@ void *update_download_and_install_thread(void *arg)
         LOG_ERROR("下载失败: %s", task->download_url);
 
         /* 发送错误通知 */
-        char *error_json = malloc(256);
-        snprintf(error_json, 256,
-                 "{\"status\":\"failed\",\"error\":\"download_failed\",\"request_id\":\"%s\"}",
-                 task->request_id);
-        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
-        free(error_json);
+        cJSON *error_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_root, "status", "failed");
+        cJSON_AddStringToObject(error_root, "error", "download_failed");
+        cJSON_AddStringToObject(error_root, "request_id", task->request_id);
+        char *error_json = cJSON_Print(error_root);
+        cJSON_Delete(error_root);
+        
+        if (error_json) {
+            socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+            free(error_json);
+        }
         free(task);
 
         /* 清除线程运行标志 */
@@ -214,12 +221,17 @@ void *update_download_and_install_thread(void *arg)
     LOG_INFO("下载完成，开始校验: %s", task->download_path);
 
     /* 发送进度：下载完成 */
-    char *progress_json = malloc(256);
-    snprintf(progress_json, 256,
-             "{\"status\":\"downloaded\",\"request_id\":\"%s\",\"progress\":100}",
-             task->request_id);
-    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
-    free(progress_json);
+    cJSON *progress_root = cJSON_CreateObject();
+    cJSON_AddStringToObject(progress_root, "status", "downloaded");
+    cJSON_AddStringToObject(progress_root, "request_id", task->request_id);
+    cJSON_AddNumberToObject(progress_root, "progress", 100);
+    char *progress_json = cJSON_Print(progress_root);
+    cJSON_Delete(progress_root);
+    
+    if (progress_json) {
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
+        free(progress_json);
+    }
 
     /* 校验文件 */
     LOG_INFO("开始校验文件: SHA256=%s",
@@ -229,12 +241,17 @@ void *update_download_and_install_thread(void *arg)
         LOG_ERROR("文件校验失败");
 
         /* 发送校验失败通知 */
-        char *error_json = malloc(256);
-        snprintf(error_json, 256,
-                 "{\"status\":\"verify_failed\",\"request_id\":\"%s\",\"error\":\"checksum_mismatch\"}",
-                 task->request_id);
-        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
-        free(error_json);
+        cJSON *error_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(error_root, "status", "verify_failed");
+        cJSON_AddStringToObject(error_root, "request_id", task->request_id);
+        cJSON_AddStringToObject(error_root, "error", "checksum_mismatch");
+        char *error_json = cJSON_Print(error_root);
+        cJSON_Delete(error_root);
+        
+        if (error_json) {
+            socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+            free(error_json);
+        }
         free(task);
 
         /* 清除线程运行标志 */
@@ -248,22 +265,30 @@ void *update_download_and_install_thread(void *arg)
     LOG_INFO("文件校验通过");
 
     /* 发送校验成功通知 */
-    char *verify_json = malloc(256);
-    snprintf(verify_json, 256,
-             "{\"status\":\"verified\",\"request_id\":\"%s\",\"path\":\"%s\"}",
-             task->request_id,
-             task->download_path);
-    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, verify_json);
-    free(verify_json);
+    cJSON *verify_root = cJSON_CreateObject();
+    cJSON_AddStringToObject(verify_root, "status", "verified");
+    cJSON_AddStringToObject(verify_root, "request_id", task->request_id);
+    cJSON_AddStringToObject(verify_root, "path", task->download_path);
+    char *verify_json = cJSON_Print(verify_root);
+    cJSON_Delete(verify_root);
+    
+    if (verify_json) {
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, verify_json);
+        free(verify_json);
+    }
 
     /* 发送安装通知 */
-    char *install_json = malloc(256);
-    snprintf(install_json, 256,
-             "{\"status\":\"installing\",\"request_id\":\"%s\",\"path\":\"%s\"}",
-             task->request_id,
-             task->download_path);
-    socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
-    free(install_json);
+    cJSON *install_root = cJSON_CreateObject();
+    cJSON_AddStringToObject(install_root, "status", "installing");
+    cJSON_AddStringToObject(install_root, "request_id", task->request_id);
+    cJSON_AddStringToObject(install_root, "path", task->download_path);
+    char *install_json = cJSON_Print(install_root);
+    cJSON_Delete(install_root);
+    
+    if (install_json) {
+        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
+        free(install_json);
+    }
 
     /* 开始安装 */
     LOG_INFO("开始安装更新包: %s", task->download_path);
@@ -275,12 +300,16 @@ void *update_download_and_install_thread(void *arg)
         LOG_INFO("安装成功，准备重启...");
 
         /* 发送完成通知给服务器 */
-        char *complete_json = malloc(256);
-        snprintf(complete_json, 256,
-                 "{\"status\":\"complete\",\"request_id\":\"%s\"}",
-                 task->request_id);
-        socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, complete_json);
-        free(complete_json);
+        cJSON *complete_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(complete_root, "status", "complete");
+        cJSON_AddStringToObject(complete_root, "request_id", task->request_id);
+        char *complete_json = cJSON_Print(complete_root);
+        cJSON_Delete(complete_root);
+        
+        if (complete_json) {
+            socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, complete_json);
+            free(complete_json);
+        }
 
         /* 延迟2秒后自动重启 */
         sleep(2);
@@ -1044,30 +1073,27 @@ int update_notify_available(agent_context_t *ctx)
         return 0;
     }
     
-    char *json = malloc(512);
-    if (!json) {
-        LOG_ERROR("内存分配失败");
-        pthread_mutex_unlock(&g_update_lock);
-        return -1;
-    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "current_version", AGENT_VERSION);
+    cJSON_AddStringToObject(root, "latest_version", g_update_info.latest_version);
+    cJSON_AddStringToObject(root, "release_notes", g_update_info.release_notes);
+    cJSON_AddNumberToObject(root, "file_size", (double)g_update_info.file_size);
+    cJSON_AddStringToObject(root, "sha256_checksum", g_update_info.sha256_checksum);
+    cJSON_AddBoolToObject(root, "mandatory", g_update_info.mandatory);
     
-    snprintf(json, 512,
-             "{\"current_version\":\"%s\","
-             "\"latest_version\":\"%s\","
-             "\"release_notes\":\"%s\","
-             "\"file_size\":%lld,"
-             "\"sha256_checksum\":\"%s\","
-             "\"mandatory\":%s,"
-             "\"request_id\":\"available-%lld\"}",
-             AGENT_VERSION,
-             g_update_info.latest_version,
-             g_update_info.release_notes,
-             (long long)g_update_info.file_size,
-             g_update_info.sha256_checksum,
-             g_update_info.mandatory ? "true" : "false",
-             (long long)get_timestamp_ms());
+    char request_id[128];
+    snprintf(request_id, sizeof(request_id), "available-%lld", (long long)get_timestamp_ms());
+    cJSON_AddStringToObject(root, "request_id", request_id);
     
     pthread_mutex_unlock(&g_update_lock);
+    
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (!json) {
+        LOG_ERROR("JSON生成失败");
+        return -1;
+    }
     
     int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_AVAILABLE, json);
     free(json);

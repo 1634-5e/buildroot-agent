@@ -3,6 +3,8 @@
  */
 
 #include "agent.h"
+#include "agent_json.h"
+#include "cJSON.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -321,24 +323,32 @@ int tcp_download_file(agent_context_t *ctx, const char *file_path, const char *o
     session->state = DOWNLOAD_STATE_REQUESTED;
     
     /* 构造下载请求JSON */
-    char request_json[1024];
-    snprintf(request_json, sizeof(request_json),
-             "{\"action\":\"download_update\","
-             "\"file_path\":\"%s\","
-             "\"offset\":%lld,"
-             "\"chunk_size\":%d,"
-             "\"request_id\":\"%s\"}",
-             file_path, (long long)session->offset, session->chunk_size, session->session_id);
+    cJSON *request_root = cJSON_CreateObject();
+    cJSON_AddStringToObject(request_root, "action", "download_update");
+    cJSON_AddStringToObject(request_root, "file_path", file_path);
+    cJSON_AddNumberToObject(request_root, "offset", (double)session->offset);
+    cJSON_AddNumberToObject(request_root, "chunk_size", session->chunk_size);
+    cJSON_AddStringToObject(request_root, "request_id", session->session_id);
+    char *request_json = cJSON_Print(request_root);
+    cJSON_Delete(request_root);
+    
+    if (!request_json) {
+        LOG_ERROR("JSON生成失败");
+        remove_session(session->session_id);
+        return -1;
+    }
     
     /* 发送下载请求到服务器 */
     if (ctx) {
         int rc = socket_send_json(ctx, MSG_TYPE_FILE_DOWNLOAD_REQUEST, request_json);
+        free(request_json);
         if (rc != 0) {
             LOG_ERROR("发送下载请求失败");
             remove_session(session->session_id);
             return -1;
         }
     } else {
+        free(request_json);
         LOG_ERROR("Agent上下文为空，无法发送请求");
         remove_session(session->session_id);
         return -1;
@@ -396,29 +406,57 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
     }
     
     /* 解析JSON响应 */
-    char *action = json_get_string(data, "action");
-    if (!action) {
-        LOG_ERROR("下载响应缺少action字段");
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("JSON解析失败");
         return -1;
     }
     
+    cJSON *action_item = cJSON_GetObjectItem(root, "action");
+    if (!action_item || !cJSON_IsString(action_item)) {
+        LOG_ERROR("下载响应缺少action字段");
+        cJSON_Delete(root);
+        return -1;
+    }
+    
+    char *action = strdup(action_item->valuestring);
     LOG_DEBUG("处理下载响应: action=%s", action);
     
     if (strcmp(action, "file_data") == 0) {
         /* 处理文件数据块 */
-        char *session_id = json_get_string(data, "request_id");
-        char *file_path = json_get_string(data, "file_path");
-        long long offset = json_get_int64(data, "offset");
-        char *data_b64 = json_get_string(data, "data");
-        int data_size = json_get_int(data, "size", 0);
-        bool is_final = json_get_bool(data, "is_final", false);
-        long long total_size = json_get_int64(data, "total_size");
+        cJSON *session_id_item = cJSON_GetObjectItem(root, "request_id");
+        cJSON *file_path_item = cJSON_GetObjectItem(root, "file_path");
+        cJSON *offset_item = cJSON_GetObjectItem(root, "offset");
+        cJSON *data_b64_item = cJSON_GetObjectItem(root, "data");
+        cJSON *size_item = cJSON_GetObjectItem(root, "size");
+        cJSON *is_final_item = cJSON_GetObjectItem(root, "is_final");
+        cJSON *total_size_item = cJSON_GetObjectItem(root, "total_size");
+        
+        char *session_id = (session_id_item && cJSON_IsString(session_id_item)) ? 
+                           strdup(session_id_item->valuestring) : NULL;
+        char *file_path = (file_path_item && cJSON_IsString(file_path_item)) ? 
+                          strdup(file_path_item->valuestring) : NULL;
+        char *data_b64 = (data_b64_item && cJSON_IsString(data_b64_item)) ? 
+                         strdup(data_b64_item->valuestring) : NULL;
+        long long offset = (offset_item && cJSON_IsNumber(offset_item)) ? 
+                           (long long)offset_item->valuedouble : 0;
+        int data_size = (size_item && cJSON_IsNumber(size_item)) ? 
+                        size_item->valueint : 0;
+        bool is_final = (is_final_item && cJSON_IsBool(is_final_item)) ? 
+                        cJSON_IsTrue(is_final_item) : false;
+        long long total_size = (total_size_item && cJSON_IsNumber(total_size_item)) ? 
+                               (long long)total_size_item->valuedouble : 0;
 
         LOG_DEBUG("收到文件数据块: session_id=%s, offset=%lld, size=%d, is_final=%d, total_size=%lld",
                   session_id ? session_id : "null", (long long)offset, data_size, is_final, (long long)total_size);
         
         if (!session_id || !file_path || !data_b64) {
             LOG_ERROR("下载响应缺少必要字段");
+            free(action);
+            if (session_id) free(session_id);
+            if (file_path) free(file_path);
+            if (data_b64) free(data_b64);
+            cJSON_Delete(root);
             return -1;
         }
         
@@ -510,28 +548,36 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
             pthread_mutex_unlock(&session->mutex);
 
             /* 请求下一个数据块 */
-            char next_request[1024];
-            snprintf(next_request, sizeof(next_request),
-                     "{\"action\":\"download_update\","
-                     "\"file_path\":\"%s\","
-                     "\"offset\":%lld,"
-                     "\"chunk_size\":%d,"
-                     "\"request_id\":\"%s\"}",
-                     file_path, (long long)session->offset, session->chunk_size, session_id);
+            cJSON *next_root = cJSON_CreateObject();
+            cJSON_AddStringToObject(next_root, "action", "download_update");
+            cJSON_AddStringToObject(next_root, "file_path", file_path);
+            cJSON_AddNumberToObject(next_root, "offset", (double)session->offset);
+            cJSON_AddNumberToObject(next_root, "chunk_size", session->chunk_size);
+            cJSON_AddStringToObject(next_root, "request_id", session_id);
+            char *next_request = cJSON_Print(next_root);
+            cJSON_Delete(next_root);
 
             /* 发送下一个数据块请求 */
-            int send_rc = socket_send_json(ctx, MSG_TYPE_FILE_DOWNLOAD_REQUEST, next_request);
-            if (send_rc != 0) {
-                LOG_ERROR("发送下一个数据块请求失败: rc=%d", send_rc);
-            } else {
-                LOG_DEBUG("已发送下一个数据块请求: offset=%lld", (long long)session->offset);
+            if (next_request) {
+                int send_rc = socket_send_json(ctx, MSG_TYPE_FILE_DOWNLOAD_REQUEST, next_request);
+                free(next_request);
+                if (send_rc != 0) {
+                    LOG_ERROR("发送下一个数据块请求失败: rc=%d", send_rc);
+                } else {
+                    LOG_DEBUG("已发送下一个数据块请求: offset=%lld", (long long)session->offset);
+                }
             }
         }
         
     } else if (strcmp(action, "download_error") == 0) {
         /* 处理下载错误 */
-        char *session_id = json_get_string(data, "request_id");
-        char *error_msg = json_get_string(data, "error");
+        cJSON *session_id_item = cJSON_GetObjectItem(root, "request_id");
+        cJSON *error_msg_item = cJSON_GetObjectItem(root, "error");
+        
+        char *session_id = (session_id_item && cJSON_IsString(session_id_item)) ? 
+                           strdup(session_id_item->valuestring) : NULL;
+        char *error_msg = (error_msg_item && cJSON_IsString(error_msg_item)) ? 
+                          strdup(error_msg_item->valuestring) : NULL;
         
         if (session_id) {
             download_session_t *session = find_session(session_id);
@@ -542,9 +588,12 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
                 pthread_cond_signal(&session->cond);
                 pthread_mutex_unlock(&session->mutex);
             }
+            free(session_id);
         }
+        if (error_msg) free(error_msg);
     }
     
     free(action);
+    cJSON_Delete(root);
     return 0;
 }

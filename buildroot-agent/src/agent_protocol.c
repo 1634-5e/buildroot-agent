@@ -13,7 +13,8 @@
 #include <unistd.h>
 #include <time.h>
 #include "agent.h"
-
+#include "agent_json.h"
+#include "cJSON.h"
 
 
 /* 简单的本地 Base64 编码（用于小文件） */
@@ -352,8 +353,17 @@ static void handle_auth_result(agent_context_t *ctx, const char *data)
 {
     LOG_DEBUG("收到认证响应JSON: %s", data ? data : "null");
 
-    bool success = json_get_bool(data, "success", false);
-    char *message = json_get_string(data, "message");
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("JSON解析失败");
+        return;
+    }
+
+    cJSON *success_item = cJSON_GetObjectItem(root, "success");
+    cJSON *message_item = cJSON_GetObjectItem(root, "message");
+
+    bool success = (success_item && cJSON_IsBool(success_item)) ? cJSON_IsTrue(success_item) : false;
+    char *message = (message_item && cJSON_IsString(message_item)) ? strdup(message_item->valuestring) : NULL;
 
     LOG_DEBUG("解析认证结果: success=%d, message=%s", success, message ? message : "null");
 
@@ -366,15 +376,27 @@ static void handle_auth_result(agent_context_t *ctx, const char *data)
     }
 
     if (message) free(message);
+    cJSON_Delete(root);
 }
 
 /* 处理脚本接收 */
 static void handle_script_recv(agent_context_t *ctx, const char *data)
 {
-    char *script_id = json_get_string(data, "script_id");
-    char *content = json_get_string(data, "content");
-    char *filename = json_get_string(data, "filename");
-    bool execute = json_get_bool(data, "execute", true);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("脚本消息JSON解析失败");
+        return;
+    }
+    
+    cJSON *script_id_item = cJSON_GetObjectItem(root, "script_id");
+    cJSON *content_item = cJSON_GetObjectItem(root, "content");
+    cJSON *filename_item = cJSON_GetObjectItem(root, "filename");
+    cJSON *execute_item = cJSON_GetObjectItem(root, "execute");
+    
+    char *script_id = (script_id_item && cJSON_IsString(script_id_item)) ? strdup(script_id_item->valuestring) : NULL;
+    char *content = (content_item && cJSON_IsString(content_item)) ? strdup(content_item->valuestring) : NULL;
+    char *filename = (filename_item && cJSON_IsString(filename_item)) ? strdup(filename_item->valuestring) : NULL;
+    bool execute = (execute_item && cJSON_IsBool(execute_item)) ? cJSON_IsTrue(execute_item) : true;
     
     if (!script_id) {
         LOG_ERROR("脚本消息缺少script_id");
@@ -404,18 +426,38 @@ cleanup:
     if (script_id) free(script_id);
     if (content) free(content);
     if (filename) free(filename);
+    cJSON_Delete(root);
 }
 
 /* 处理PTY创建请求 */
 static void handle_pty_create(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("PTY创建请求JSON解析失败");
+        return;
     }
-    int rows = json_get_int(data, "rows", 24);
-    int cols = json_get_int(data, "cols", 80);
+
+    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
+    cJSON *session_id_item = cJSON_GetObjectItem(root, "sessionId");
+    int session_id = -1;
+    if (session_id_item && cJSON_IsNumber(session_id_item)) {
+        session_id = session_id_item->valueint;
+    }
+    if (session_id < 0) {
+        session_id_item = cJSON_GetObjectItem(root, "session_id");
+        if (session_id_item && cJSON_IsNumber(session_id_item)) {
+            session_id = session_id_item->valueint;
+        }
+    }
+
+    cJSON *rows_item = cJSON_GetObjectItem(root, "rows");
+    int rows = (rows_item && cJSON_IsNumber(rows_item)) ? rows_item->valueint : 24;
+
+    cJSON *cols_item = cJSON_GetObjectItem(root, "cols");
+    int cols = (cols_item && cJSON_IsNumber(cols_item)) ? cols_item->valueint : 80;
+
+    cJSON_Delete(root);
 
     if (session_id < 0) {
         LOG_ERROR("PTY创建请求缺少session_id或sessionId");
@@ -428,12 +470,29 @@ static void handle_pty_create(agent_context_t *ctx, const char *data)
 /* 处理PTY数据 */
 static void handle_pty_data(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("PTY数据JSON解析失败");
+        return;
     }
-    char *pty_data = json_get_string(data, "data");
+
+    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
+    cJSON *session_id_item = cJSON_GetObjectItem(root, "sessionId");
+    int session_id = -1;
+    if (session_id_item && cJSON_IsNumber(session_id_item)) {
+        session_id = session_id_item->valueint;
+    }
+    if (session_id < 0) {
+        session_id_item = cJSON_GetObjectItem(root, "session_id");
+        if (session_id_item && cJSON_IsNumber(session_id_item)) {
+            session_id = session_id_item->valueint;
+        }
+    }
+
+    cJSON *data_item = cJSON_GetObjectItem(root, "data");
+    char *pty_data = (data_item && cJSON_IsString(data_item)) ? strdup(data_item->valuestring) : NULL;
+
+    cJSON_Delete(root);
 
     if (session_id < 0 || !pty_data) {
         if (pty_data) free(pty_data);
@@ -447,13 +506,32 @@ static void handle_pty_data(agent_context_t *ctx, const char *data)
 /* 处理PTY窗口大小调整 */
 static void handle_pty_resize(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("PTY窗口大小调整JSON解析失败");
+        return;
     }
-    int rows = json_get_int(data, "rows", 24);
-    int cols = json_get_int(data, "cols", 80);
+
+    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
+    cJSON *session_id_item = cJSON_GetObjectItem(root, "sessionId");
+    int session_id = -1;
+    if (session_id_item && cJSON_IsNumber(session_id_item)) {
+        session_id = session_id_item->valueint;
+    }
+    if (session_id < 0) {
+        session_id_item = cJSON_GetObjectItem(root, "session_id");
+        if (session_id_item && cJSON_IsNumber(session_id_item)) {
+            session_id = session_id_item->valueint;
+        }
+    }
+
+    cJSON *rows_item = cJSON_GetObjectItem(root, "rows");
+    int rows = (rows_item && cJSON_IsNumber(rows_item)) ? rows_item->valueint : 24;
+
+    cJSON *cols_item = cJSON_GetObjectItem(root, "cols");
+    int cols = (cols_item && cJSON_IsNumber(cols_item)) ? cols_item->valueint : 80;
+
+    cJSON_Delete(root);
 
     if (session_id >= 0) {
         pty_resize(ctx, session_id, rows, cols);
@@ -463,11 +541,26 @@ static void handle_pty_resize(agent_context_t *ctx, const char *data)
 /* 处理PTY关闭 */
 static void handle_pty_close(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("PTY关闭请求JSON解析失败");
+        return;
     }
+
+    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
+    cJSON *session_id_item = cJSON_GetObjectItem(root, "sessionId");
+    int session_id = -1;
+    if (session_id_item && cJSON_IsNumber(session_id_item)) {
+        session_id = session_id_item->valueint;
+    }
+    if (session_id < 0) {
+        session_id_item = cJSON_GetObjectItem(root, "session_id");
+        if (session_id_item && cJSON_IsNumber(session_id_item)) {
+            session_id = session_id_item->valueint;
+        }
+    }
+
+    cJSON_Delete(root);
 
     if (session_id >= 0) {
         pty_close_session(ctx, session_id);
@@ -479,12 +572,25 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
 {
     LOG_INFO("[FILE_REQUEST] Received file request, data: %s", data);
     
-    char *action = json_get_string(data, "action");
-    char *filepath = json_get_string(data, "filepath");
-    char *request_id = json_get_string(data, "request_id");
-    int lines = json_get_int(data, "lines", 100);
-    int offset = json_get_int(data, "offset", 0);
-    int length = json_get_int(data, "length", 0);
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("[FILE_REQUEST] JSON解析失败");
+        return;
+    }
+    
+    cJSON *action_item = cJSON_GetObjectItem(root, "action");
+    cJSON *filepath_item = cJSON_GetObjectItem(root, "filepath");
+    cJSON *request_id_item = cJSON_GetObjectItem(root, "request_id");
+    cJSON *lines_item = cJSON_GetObjectItem(root, "lines");
+    cJSON *offset_item = cJSON_GetObjectItem(root, "offset");
+    cJSON *length_item = cJSON_GetObjectItem(root, "length");
+    
+    char *action = (action_item && cJSON_IsString(action_item)) ? strdup(action_item->valuestring) : NULL;
+    char *filepath = (filepath_item && cJSON_IsString(filepath_item)) ? strdup(filepath_item->valuestring) : NULL;
+    char *request_id = (request_id_item && cJSON_IsString(request_id_item)) ? strdup(request_id_item->valuestring) : NULL;
+    int lines = (lines_item && cJSON_IsNumber(lines_item)) ? lines_item->valueint : 100;
+    int offset = (offset_item && cJSON_IsNumber(offset_item)) ? offset_item->valueint : 0;
+    int length = (length_item && cJSON_IsNumber(length_item)) ? length_item->valueint : 0;
     
     char default_request_id[64];
     if (!request_id) {
@@ -515,18 +621,29 @@ static void handle_file_request(agent_context_t *ctx, const char *data)
         LOG_INFO("[FILE_REQUEST] Calling log_read_file for %s", filepath);
         log_read_file(ctx, filepath, offset, length, request_id);
     } else if (strcmp(action, "write") == 0 && filepath) {
-        char *content = json_get_string(data, "content");
-        int64_t mtime = json_get_int64(data, "mtime");
-        bool force_bool = json_get_bool(data, "force", false);
-        int force = force_bool ? 1 : 0;
+        cJSON *content_item = cJSON_GetObjectItem(root, "content");
+        cJSON *mtime_item = cJSON_GetObjectItem(root, "mtime");
+        cJSON *force_item = cJSON_GetObjectItem(root, "force");
+        
+        char *content = (content_item && cJSON_IsString(content_item)) ? strdup(content_item->valuestring) : NULL;
+        int64_t mtime = (mtime_item && cJSON_IsNumber(mtime_item)) ? (int64_t)mtime_item->valuedouble : 0;
+        int force = (force_item && cJSON_IsBool(force_item)) ? (cJSON_IsTrue(force_item) ? 1 : 0) : 0;
+        
         if (content) {
             log_write_file(ctx, filepath, content, mtime, force, request_id);
             free(content);
         } else {
             LOG_ERROR("[FILE_REQUEST] write action missing content");
-            char json[512];
-            snprintf(json, sizeof(json), "{\"filepath\":\"%s\",\"error\":\"缺少content参数\",\"request_id\":\"%s\"}", filepath, request_id ? request_id : "");
-            socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+            cJSON *error_root = cJSON_CreateObject();
+            cJSON_AddStringToObject(error_root, "filepath", filepath ? filepath : "");
+            cJSON_AddStringToObject(error_root, "error", "缺少content参数");
+            cJSON_AddStringToObject(error_root, "request_id", request_id ? request_id : "");
+            char *json = cJSON_Print(error_root);
+            cJSON_Delete(error_root);
+            if (json) {
+                socket_send_json(ctx, MSG_TYPE_FILE_DATA, json);
+                free(json);
+            }
         }
     } else {
         LOG_WARN("[FILE_REQUEST] Unknown action: %s", action);
@@ -536,6 +653,7 @@ cleanup:
     if (action) free(action);
     if (filepath) free(filepath);
     if (request_id != default_request_id) free(request_id);
+    cJSON_Delete(root);
 }
 
 /* 文件信息结构体 */
@@ -605,8 +723,18 @@ static void normalize_path(const char *src, char *dst, size_t dstlen)
 /* 处理文件列表请求（通用目录列表） */
 static void handle_file_list_request(agent_context_t *ctx, const char *data)
 {
-    char *path = json_get_string(data, "path");
-    char *request_id = json_get_string(data, "request_id");
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("JSON解析失败");
+        return;
+    }
+
+    cJSON *path_item = cJSON_GetObjectItem(root, "path");
+    cJSON *request_id_item = cJSON_GetObjectItem(root, "request_id");
+
+    char *path = (path_item && cJSON_IsString(path_item)) ? strdup(path_item->valuestring) : NULL;
+    char *request_id = (request_id_item && cJSON_IsString(request_id_item)) ? strdup(request_id_item->valuestring) : NULL;
+    cJSON_Delete(root);
 
     char normalized_dir[2048];
     normalize_path(path, normalized_dir, sizeof(normalized_dir));
@@ -626,9 +754,18 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     if (!dp) {
         LOG_ERROR("无法打开目录: %s (errno=%d: %s)", dir, errno, strerror(errno));
         /* 返回空响应 */
-        char json[512];
-        snprintf(json, sizeof(json), "{\"path\":\"%s\",\"files\":[],\"request_id\":\"%s\"}", dir, request_id);
-        socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+        cJSON *empty_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(empty_root, "path", dir);
+        cJSON *empty_files = cJSON_CreateArray();
+        cJSON_AddItemToObject(empty_root, "files", empty_files);
+        cJSON_AddStringToObject(empty_root, "request_id", request_id);
+        char *json = cJSON_Print(empty_root);
+        cJSON_Delete(empty_root);
+        
+        if (json) {
+            socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
+            free(json);
+        }
         if (path) free(path);
         if (request_id != default_request_id) free(request_id);
         return;
@@ -680,7 +817,6 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     qsort(entries, count, sizeof(file_entry_t), compare_files);
 
     /* 分块发送JSON响应（避免单条消息过大） */
-    /* WebSocket消息大小限制为65534字节，每个文件约需要200-300字节，所以每个chunk最多20-30个文件 */
     const int CHUNK_SIZE = 20; /* 每个chunk最多20个文件 */
     int total_chunks = count == 0 ? 1 : (count + CHUNK_SIZE - 1) / CHUNK_SIZE;
 
@@ -690,73 +826,52 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
         int chunk_start = chunk_num * CHUNK_SIZE;
         int chunk_end = (chunk_start + CHUNK_SIZE < count) ? (chunk_start + CHUNK_SIZE) : count;
         int files_in_chunk = chunk_end - chunk_start;
-        
-        /* 使用较小缓冲区（128KB），确保不会超过WebSocket限制 */
-        const int JSON_BUF_SIZE = 131072;
-        char *json = malloc(JSON_BUF_SIZE);
-        if (!json) {
-            LOG_ERROR("内存不足");
-            free(entries);
-            goto cleanup;
-        }
-        
-         /* 估算剩余空间（需要为JSON头部和尾部预留空间） */
-        const int reserved_space = 512;
-        int available_space = JSON_BUF_SIZE - reserved_space;
 
         LOG_INFO("准备发送chunk %d/%d，请求路径='%s'，dir='%s'，文件数=%d",
                   chunk_num, total_chunks, path, dir, files_in_chunk);
 
-        int offset = snprintf(json, JSON_BUF_SIZE, "{\"path\":\"%s\",\"files\":[", dir);
+        /* 使用cJSON构建响应 */
+        cJSON *chunk_root = cJSON_CreateObject();
+        cJSON_AddStringToObject(chunk_root, "path", dir);
+        cJSON *files_array = cJSON_CreateArray();
 
-        /* 遍历这个chunk的所有文件 */
         int files_added = 0;
-        for (int j = chunk_start; j < chunk_end && offset < available_space; j++) {
-            char *esc_name = json_escape_string(entries[j].name, sizeof(entries[j].name));
-            char *esc_path = json_escape_string(entries[j].path, sizeof(entries[j].path));
-            
+        for (int j = chunk_start; j < chunk_end; j++) {
             LOG_INFO("  文件[%d]: name='%s', path='%s'",
                      j, entries[j].name, entries[j].path);
-            
-            if (esc_name && esc_path) {
-                int len = snprintf(json + offset, JSON_BUF_SIZE - offset,
-                    "%s{\"name\":\"%s\",\"path\":\"%s\",\"is_dir\":%d,\"size\":%lld}",
-                    (j > chunk_start) ? "," : "", esc_name, esc_path, entries[j].is_dir, (long long)entries[j].size);
 
-                /* 检查是否有足够的剩余空间 */
-                if (offset + len < available_space) {
-                    offset += len;
-                    files_added++;
-                } else {
-                    /* 空间不足，停止添加 */
-                    LOG_WARN("Chunk %d 空间不足，只添加了 %d/%d 个文件 (offset=%d, space=%d)",
-                             chunk_num, files_added, files_in_chunk, offset, available_space);
-                    if (esc_name) free(esc_name);
-                    if (esc_path) free(esc_path);
-                    break;
-                }
-            }
-
-            if (esc_name) free(esc_name);
-            if (esc_path) free(esc_path);
+            cJSON *file_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(file_obj, "name", entries[j].name);
+            cJSON_AddStringToObject(file_obj, "path", entries[j].path);
+            cJSON_AddNumberToObject(file_obj, "is_dir", entries[j].is_dir);
+            cJSON_AddNumberToObject(file_obj, "size", (double)entries[j].size);
+            cJSON_AddItemToArray(files_array, file_obj);
+            files_added++;
         }
 
-        /* 添加元数据 */
-        offset += snprintf(json + offset, JSON_BUF_SIZE - offset, "]");
-        offset += snprintf(json + offset, JSON_BUF_SIZE - offset, ",\"chunk\":%d,\"total_chunks\":%d", chunk_num, total_chunks);
-        offset += snprintf(json + offset, JSON_BUF_SIZE - offset, ",\"request_id\":\"%s\"", request_id);
-        snprintf(json + offset, JSON_BUF_SIZE - offset, "}");
+        cJSON_AddItemToObject(chunk_root, "files", files_array);
+        cJSON_AddNumberToObject(chunk_root, "chunk", chunk_num);
+        cJSON_AddNumberToObject(chunk_root, "total_chunks", total_chunks);
+        cJSON_AddStringToObject(chunk_root, "request_id", request_id);
+
+        char *json = cJSON_Print(chunk_root);
+        cJSON_Delete(chunk_root);
+
+        if (!json) {
+            LOG_ERROR("JSON生成失败");
+            continue;
+        }
 
         /* 检查最终消息大小是否超过限制 */
-        if (offset > 65534) {
-            LOG_ERROR("消息太大: %d > 65534，发送失败", offset);
+        size_t json_len = strlen(json);
+        if (json_len > 65534) {
+            LOG_ERROR("消息太大: %zu > 65534，发送失败", json_len);
             free(json);
-            free(entries);
-            goto cleanup;
+            continue;
         }
 
-        LOG_INFO("发送chunk %d/%d, 文件数: %d/%d, 消息大小: %d字节",
-                  chunk_num, total_chunks, files_added, files_in_chunk, offset);
+        LOG_INFO("发送chunk %d/%d, 文件数: %d/%d, 消息大小: %zu字节",
+                  chunk_num, total_chunks, files_added, files_in_chunk, json_len);
         int rc = socket_send_json(ctx, MSG_TYPE_FILE_LIST_RESPONSE, json);
         if (rc != 0) {
             LOG_ERROR("发送chunk %d 失败: %d", chunk_num, rc);
@@ -770,7 +885,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
     LOG_INFO("所有chunk发送完成 (%d 个chunks)", total_chunks);
     free(entries);
 
- cleanup:
+cleanup:
     if (path) free(path);
     if (request_id != default_request_id) free(request_id);
 }
@@ -778,13 +893,36 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 /* 处理打包并发送请求 */
 static void handle_download_package(agent_context_t *ctx, const char *data)
 {
-    char *path = json_get_string(data, "path");
-    char *format = json_get_string(data, "format");
-    char *request_id = json_get_string(data, "request_id");
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("打包请求: JSON解析失败");
+        return;
+    }
+
+    cJSON *path_item = cJSON_GetObjectItem(root, "path");
+    cJSON *format_item = cJSON_GetObjectItem(root, "format");
+    cJSON *request_id_item = cJSON_GetObjectItem(root, "request_id");
+    cJSON *paths_array_item = cJSON_GetObjectItem(root, "paths");
+
+    char *path = (path_item && cJSON_IsString(path_item)) ? strdup(path_item->valuestring) : NULL;
+    char *format = (format_item && cJSON_IsString(format_item)) ? strdup(format_item->valuestring) : NULL;
+    char *request_id = (request_id_item && cJSON_IsString(request_id_item)) ? strdup(request_id_item->valuestring) : NULL;
     
     // Check for the new "paths" array parameter for multiple files
     int paths_count = 0;
-    char **paths_array = parse_json_string_array(data, "paths", &paths_count);
+    char **paths_array = NULL;
+    if (paths_array_item && cJSON_IsArray(paths_array_item)) {
+        paths_count = cJSON_GetArraySize(paths_array_item);
+        if (paths_count > 0) {
+            paths_array = malloc(sizeof(char*) * paths_count);
+            if (paths_array) {
+                for (int i = 0; i < paths_count; i++) {
+                    cJSON *item = cJSON_GetArrayItem(paths_array_item, i);
+                    paths_array[i] = (item && cJSON_IsString(item)) ? strdup(item->valuestring) : NULL;
+                }
+            }
+        }
+    }
     
     if (!path && !paths_array) {
         LOG_ERROR("打包请求: 缺少path参数或paths参数");
@@ -993,9 +1131,7 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
     free(buf);
 
     if (encoded) {
-        /* 安全构建JSON（转义文件名） */
         const char *filename = strrchr(archive, '/') ? strrchr(archive, '/') + 1 : archive;
-        char *esc_filename = json_escape_string(filename, strlen(filename));
         
         #define CHUNK_SIZE  (48 * 1024)  /* 每块48KB base64数据 */
         size_t total_chunks = (encoded_len + CHUNK_SIZE - 1) / CHUNK_SIZE;
@@ -1008,43 +1144,46 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
             size_t chunk_end = (chunk_start + CHUNK_SIZE < encoded_len) ? chunk_start + CHUNK_SIZE : encoded_len;
             size_t chunk_len = chunk_end - chunk_start;
             
-            char *json = malloc(chunk_len + 256);
-            if (json && esc_filename) {
-                int offset = 0;
-                
-                if (chunk_idx == 0) {
-                    offset += snprintf(json + offset, chunk_len + 256 - offset,
-                        "{\"filename\":\"%s\",\"size\":%lld,", esc_filename, (long long)fsize);
-                } else {
-                    offset += snprintf(json + offset, chunk_len + 256 - offset, "{");
-                }
-                
-                offset += snprintf(json + offset, chunk_len + 256 - offset,
-                    "\"content\":\"%.*s\"", (int)chunk_len, encoded + chunk_start);
-                
-                offset += snprintf(json + offset, chunk_len + 256 - offset,
-                    ",\"chunk_index\":%zu,\"total_chunks\":%zu", chunk_idx, total_chunks);
-                
-                if (request_id) {
-                    offset += snprintf(json + offset, chunk_len + 256 - offset, 
-                        ",\"request_id\":\"%s\"", request_id);
-                }
-                
-                if (chunk_idx == total_chunks - 1) {
-                    snprintf(json + offset, chunk_len + 256 - offset, "}");
-                } else {
-                    snprintf(json + offset, chunk_len + 256 - offset, ",\"complete\":false}");
-                }
-                
+            /* 使用cJSON构建分块响应 */
+            cJSON *chunk_root = cJSON_CreateObject();
+            
+            if (chunk_idx == 0) {
+                cJSON_AddStringToObject(chunk_root, "filename", filename);
+                cJSON_AddNumberToObject(chunk_root, "size", (double)fsize);
+            }
+            
+            /* 构建content字符串 */
+            char *content_str = malloc(chunk_len + 1);
+            if (content_str) {
+                memcpy(content_str, encoded + chunk_start, chunk_len);
+                content_str[chunk_len] = '\0';
+                cJSON_AddStringToObject(chunk_root, "content", content_str);
+                free(content_str);
+            }
+            
+            cJSON_AddNumberToObject(chunk_root, "chunk_index", (double)chunk_idx);
+            cJSON_AddNumberToObject(chunk_root, "total_chunks", (double)total_chunks);
+            
+            if (request_id) {
+                cJSON_AddStringToObject(chunk_root, "request_id", request_id);
+            }
+            
+            if (chunk_idx != total_chunks - 1) {
+                cJSON_AddBoolToObject(chunk_root, "complete", false);
+            }
+            
+            char *json = cJSON_Print(chunk_root);
+            cJSON_Delete(chunk_root);
+            
+            if (json) {
                 socket_send_json(ctx, MSG_TYPE_DOWNLOAD_PACKAGE, json);
                 free(json);
             } else {
-                LOG_ERROR("JSON缓冲区分配失败");
+                LOG_ERROR("JSON生成失败");
                 break;
             }
         }
         
-        if (esc_filename) free(esc_filename);
         free(encoded);
     } else {
         LOG_ERROR("base64编码失败");
@@ -1055,10 +1194,14 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
         LOG_DEBUG("删除临时文件: %s", archive);
     }
 
- cleanup:
+cleanup:
     if (paths_array) {
-        free_string_array(paths_array, paths_count);
+        for (int i = 0; i < paths_count; i++) {
+            if (paths_array[i]) free(paths_array[i]);
+        }
+        free(paths_array);
     }
+    cJSON_Delete(root);
     if (path) free(path);
     if (format) free(format);
     if (request_id) free(request_id);
@@ -1067,9 +1210,19 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
 /* 处理命令请求 */
 static void handle_cmd_request(agent_context_t *ctx, const char *data)
 {
-    char *cmd = json_get_string(data, "cmd");
-    char *command = json_get_string(data, "command");
-    char *request_id = json_get_string(data, "request_id");
+    cJSON *root = cJSON_Parse(data);
+    if (!root) {
+        LOG_ERROR("JSON解析失败");
+        return;
+    }
+    
+    cJSON *cmd_item = cJSON_GetObjectItem(root, "cmd");
+    cJSON *command_item = cJSON_GetObjectItem(root, "command");
+    cJSON *request_id_item = cJSON_GetObjectItem(root, "request_id");
+    
+    char *cmd = (cmd_item && cJSON_IsString(cmd_item)) ? strdup(cmd_item->valuestring) : NULL;
+    char *command = (command_item && cJSON_IsString(command_item)) ? strdup(command_item->valuestring) : NULL;
+    char *request_id = (request_id_item && cJSON_IsString(request_id_item)) ? strdup(request_id_item->valuestring) : NULL;
     
     /* 兼容前端：优先使用 cmd，其次使用 command */
     char *actual_cmd = cmd ? cmd : command;
@@ -1079,49 +1232,29 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
     }
     
     /* 内置命令处理 */
-    if (strcmp(actual_cmd, "status") == 0) {
-        /* 立即上报状态 */
-        LOG_INFO("收到状态查询命令，开始收集系统信息");
+    if (strcmp(actual_cmd, "status") == 0 || strcmp(actual_cmd, "system_status") == 0) {
+        LOG_INFO("收到%s命令，开始收集系统信息", actual_cmd);
         system_status_t status;
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            char *final_json = NULL;
             if (request_id) {
-                size_t json_len = strlen(json);
-                size_t final_size = json_len + strlen(request_id) + 32;
-                final_json = malloc(final_size);
-                if (final_json) {
-                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
-                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
-                    free(final_json);
+                /* 使用cJSON添加request_id */
+                cJSON *status_root = cJSON_Parse(json);
+                if (status_root) {
+                    cJSON_AddStringToObject(status_root, "request_id", request_id);
+                    char *final_json = cJSON_Print(status_root);
+                    cJSON_Delete(status_root);
+                    if (final_json) {
+                        socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
+                        free(final_json);
+                    } else {
+                        socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
+                    }
+                } else {
+                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
                 }
-            }
-            if (!final_json) {
-                socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
-            }
-            free(json);
-            LOG_INFO("系统状态已上报");
-        }
-    } else if (strcmp(actual_cmd, "system_status") == 0) {
-        /* 前端发送的 system_status 命令，同 status */
-        LOG_INFO("收到 system_status 命令，开始收集系统信息");
-        system_status_t status;
-        status_collect(&status);
-        char *json = status_to_json(&status);
-        if (json) {
-            char *final_json = NULL;
-            if (request_id) {
-                size_t json_len = strlen(json);
-                size_t final_size = json_len + strlen(request_id) + 32;
-                final_json = malloc(final_size);
-                if (final_json) {
-                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
-                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
-                    free(final_json);
-                }
-            }
-            if (!final_json) {
+            } else {
                 socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
             }
             free(json);
@@ -1143,6 +1276,7 @@ cleanup:
     if (cmd) free(cmd);
     if (command) free(command);
     if (request_id) free(request_id);
+    cJSON_Delete(root);
 }
 
 /* 处理消息 */
@@ -1207,7 +1341,7 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
         handle_file_list_request(ctx, json_data);
         break;
     case MSG_TYPE_FILE_DOWNLOAD_DATA:
-        tcp_handle_download_response(ctx, data, len);
+        tcp_handle_download_response(ctx, json_data, json_len);
         break;
     case MSG_TYPE_DOWNLOAD_PACKAGE:
         handle_download_package(ctx, json_data);
