@@ -8,3 +8,12 @@ node_modules
 dist
 .alma-snapshots
 build
+
+# 编译产物
+*.backup
+/buildroot-agent
+*.o
+
+# 日志文件
+*.log
+

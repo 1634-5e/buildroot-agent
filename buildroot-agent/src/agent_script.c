@@ -259,8 +259,9 @@ static void *script_execute_thread(void *arg)
     
     if (task->inline_script) {
         /* 内联脚本，先保存到临时文件 */
-        char tmp_path[256];
-        snprintf(tmp_path, sizeof(tmp_path), "/tmp/agent_script_%s.sh", task->script_id);
+        char tmp_path[512];
+        snprintf(tmp_path, sizeof(tmp_path), "%s/temp/scripts/agent_script_%s.sh",
+                 task->ctx->config.data_dir, task->script_id);
         
         if (script_save(task->script_id, task->content, tmp_path) != 0) {
             send_script_result(task->ctx, task->script_id, -1, "保存脚本失败");
@@ -287,8 +288,9 @@ static void *script_execute_thread(void *arg)
     
     /* 清理临时文件 */
     if (task->inline_script) {
-        char tmp_path[256];
-        snprintf(tmp_path, sizeof(tmp_path), "/tmp/agent_script_%s.sh", task->script_id);
+        char tmp_path[512];
+        snprintf(tmp_path, sizeof(tmp_path), "%s/temp/scripts/agent_script_%s.sh",
+                 task->ctx->config.data_dir, task->script_id);
         unlink(tmp_path);
     }
     

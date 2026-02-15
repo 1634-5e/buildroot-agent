@@ -2,13 +2,18 @@
   "manifest_version": "1.0",
   "channel": "stable",
   "latest_version": "1.1.0",
-  "release_date": "2024-02-14T00:00:00Z",
-  "changes": ["添加自更新功能", "优化内存使用"],
+  "release_date": "2026-02-15T03:07:57.855553Z",
   "architectures": {
     "x86_64": {
       "file": "buildroot-agent-1.1.0-x86_64.tar",
+      "size": 1232896,
+      "sha256": "87ce0627cd65942364021746d6d1ee5fb247064c0cc06f61cfa2cddf2bdbc8f9",
+      "mandatory": false
+    },
+    "armv7": {
+      "file": "buildroot-agent-1.1.0-armv7.tar",
       "size": 1228800,
-      "sha256": "44eacb5027fefcfefbf86c571be5fa6f64c1a19f9851db5e3bddb9ffb6f8a8c2",
+      "sha256": "6b7eec0a5683978c737ea9ccd6188b3d7cd7700ff540482bb52e2fd23abcae3f",
       "mandatory": false
     }
   }

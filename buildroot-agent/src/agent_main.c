@@ -15,9 +15,6 @@
 /* 全局Agent上下文 */
 agent_context_t *g_agent_ctx = NULL;
 
-/* PID文件路径 */
-#define PID_FILE    "/tmp/buildroot-agent.pid"
-
 /* 信号处理 */
 static void signal_handler(int sig)
 {
@@ -129,8 +126,7 @@ int agent_init(const char *config_path)
     pthread_mutex_init(&g_agent_ctx->lock, NULL);
     
     /* 加载配置 */
-    const char *conf_path = config_path ? config_path : DEFAULT_CONFIG_PATH;
-    if (config_load(&g_agent_ctx->config, conf_path) != 0) {
+    if (config_load_with_priority(&g_agent_ctx->config, config_path) != 0) {
         LOG_WARN("加载配置失败，使用默认配置");
     }
     
@@ -144,6 +140,22 @@ int agent_init(const char *config_path)
     
     /* 打印配置 */
     config_print(&g_agent_ctx->config);
+    
+    /* 创建统一数据目录及子目录 */
+    mkdir_recursive(g_agent_ctx->config.data_dir, 0755);
+    
+    char path[512];
+    snprintf(path, sizeof(path), "%s/logs", g_agent_ctx->config.data_dir);
+    mkdir_recursive(path, 0755);
+    
+    snprintf(path, sizeof(path), "%s/temp/packages", g_agent_ctx->config.data_dir);
+    mkdir_recursive(path, 0755);
+    
+    snprintf(path, sizeof(path), "%s/temp/scripts", g_agent_ctx->config.data_dir);
+    mkdir_recursive(path, 0755);
+    
+    snprintf(path, sizeof(path), "%s/backup", g_agent_ctx->config.data_dir);
+    mkdir_recursive(path, 0755);
     
     /* 确保脚本目录存在 */
     mkdir_recursive(g_agent_ctx->config.script_path, 0755);
@@ -185,6 +197,10 @@ int agent_start(void)
     /* 启用自动重连 */
     socket_enable_reconnect(g_agent_ctx);
     
+    /* 连接成功后立即检查一次更新 */
+    sleep(2);
+    update_check_version(g_agent_ctx);
+     
     /* 启动心跳线程 */
     pthread_t hb_thread;
     if (pthread_create(&hb_thread, NULL, heartbeat_thread, g_agent_ctx) != 0) {
@@ -276,7 +292,9 @@ void agent_cleanup(void)
     g_agent_ctx = NULL;
     
     /* 删除PID文件 */
-    remove_pid_file(PID_FILE);
+    char pid_file[512];
+    snprintf(pid_file, sizeof(pid_file), "%s/buildroot-agent.pid", g_agent_ctx->config.data_dir);
+    remove_pid_file(pid_file);
     
     LOG_INFO("Agent清理完成");
 }
@@ -287,7 +305,8 @@ static void print_help(const char *prog)
     printf("Buildroot Agent v%s\n\n", AGENT_VERSION);
     printf("用法: %s [选项]\n\n", prog);
     printf("选项:\n");
-    printf("  -c, --config <path>   指定配置文件路径 (默认: %s)\n", DEFAULT_CONFIG_PATH);
+    printf("  -c, --config <path>   指定配置文件路径\n");
+    printf("                        (查找顺序: 命令行参数 > AGENT_CONFIG_PATH环境变量 > ./agent.conf > ./config/agent.conf > 默认值)\n");
     printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
     printf("  -t, --token <token>   指定认证Token\n");
     printf("  -d, --daemon          以守护进程方式运行\n");
@@ -386,14 +405,22 @@ int main(int argc, char *argv[])
         }
     }
     
+    /* 获取data_dir用于PID文件和日志文件（使用默认值） */
+    agent_config_t temp_config;
+    config_set_defaults(&temp_config);
+    const char *data_dir = temp_config.data_dir;
+    
+    char pid_file[512];
+    snprintf(pid_file, sizeof(pid_file), "%s/buildroot-agent.pid", data_dir);
+    
     /* 如果是强制模式，删除旧的PID文件 */
     if (force_mode) {
         printf("强制模式：删除旧PID文件\n");
-        remove_pid_file(PID_FILE);
+        remove_pid_file(pid_file);
     }
     
     /* 检查是否已运行 */
-    if (is_process_running(PID_FILE)) {
+    if (is_process_running(pid_file)) {
         fprintf(stderr, "Agent已在运行中\n");
         return 1;
     }
@@ -407,11 +434,13 @@ int main(int argc, char *argv[])
         }
         
         /* 设置日志文件 */
-        set_log_file("/var/log/buildroot-agent.log");
+        char log_file[512];
+        snprintf(log_file, sizeof(log_file), "%s/logs/buildroot-agent.log", data_dir);
+        set_log_file(log_file);
     }
     
     /* 写入PID文件 */
-    write_pid_file(PID_FILE);
+    write_pid_file(pid_file);
     
     /* 设置信号处理 */
     setup_signals();

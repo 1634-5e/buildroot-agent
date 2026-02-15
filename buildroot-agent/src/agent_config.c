@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include "agent.h"
 
 /* 设置默认配置 */
@@ -17,8 +18,9 @@ void config_set_defaults(agent_config_t *config)
     memset(config, 0, sizeof(agent_config_t));
     
     strncpy(config->server_addr, DEFAULT_SERVER_ADDR, sizeof(config->server_addr) - 1);
-    strncpy(config->log_path, DEFAULT_LOG_PATH, sizeof(config->log_path) - 1);
-    strncpy(config->script_path, DEFAULT_SCRIPT_PATH, sizeof(config->script_path) - 1);
+    strncpy(config->data_dir, DEFAULT_DATA_DIR, sizeof(config->data_dir) - 1);
+    strncpy(config->log_path, DEFAULT_DATA_DIR, sizeof(config->log_path) - 1);
+    strncpy(config->script_path, DEFAULT_DATA_DIR, sizeof(config->script_path) - 1);
     
     /* 获取设备ID */
     char *device_id = get_device_id();
@@ -38,8 +40,8 @@ void config_set_defaults(agent_config_t *config)
     config->update_check_interval = DEFAULT_UPDATE_CHECK_INTERVAL;
     strncpy(config->update_channel, DEFAULT_UPDATE_CHANNEL, sizeof(config->update_channel) - 1);
     config->update_require_confirm = true;  /* 默认需要确认 */
-    strncpy(config->update_temp_path, DEFAULT_UPDATE_TEMP_PATH, sizeof(config->update_temp_path) - 1);
-    strncpy(config->update_backup_path, DEFAULT_UPDATE_BACKUP_PATH, sizeof(config->update_backup_path) - 1);
+    strncpy(config->update_temp_path, DEFAULT_DATA_DIR, sizeof(config->update_temp_path) - 1);
+    strncpy(config->update_backup_path, DEFAULT_DATA_DIR, sizeof(config->update_backup_path) - 1);
     config->update_rollback_on_fail = true;  /* 失败自动回滚 */
     config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
     config->update_verify_checksum = true;  /* 默认校验校验和 */
@@ -61,6 +63,8 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
         config->reconnect_interval = atoi(value);
     } else if (strcmp(key, "status_interval") == 0) {
         config->status_interval = atoi(value);
+    } else if (strcmp(key, "data_dir") == 0) {
+        strncpy(config->data_dir, value, sizeof(config->data_dir) - 1);
     } else if (strcmp(key, "log_path") == 0) {
         strncpy(config->log_path, value, sizeof(config->log_path) - 1);
     } else if (strcmp(key, "script_path") == 0) {
@@ -246,6 +250,9 @@ int config_save(agent_config_t *config, const char *path)
     fprintf(fp, "# 状态上报间隔 (秒)\n");
     fprintf(fp, "status_interval = %d\n\n", config->status_interval);
     
+    fprintf(fp, "# 统一运行时数据目录\n");
+    fprintf(fp, "data_dir = \"%s\"\n\n", config->data_dir);
+    
     fprintf(fp, "# 日志目录\n");
     fprintf(fp, "log_path = \"%s\"\n\n", config->log_path);
     
@@ -266,7 +273,44 @@ int config_save(agent_config_t *config, const char *path)
         case LOG_LEVEL_WARN: level_str = "warn"; break;
         case LOG_LEVEL_ERROR: level_str = "error"; break;
     }
-    fprintf(fp, "log_level = %s\n", level_str);
+    fprintf(fp, "log_level = %s\n\n", level_str);
+    
+    fprintf(fp, "# 是否使用SSL加密\n");
+    fprintf(fp, "use_ssl = %s\n\n", config->use_ssl ? "true" : "false");
+    
+    fprintf(fp, "# CA证书路径（留空使用系统证书）\n");
+    fprintf(fp, "ca_path = \"%s\"\n\n", config->ca_path);
+    
+    fprintf(fp, "# 更新配置\n");
+    fprintf(fp, "# 是否启用自动更新\n");
+    fprintf(fp, "enable_auto_update = %s\n\n", config->enable_auto_update ? "true" : "false");
+    
+    fprintf(fp, "# 更新检查间隔（秒，默认86400=24小时）\n");
+    fprintf(fp, "update_check_interval = %d\n\n", config->update_check_interval);
+    
+    fprintf(fp, "# 更新渠道\n");
+    fprintf(fp, "update_channel = %s\n\n", config->update_channel);
+    
+    fprintf(fp, "# 更新前是否需要确认\n");
+    fprintf(fp, "update_require_confirm = %s\n\n", config->update_require_confirm ? "true" : "false");
+    
+    fprintf(fp, "# 临时文件路径\n");
+    fprintf(fp, "update_temp_path = \"%s\"\n\n", config->update_temp_path);
+    
+    fprintf(fp, "# 备份路径\n");
+    fprintf(fp, "update_backup_path = \"%s\"\n\n", config->update_backup_path);
+    
+    fprintf(fp, "# 失败是否自动回滚\n");
+    fprintf(fp, "update_rollback_on_fail = %s\n\n", config->update_rollback_on_fail ? "true" : "false");
+    
+    fprintf(fp, "# 回滚超时（秒，默认300=5分钟）\n");
+    fprintf(fp, "update_rollback_timeout = %d\n\n", config->update_rollback_timeout);
+    
+    fprintf(fp, "# 是否校验文件校验和\n");
+    fprintf(fp, "update_verify_checksum = %s\n\n", config->update_verify_checksum ? "true" : "false");
+    
+    fprintf(fp, "# 更新CA证书路径（可选，留空使用系统证书）\n");
+    fprintf(fp, "update_ca_cert_path = \"%s\"\n", config->update_ca_cert_path);
     
     fclose(fp);
     
@@ -285,6 +329,7 @@ void config_print(agent_config_t *config)
     LOG_INFO("心跳间隔: %d秒", config->heartbeat_interval);
     LOG_INFO("重连间隔: %d秒", config->reconnect_interval);
     LOG_INFO("状态上报间隔: %d秒", config->status_interval);
+    LOG_INFO("数据目录: %s", config->data_dir);
     LOG_INFO("日志目录: %s", config->log_path);
     LOG_INFO("脚本目录: %s", config->script_path);
     LOG_INFO("PTY功能: %s", config->enable_pty ? "启用" : "禁用");
@@ -294,4 +339,48 @@ void config_print(agent_config_t *config)
         LOG_INFO("CA证书: %s", config->ca_path);
     }
     LOG_INFO("==============================");
+}
+
+/* 根据优先级加载配置文件 */
+int config_load_with_priority(agent_config_t *config, const char *cmd_path)
+{
+    if (!config) return -1;
+    
+    /* 优先级1: 命令行参数 */
+    if (cmd_path && access(cmd_path, F_OK) == 0) {
+        LOG_INFO("使用命令行指定的配置文件: %s", cmd_path);
+        return config_load(config, cmd_path);
+    }
+    
+    /* 优先级2: 环境变量 AGENT_CONFIG_PATH */
+    const char *env_path = getenv("AGENT_CONFIG_PATH");
+    if (env_path && access(env_path, F_OK) == 0) {
+        LOG_INFO("使用环境变量指定的配置文件: %s", env_path);
+        return config_load(config, env_path);
+    }
+    
+    /* 优先级3: ./agent.conf */
+    if (access("./agent.conf", F_OK) == 0) {
+        LOG_INFO("使用配置文件: ./agent.conf");
+        return config_load(config, "./agent.conf");
+    }
+    
+    /* 优先级4: ./config/agent.conf */
+    if (access("./config/agent.conf", F_OK) == 0) {
+        LOG_INFO("使用配置文件: ./config/agent.conf");
+        return config_load(config, "./config/agent.conf");
+    }
+    
+    /* 优先级5: 检查模板文件，自动生成配置 */
+    if (access("./config/agent.conf.default", F_OK) == 0) {
+        LOG_INFO("配置文件不存在，从模板生成: ./agent.conf");
+        config_set_defaults(config);
+        config_save(config, "./agent.conf");
+        return config_load(config, "./agent.conf");
+    }
+    
+    /* 优先级6: 使用硬编码默认值 */
+    LOG_WARN("未找到配置文件，使用默认配置");
+    config_set_defaults(config);
+    return 0;
 }

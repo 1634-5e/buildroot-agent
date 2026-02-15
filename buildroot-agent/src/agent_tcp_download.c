@@ -80,8 +80,10 @@ static download_session_t *create_session(const char *file_path, const char *out
     
     generate_session_id(session->session_id, sizeof(session->session_id));
     strncpy(session->file_path, file_path, sizeof(session->file_path) - 1);
+    session->file_path[sizeof(session->file_path) - 1] = '\0';
     strncpy(session->output_path, output_path, sizeof(session->output_path) - 1);
-    
+    session->output_path[sizeof(session->output_path) - 1] = '\0';
+
     session->offset = 0;
     session->downloaded = 0;
     session->chunk_size = config ? config->chunk_size : 16384;  /* 默认16KB */
@@ -275,12 +277,37 @@ int tcp_download_file(agent_context_t *ctx, const char *file_path, const char *o
     /* 检查断点续传 */
     struct stat st;
     if (stat(output_path, &st) == 0) {
+        /* 文件已存在，检查是否可以续传 */
         session->offset = st.st_size;
         session->downloaded = st.st_size;
-        session->fp = fopen(output_path, "ab");  /* 追加模式 */
-        LOG_INFO("断点续传: 从位置 %lld", (long long)session->offset);
+
+        /* 检查文件是否可能已损坏（如果文件大小正常但没有校验）*/
+        if (session->offset > 0) {
+            LOG_INFO("发现已下载文件: %s (大小: %lld 字节), 尝试断点续传",
+                     output_path, (long long)session->offset);
+
+            /* 检查是否需要重新下载（例如文件大小为0或异常小）*/
+            if (session->offset < 1024) {
+                LOG_WARN("已下载文件太小 (%lld 字节)，可能已损坏，重新下载",
+                         (long long)session->offset);
+                unlink(output_path);
+                session->offset = 0;
+                session->downloaded = 0;
+                session->fp = fopen(output_path, "wb");
+            } else {
+                /* 追加模式续传 */
+                session->fp = fopen(output_path, "ab");
+                LOG_INFO("断点续传: 从位置 %lld 开始", (long long)session->offset);
+            }
+        } else {
+            /* 文件大小为0，删除并重新下载 */
+            unlink(output_path);
+            session->fp = fopen(output_path, "wb");
+            LOG_INFO("文件为空，重新下载");
+        }
     } else {
         session->fp = fopen(output_path, "wb");  /* 新建模式 */
+        LOG_INFO("新建文件下载: %s", output_path);
     }
     
     if (!session->fp) {

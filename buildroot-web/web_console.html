@@ -1589,6 +1589,118 @@
             margin-bottom: 16px;
             opacity: 0.5;
         }
+
+        /* Update Info Modal */
+        .modal-content {
+            background: var(--bg-elevated);
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .update-info {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .update-version {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+        }
+
+        .update-version .label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .update-version .value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .update-version .value.highlight {
+            color: var(--accent-success);
+        }
+
+        .update-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .meta-item {
+            font-size: 12px;
+            padding: 4px 10px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-primary);
+            border-radius: 20px;
+        }
+
+        .meta-item.mandatory {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-error);
+        }
+
+        .update-notes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .update-notes .label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .update-notes p {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--accent-primary);
+            margin: 0;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-secondary);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -2076,17 +2188,27 @@
             PTY_CLOSE: 0x13,
             FILE_REQUEST: 0x20,
             FILE_DATA: 0x21,
-             FILE_LIST_REQUEST: 0x22,
-             FILE_LIST_RESPONSE: 0x23,
-             DOWNLOAD_PACKAGE: 0x24,
-             CMD_REQUEST: 0x30,
-             CMD_RESPONSE: 0x31,
-             FILE_DOWNLOAD_START: 0x44,
-             FILE_DOWNLOAD_DATA: 0x45,
-             FILE_DOWNLOAD_ACK: 0x46,
-             FILE_TRANSFER_STATUS: 0x47,
-             DEVICE_LIST: 0x50
-        };
+            FILE_LIST_REQUEST: 0x22,
+            FILE_LIST_RESPONSE: 0x23,
+            DOWNLOAD_PACKAGE: 0x24,
+            CMD_REQUEST: 0x30,
+            CMD_RESPONSE: 0x31,
+            FILE_DOWNLOAD_START: 0x44,
+            FILE_DOWNLOAD_DATA: 0x45,
+            FILE_DOWNLOAD_ACK: 0x46,
+            FILE_TRANSFER_STATUS: 0x47,
+            DEVICE_LIST: 0x50,
+            // Update messages (0x60-0x68)
+            UPDATE_CHECK: 0x60,
+            UPDATE_INFO: 0x61,
+            UPDATE_DOWNLOAD: 0x62,
+            UPDATE_PROGRESS: 0x63,
+            UPDATE_APPROVE: 0x64,
+            UPDATE_COMPLETE: 0x65,
+            UPDATE_ERROR: 0x66,
+            UPDATE_ROLLBACK: 0x67,
+            UPDATE_AVAILABLE: 0x68
+         };
 
         // ============================================
         // State
@@ -2100,12 +2222,13 @@
         let isConnected = false;
         let isReconnecting = false;
         let reconnectTimeout = null;
-        let reconnectAttempts = 0;
-        let maxReconnectAttempts = 10;
-        let initialReconnectDelay = 1000; // 1 second
-        let maxReconnectDelay = 30000; // 30 seconds
-        let messageQueue = [];
-        let consoleId = null;
+         let reconnectAttempts = 0;
+         let maxReconnectAttempts = 10;
+         let initialReconnectDelay = 1000; // 1 second
+         let maxReconnectDelay = 30000; // 30 seconds
+         let messageQueue = [];
+         let consoleId = null;
+         let pendingUpdate = null;
 
         // xterm.js 终端实例
         let term = null;
@@ -2453,11 +2576,14 @@
                 case MSG_TYPES.DOWNLOAD_PACKAGE:
                     handleDownloadPackage(data);
                     break;
-                case MSG_TYPES.FILE_TRANSFER_STATUS:
-                    handleFileTransferStatus(data);
-                    break;
-                default:
-                    console.log('Unknown message type:', type, data);
+                 case MSG_TYPES.FILE_TRANSFER_STATUS:
+                     handleFileTransferStatus(data);
+                     break;
+                 case MSG_TYPES.UPDATE_AVAILABLE:
+                     handleUpdateAvailable(data);
+                     break;
+                 default:
+                     console.log('Unknown message type:', type, data);
             }
         }
 
@@ -5257,6 +5383,110 @@
         function formatDate(timestamp) {
             if (!timestamp) return '--';
             return new Date(timestamp * 1000).toLocaleString();
+        }
+
+        // ============================================
+        // Update Management
+        // ============================================
+        function handleUpdateAvailable(data) {
+            console.log('[UPDATE] Update available:', data);
+
+            // 检查是否是当前设备的更新
+            if (currentDevice && data.device_id !== currentDevice.device_id) {
+                console.log('[UPDATE] Update is for another device, ignoring');
+                return;
+            }
+
+            // 存储更新信息
+            pendingUpdate = {
+                device_id: data.device_id,
+                current_version: data.current_version,
+                latest_version: data.latest_version,
+                release_notes: data.release_notes,
+                file_size: data.file_size,
+                sha256_checksum: data.sha256_checksum,
+                mandatory: data.mandatory === true || data.mandatory === 'true',
+                request_id: data.request_id
+            };
+
+            // 显示Toast通知
+            showToast('发现新版本可用', 'info');
+
+            // 延迟1秒后显示确认对话框
+            setTimeout(() => {
+                showUpdateConfirmDialog(pendingUpdate);
+            }, 1000);
+        }
+
+        function showUpdateConfirmDialog(updateInfo) {
+            if (!updateInfo) return;
+
+            const dialog = document.createElement('div');
+            dialog.className = 'modal-overlay active';
+            dialog.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📦 发现新版本</h3>
+                        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="update-info">
+                            <div class="update-version">
+                                <span class="label">当前版本:</span>
+                                <span class="value">${updateInfo.current_version}</span>
+                            </div>
+                            <div class="update-version">
+                                <span class="label">最新版本:</span>
+                                <span class="value highlight">${updateInfo.latest_version}</span>
+                            </div>
+                            <div class="update-meta">
+                                <span class="meta-item">文件大小: ${formatBytes(updateInfo.file_size)}</span>
+                                ${updateInfo.mandatory ? '<span class="meta-item mandatory">强制更新</span>' : ''}
+                            </div>
+                            <div class="update-notes">
+                                <span class="label">更新说明:</span>
+                                <p>${updateInfo.release_notes || '暂无说明'}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove(); rejectUpdate()">取消</button>
+                        <button class="btn btn-primary" onclick="approveUpdate()">批准下载</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(dialog);
+        }
+
+        function approveUpdate() {
+            if (!pendingUpdate) return;
+
+            console.log('[UPDATE] Approving update:', pendingUpdate);
+
+            // 发送批准请求到服务器
+            const approveData = {
+                device_id: pendingUpdate.device_id,
+                version: pendingUpdate.latest_version,
+                action: 'approve',
+                request_id: pendingUpdate.request_id
+            };
+
+            // 使用UPDATE_APPROVE消息类型，让服务器直接转发给Agent
+            sendMessage(MSG_TYPES.UPDATE_APPROVE, approveData);
+
+            // 移除对话框
+            const dialog = document.querySelector('.modal-overlay');
+            if (dialog) dialog.remove();
+
+            showToast('已批准更新下载，请稍候...', 'success');
+            pendingUpdate = null;
+        }
+
+        function rejectUpdate() {
+            console.log('[UPDATE] Update rejected');
+            showToast('已取消更新', 'info');
+            pendingUpdate = null;
         }
 
         // ============================================

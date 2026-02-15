@@ -4,10 +4,10 @@
 # 放置于 /etc/init.d/S99agent
 #
 
-DAEMON="/usr/bin/buildroot-agent"
-PIDFILE="/var/run/buildroot-agent.pid"
-CONFIG="/etc/agent/agent.conf"
-LOGFILE="/var/log/buildroot-agent.log"
+DAEMON="/opt/buildroot-agent/buildroot-agent"
+PIDFILE="/opt/buildroot-agent/buildroot-agent.pid"
+CONFIG="/opt/buildroot-agent/agent.conf"
+LOGFILE="/opt/buildroot-agent/logs/buildroot-agent.log"
 
 # 检查程序是否存在
 [ -x "$DAEMON" ] || exit 0
@@ -25,10 +25,13 @@ start() {
         rm -f "$PIDFILE"
     fi
     
-    # 确保日志目录存在
-    mkdir -p /var/log
-    mkdir -p /etc/agent
-    mkdir -p /tmp/agent_scripts
+    # 创建目录
+    mkdir -p /opt/buildroot-agent
+    mkdir -p /opt/buildroot-agent/logs
+    mkdir -p /opt/buildroot-agent/scripts
+    mkdir -p /opt/buildroot-agent/temp/packages
+    mkdir -p /opt/buildroot-agent/temp/scripts
+    mkdir -p /opt/buildroot-agent/backup
     
     # 启动守护进程
     $DAEMON -c "$CONFIG" -d

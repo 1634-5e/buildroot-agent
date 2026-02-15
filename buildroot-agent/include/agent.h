@@ -25,9 +25,10 @@
 #define DEFAULT_SERVER_ADDR     "127.0.0.1:8766"
 #define DEFAULT_HEARTBEAT_SEC   30
 #define DEFAULT_RECONNECT_SEC   5
+#define DEFAULT_DATA_DIR        "/opt/buildroot-agent"
 #define DEFAULT_LOG_PATH        "/var/log"
 #define DEFAULT_SCRIPT_PATH     "/tmp/agent_scripts"
-#define DEFAULT_CONFIG_PATH     "/etc/agent/agent.conf"
+#define DEFAULT_CONFIG_PATH     "./agent.conf"
 
 /* 消息协议 */
 #define MESSAGE_HEADER_SIZE 3     /* msg_type(1) + length(2) */
@@ -76,6 +77,7 @@ typedef enum {
     MSG_TYPE_UPDATE_COMPLETE       = 0x65,   /* 更新完成通知 */
     MSG_TYPE_UPDATE_ERROR         = 0x66,   /* 更新错误通知 */
     MSG_TYPE_UPDATE_ROLLBACK      = 0x67,   /* 回滚通知 */
+    MSG_TYPE_UPDATE_AVAILABLE     = 0x68,   /* 更新可用通知（Agent主动通知）*/
 } msg_type_t;
 
 /* 系统状态结构 */
@@ -189,6 +191,7 @@ typedef struct {
     int heartbeat_interval;     /* 心跳间隔 (秒) */
     int reconnect_interval;     /* 重连间隔 (秒) */
     int status_interval;        /* 状态上报间隔 (秒) */
+    char data_dir[256];         /* 统一运行时数据目录 */
     char log_path[256];         /* 日志目录 */
     char script_path[256];      /* 脚本存放目录 */
     bool enable_pty;            /* 是否启用PTY */
@@ -254,6 +257,7 @@ void agent_cleanup(void);
 /* agent_config.c */
 int config_load(agent_config_t *config, const char *path);
 int config_save(agent_config_t *config, const char *path);
+int config_load_with_priority(agent_config_t *config, const char *cmd_path);
 void config_set_defaults(agent_config_t *config);
 void config_print(agent_config_t *config);
 
@@ -335,6 +339,10 @@ int update_rollback_to_backup(const char *backup_path);
 int update_report_status(agent_context_t *ctx, update_status_t status, const char *message, int progress);
 void download_progress_callback(const char *url, int progress, int64_t downloaded, int64_t total_size, void *user_data);
 void *update_download_and_install_thread(void *arg);
+int update_notify_available(agent_context_t *ctx);
+
+/* 更新线程状态标志（外部变量） */
+extern bool g_update_thread_running;
 
 /* JSON 解析函数 */
 char *json_get_string(const char *json, const char *key);

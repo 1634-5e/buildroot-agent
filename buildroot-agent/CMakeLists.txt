@@ -22,7 +22,7 @@ endif()
 
 # 生成 version.h 头文件
 configure_file(
-    "${CMAKE_SOURCE_DIR}/version.h.in"
+    "${CMAKE_SOURCE_DIR}/config/version.h.in"
     "${CMAKE_BINARY_DIR}/version.h"
 )
 
@@ -66,9 +66,13 @@ else()
 endif()
 
 # 安装规则
-# 更新包需要二进制文件在根目录
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION .
+)
+
+# 安装配置文件模板
+install(FILES ${CMAKE_SOURCE_DIR}/config/agent.conf.default
+    DESTINATION .
 )
 
 # Release target - strip symbols
@@ -80,12 +84,25 @@ add_custom_target(release
 
 # 自定义更新包目标 - 生成不压缩的tar包（包含架构标识）
 set(UPDATE_PACKAGE_NAME "buildroot-agent")
-add_custom_target(update-package
-    COMMAND tar cf ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar -C ${CMAKE_RUNTIME_OUTPUT_DIRECTORY} ${PROJECT_NAME}
-    COMMAND ${CMAKE_COMMAND} -E echo "Update package created: ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar"
+set(PACKAGE_TEMP_DIR ${CMAKE_BINARY_DIR}/package_temp)
+
+# 创建临时目录并复制文件
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PACKAGE_TEMP_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> ${PACKAGE_TEMP_DIR}/${PROJECT_NAME}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/config/agent.conf.default ${PACKAGE_TEMP_DIR}/agent.conf.default
+    COMMAND ${CMAKE_COMMAND} -E chdir ${PACKAGE_TEMP_DIR} ${CMAKE_COMMAND} -E tar cf ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar ${PROJECT_NAME} agent.conf.default
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${PACKAGE_TEMP_DIR}
     DEPENDS ${PROJECT_NAME}
     COMMENT "Creating update package: ${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar"
-    VERBATIM
+)
+
+# 自定义更新包目标
+add_custom_target(update-package
+    DEPENDS ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar
+    COMMAND ${CMAKE_COMMAND} -E echo "Update package created: ${CMAKE_BINARY_DIR}/${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar"
+    COMMENT "Creating update package: ${UPDATE_PACKAGE_NAME}-${PROJECT_VERSION}-${ARCH}.tar"
 )
 
 # 打包规则 - 用于CPack（可选，生成标准打包）

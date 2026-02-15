@@ -792,9 +792,11 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
     }
     
     /* 生成临时归档文件 */
-    char tmpfile[256];
-    snprintf(tmpfile, sizeof(tmpfile), "/tmp/agent_pkg_%d_%llu", getpid(), (unsigned long long)get_timestamp_ms());
-    char archive[320];
+    char tmpfile[512];
+    snprintf(tmpfile, sizeof(tmpfile), "%s/temp/packages/agent_pkg_%d_%llu",
+             g_agent_ctx->config.data_dir, getpid(),
+             (unsigned long long)get_timestamp_ms());
+    char archive[512];
     int ret = -1;
     
     if (format && strcmp(format, "tar") == 0) {
@@ -1240,6 +1242,7 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             char *release_notes = json_get_string(json_data, "release_notes");
             char *arch = json_get_string(json_data, "arch");
             int mandatory = json_get_bool(json_data, "mandatory", false);
+            int64_t file_size = json_get_int64(json_data, "file_size");
             
             if (!has_update_str || strcmp(has_update_str, "true") != 0) {
                 LOG_INFO("当前版本已是最新: %s", AGENT_VERSION);
@@ -1252,31 +1255,45 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             LOG_INFO("更新说明: %s", release_notes);
             LOG_INFO("是否强制更新: %s", mandatory ? "是" : "否");
             LOG_INFO("架构: %s", arch ? arch : "unknown");
-            
-            /* 保存到全局更新信息 */
+            LOG_INFO("文件大小: %lld bytes", (long long)file_size);
+
             pthread_mutex_lock(&g_update_lock);
             g_update_info.has_update = true;
             strncpy(g_update_info.latest_version, latest_version ? latest_version : "", sizeof(g_update_info.latest_version) - 1);
+            g_update_info.latest_version[sizeof(g_update_info.latest_version) - 1] = '\0';
             strncpy(g_update_info.download_url, download_url ? download_url : "", sizeof(g_update_info.download_url) - 1);
+            g_update_info.download_url[sizeof(g_update_info.download_url) - 1] = '\0';
             strncpy(g_update_info.sha256_checksum, sha256_checksum ? sha256_checksum : "", sizeof(g_update_info.sha256_checksum) - 1);
+            g_update_info.sha256_checksum[sizeof(g_update_info.sha256_checksum) - 1] = '\0';
             strncpy(g_update_info.release_notes, release_notes ? release_notes : "", sizeof(g_update_info.release_notes) - 1);
+            g_update_info.release_notes[sizeof(g_update_info.release_notes) - 1] = '\0';
             strncpy(g_update_info.arch, arch ? arch : "x86_64", sizeof(g_update_info.arch) - 1);
+            g_update_info.arch[sizeof(g_update_info.arch) - 1] = '\0';
             g_update_info.mandatory = mandatory;
+            g_update_info.file_size = file_size;
             pthread_mutex_unlock(&g_update_lock);
-            
+
             /* 如果配置了自动确认，或者强制更新，自动请求下载 */
             if ((!g_agent_ctx->config.update_require_confirm) || mandatory) {
+                /* 检查是否已有更新在进行 */
+                extern bool g_update_thread_running;
+
+                if (g_update_thread_running) {
+                    LOG_INFO("已有更新线程运行中，跳过自动下载请求");
+                    break;
+                }
+
                 LOG_INFO("自动请求下载更新");
                 /* 发送下载请求 */
                 char *json = malloc(256);
                 snprintf(json, 256,
                          "{\"version\":\"%s\",\"arch\":\"%s\",\"request_id\":\"update-%lld\"}",
-                         latest_version, 
-                         arch ? arch : "x86_64", 
+                         latest_version,
+                         arch ? arch : "x86_64",
                          (long long)get_timestamp_ms());
                 int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_DOWNLOAD, json);
                 free(json);
-                
+
                 if (rc != 0) {
                     LOG_ERROR("发送下载请求失败");
                 }
@@ -1292,7 +1309,15 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             LOG_INFO("收到下载批准");
             char *download_url = json_get_string(json_data, "download_url");
             char *request_id = json_get_string(json_data, "request_id");
-            
+
+            /* 检查是否已有更新在进行 */
+            extern bool g_update_thread_running;
+
+            if (g_update_thread_running) {
+                LOG_WARN("已有更新线程运行中，忽略重复的下载批准请求");
+                break;
+            }
+
             if (!download_url) {
                 LOG_ERROR("下载URL为空");
                 /* 发送错误通知 */
@@ -1304,23 +1329,40 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
                 free(error_json);
                 break;
             }
-            
-            /* 准备下载路径 */
+
+            /* 准备下载路径 - 使用request_id确保唯一性 */
             char download_path[512];
             char temp_dir[512];
             time_t now = time(NULL);
-            snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
-                     g_agent_ctx->config.update_temp_path, (long long)now);
-            snprintf(download_path, sizeof(download_path),
-                     "%s/agent-update-%lld.tar",
-                     temp_dir, (long long)now);
-            
+
+            /* 如果有request_id，使用它作为目录名的一部分；否则使用时间戳 */
+            if (request_id && strlen(request_id) > 0) {
+                /* 从request_id提取数字部分，避免非法字符 */
+                char safe_id[64] = "";
+                for (int i = 0; request_id[i] && i < 63; i++) {
+                    if (isalnum((unsigned char)request_id[i]) || request_id[i] == '-' || request_id[i] == '_') {
+                        safe_id[strlen(safe_id)] = request_id[i];
+                    }
+                }
+                snprintf(temp_dir, sizeof(temp_dir), "%s/%s",
+                         g_agent_ctx->config.update_temp_path, safe_id);
+                snprintf(download_path, sizeof(download_path),
+                         "%s/agent-update-%s.tar",
+                         temp_dir, safe_id);
+            } else {
+                snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
+                         g_agent_ctx->config.update_temp_path, (long long)now);
+                snprintf(download_path, sizeof(download_path),
+                         "%s/agent-update-%lld.tar",
+                         temp_dir, (long long)now);
+            }
+
             /* 创建临时目录 */
             mkdir_recursive(temp_dir, 0755);
-            
+
             /* 获取校验和 */
             char *sha256_checksum = json_get_string(json_data, "sha256_checksum");
-            
+
             /* 在后台线程中执行下载、校验和安装 */
             typedef struct {
                 char download_url[512];
@@ -1328,26 +1370,30 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
                 char sha256_checksum[65];
                 char request_id[64];
             } download_task_t;
-            
+
             download_task_t *task = malloc(sizeof(download_task_t));
             if (!task) {
                 LOG_ERROR("无法分配下载任务内存");
                 break;
             }
-            
+
             strncpy(task->download_url, download_url, sizeof(task->download_url) - 1);
+            task->download_url[sizeof(task->download_url) - 1] = '\0';
             strncpy(task->download_path, download_path, sizeof(task->download_path) - 1);
-            strncpy(task->sha256_checksum, sha256_checksum ? sha256_checksum : "", 
+            task->download_path[sizeof(task->download_path) - 1] = '\0';
+            strncpy(task->sha256_checksum, sha256_checksum ? sha256_checksum : "",
                     sizeof(task->sha256_checksum) - 1);
-            strncpy(task->request_id, request_id ? request_id : "unknown", 
+            task->sha256_checksum[sizeof(task->sha256_checksum) - 1] = '\0';
+            strncpy(task->request_id, request_id ? request_id : "unknown",
                     sizeof(task->request_id) - 1);
-            
+            task->request_id[sizeof(task->request_id) - 1] = '\0';
+
             pthread_t download_thread;
-            if (pthread_create(&download_thread, NULL, 
+            if (pthread_create(&download_thread, NULL,
                               (void* (*)(void*))update_download_and_install_thread, task) != 0) {
                 LOG_ERROR("创建下载线程失败");
                 free(task);
-                
+
                 /* 发送错误通知 */
                 char *error_json = malloc(256);
                 snprintf(error_json, 256,
@@ -1397,7 +1443,9 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
                 LOG_INFO("自动回滚到旧版本");
                 
                 char last_backup_path[512];
-                FILE *fp = fopen("/var/lib/agent/backup/.last_backup", "r");
+                snprintf(last_backup_path, sizeof(last_backup_path), "%s/backup/.last_backup",
+                         g_agent_ctx->config.data_dir);
+                FILE *fp = fopen(last_backup_path, "r");
                 if (fp) {
                     if (fgets(last_backup_path, sizeof(last_backup_path), fp)) {
                         /* 去除换行符 */
@@ -1422,13 +1470,15 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             /* 服务器会指定回滚到的版本或备份 */
             char *backup_path = json_get_string(json_data, "backup_path");
             
-            if (backup_path && strlen(backup_path) > 0) {
-                LOG_INFO("回滚到: %s", backup_path);
-                update_rollback_to_backup(backup_path);
-            } else {
-                LOG_WARN("回滚路径为空，尝试自动回滚");
-                char last_backup_path[512];
-                FILE *fp = fopen("/var/lib/agent/backup/.last_backup", "r");
+                if (backup_path && strlen(backup_path) > 0) {
+                    LOG_INFO("回滚到: %s", backup_path);
+                    update_rollback_to_backup(backup_path);
+                } else {
+                    LOG_WARN("回滚路径为空，尝试自动回滚");
+                    char last_backup_path[512];
+                    snprintf(last_backup_path, sizeof(last_backup_path), "%s/backup/.last_backup",
+                             g_agent_ctx->config.data_dir);
+                    FILE *fp = fopen(last_backup_path, "r");
                 if (fp) {
                     if (fgets(last_backup_path, sizeof(last_backup_path), fp)) {
                         char *newline = strchr(last_backup_path, '\n');

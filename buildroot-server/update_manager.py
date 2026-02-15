@@ -170,14 +170,24 @@ class UpdateManager:
                     "request_id": request_id,
                 }
 
-            # 从 manifest 直接获取 SHA256
+            # 从 manifest 直接获取文件大小和 SHA256
+            file_size = arch_info.get("size", 0)
             sha256_checksum = arch_info.get("sha256", "")
+
+            # 验证实际文件大小与manifest一致
+            actual_file_size = package_path.stat().st_size
+            if file_size > 0 and file_size != actual_file_size:
+                logger.warning(
+                    f"[{device_id}] manifest大小({file_size})与实际文件大小({actual_file_size})不匹配"
+                )
+                # 使用实际文件大小，避免校验失败
+                file_size = actual_file_size
 
             # 构建下载批准响应
             response = {
                 "status": "approved",
                 "download_url": filename,  # 文件名，服务器会处理
-                "file_size": arch_info.get("size", package_path.stat().st_size),
+                "file_size": file_size,
                 "sha256_checksum": sha256_checksum,
                 "request_id": request_id,
                 "version": version,
@@ -186,7 +196,7 @@ class UpdateManager:
             }
 
             logger.info(
-                f"[{device_id}] 下载已批准: {filename}, size={response['file_size']}"
+                f"[{device_id}] 下载已批准: {filename}, size={response['file_size']}, sha256={sha256_checksum[:16]}"
             )
             return response
 

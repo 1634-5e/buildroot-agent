@@ -86,6 +86,7 @@ class MessageType:
     UPDATE_COMPLETE = 0x65  # 更新完成通知
     UPDATE_ERROR = 0x66  # 更新错误通知
     UPDATE_ROLLBACK = 0x67  # 回滚通知
+    UPDATE_AVAILABLE = 0x68  # 更新可用通知（Agent主动通知）
 
 
 # 有效的认证Token（已废弃，保留用于向后兼容）
@@ -1052,6 +1053,21 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"[{device_id}] 处理更新回滚通知失败: {e}")
 
+    async def handle_update_available(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        """处理更新可用通知（从Agent到Web）"""
+        try:
+            logger.info(
+                f"[{device_id}] 更新可用通知: {json_data.get('current_version')} -> {json_data.get('latest_version')}"
+            )
+            # 广播到所有Web控制台（包含device_id信息，前端过滤）
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_AVAILABLE, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理更新可用通知失败: {e}")
+
     # 重写更新管理器的广播方法
     async def _broadcast_update_progress(
         self, device_id: str, progress_data: Dict[str, Any]
@@ -1263,7 +1279,31 @@ class MessageHandler:
                 )
                 return
 
-            file_size = os.path.getsize(full_path)
+            # 尝试从manifest获取文件大小，确保与UPDATE_APPROVE消息一致
+            actual_file_size = os.path.getsize(full_path)
+            file_size = actual_file_size
+
+            try:
+                manifest_path = os.path.join("updates", "manifest.json")
+                if os.path.exists(manifest_path):
+                    with open(manifest_path, "r") as f:
+                        manifest = json.load(f)
+                        for arch_name, arch_info in manifest.get(
+                            "architectures", {}
+                        ).items():
+                            if arch_info.get("file") == os.path.basename(file_path):
+                                manifest_size = arch_info.get("size", 0)
+                                if (
+                                    manifest_size > 0
+                                    and manifest_size != actual_file_size
+                                ):
+                                    logger.warning(
+                                        f"[{device_id}] manifest大小({manifest_size}) != 实际大小({actual_file_size}), 使用manifest大小"
+                                    )
+                                    file_size = manifest_size
+                                break
+            except Exception as e:
+                logger.debug(f"[{device_id}] 无法读取manifest: {e}")
 
             if offset >= file_size:
                 # 文件已经下载完成
@@ -1317,8 +1357,13 @@ class MessageHandler:
                 f"[{device_id}] 读取数据块: offset={offset}, chunk_size={chunk_size}, actual={actual_size}, file_size={file_size}, is_final={is_final}"
             )
 
+            logger.debug(
+                f"[{device_id}] 发送数据块: offset={offset}, size={actual_size}, final={is_final}, total_size={file_size}"
+            )
+
             # 发送数据块响应
-            response = self.create_message(
+            await self.send_to_device(
+                device_id,
                 MessageType.FILE_DOWNLOAD_DATA,
                 {
                     "action": "file_data",
@@ -1330,24 +1375,6 @@ class MessageHandler:
                     "total_size": file_size,
                     "request_id": request_id,
                 },
-            )
-
-            await self.send_to_device(
-                device_id,
-                MessageType.FILE_DOWNLOAD_DATA,
-                {
-                    "action": "file_data",
-                    "file_path": file_path,
-                    "offset": offset,
-                    "data": data_b64,
-                    "size": len(data_chunk),
-                    "is_final": is_final,
-                    "total_size": file_size,
-                    "request_id": request_id,
-                },
-            )
-            logger.debug(
-                f"[{device_id}] 发送数据块: offset={offset}, size={len(data_chunk)}, final={is_final}"
             )
 
         except Exception as e:
@@ -1436,6 +1463,14 @@ class MessageHandler:
                         f"Cannot forward PTY message: device {device_id} not connected"
                     )
             return
+        elif msg_type == MessageType.UPDATE_APPROVE:
+            # Web控制台发送的批准请求，转发给Agent
+            if device_id and self.conn_mgr.is_device_connected(device_id):
+                await self.send_to_device(device_id, msg_type, json_data)
+                logger.info(f"[{device_id}] 已转发Web的更新批准请求给Agent")
+            else:
+                logger.warning(f"无法转发更新批准：设备 {device_id} 未连接")
+            return
 
         # 其他消息处理
         handlers = {
@@ -1451,6 +1486,7 @@ class MessageHandler:
             MessageType.UPDATE_COMPLETE: self.handle_update_complete,
             MessageType.UPDATE_ERROR: self.handle_update_error,
             MessageType.UPDATE_ROLLBACK: self.handle_update_rollback,
+            MessageType.UPDATE_AVAILABLE: self.handle_update_available,
         }
 
         if msg_type in handlers:

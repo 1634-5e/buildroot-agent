@@ -18,8 +18,7 @@
 static update_status_t g_update_status = UPDATE_STATUS_IDLE;
 pthread_mutex_t g_update_lock = PTHREAD_MUTEX_INITIALIZER;
 update_info_t g_update_info;
-static pthread_t g_update_thread;
-static bool g_update_thread_running = false;
+bool g_update_thread_running = false;
 
 /* 内部函数 */
 static int parse_version(const char *version_str, int *major, int *minor, int *patch);
@@ -145,11 +144,12 @@ int update_download_package(const char *url, const char *output_path, progress_c
     g_update_status = UPDATE_STATUS_DOWNLOADING;
     pthread_mutex_unlock(&g_update_lock);
     
-    /* 配置TCP下载参数 */
     tcp_download_config_t config;
     memset(&config, 0, sizeof(tcp_download_config_t));
     strncpy(config.file_path, url, sizeof(config.file_path) - 1);
+    config.file_path[sizeof(config.file_path) - 1] = '\0';
     strncpy(config.output_path, output_path, sizeof(config.output_path) - 1);
+    config.output_path[sizeof(config.output_path) - 1] = '\0';
     config.timeout = DEFAULT_DOWNLOAD_TIMEOUT;
     config.chunk_size = 32768;      /* 32KB块大小 */
     config.max_retries = 3;
@@ -169,15 +169,20 @@ void *update_download_and_install_thread(void *arg)
         char sha256_checksum[65];
         char request_id[64];
     } download_task_t;
-    
+
     download_task_t *task = (download_task_t *)arg;
     if (!task) {
         LOG_ERROR("下载任务为空");
         return NULL;
     }
-    
-    LOG_INFO("后台下载线程启动: %s", task->download_url);
-    
+
+    /* 设置线程运行标志 */
+    pthread_mutex_lock(&g_update_lock);
+    g_update_thread_running = true;
+    pthread_mutex_unlock(&g_update_lock);
+
+    LOG_INFO("后台下载线程启动: %s (request_id=%s)", task->download_url, task->request_id);
+
     /* 执行下载 */
     int rc = update_download_package(
         task->download_url,
@@ -185,10 +190,10 @@ void *update_download_and_install_thread(void *arg)
         download_progress_callback,
         g_agent_ctx
     );
-    
+
     if (rc != 0) {
         LOG_ERROR("下载失败: %s", task->download_url);
-        
+
         /* 发送错误通知 */
         char *error_json = malloc(256);
         snprintf(error_json, 256,
@@ -197,11 +202,17 @@ void *update_download_and_install_thread(void *arg)
         socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
         free(error_json);
         free(task);
+
+        /* 清除线程运行标志 */
+        pthread_mutex_lock(&g_update_lock);
+        g_update_thread_running = false;
+        pthread_mutex_unlock(&g_update_lock);
+
         return NULL;
     }
-    
+
     LOG_INFO("下载完成，开始校验: %s", task->download_path);
-    
+
     /* 发送进度：下载完成 */
     char *progress_json = malloc(256);
     snprintf(progress_json, 256,
@@ -209,14 +220,14 @@ void *update_download_and_install_thread(void *arg)
              task->request_id);
     socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
     free(progress_json);
-    
+
     /* 校验文件 */
     LOG_INFO("开始校验文件: SHA256=%s",
              task->sha256_checksum[0] ? task->sha256_checksum : "(none)");
-    
+
     if (!tcp_verify_checksum(task->download_path, task->sha256_checksum[0] ? task->sha256_checksum : NULL)) {
         LOG_ERROR("文件校验失败");
-        
+
         /* 发送校验失败通知 */
         char *error_json = malloc(256);
         snprintf(error_json, 256,
@@ -225,11 +236,17 @@ void *update_download_and_install_thread(void *arg)
         socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_ERROR, error_json);
         free(error_json);
         free(task);
+
+        /* 清除线程运行标志 */
+        pthread_mutex_lock(&g_update_lock);
+        g_update_thread_running = false;
+        pthread_mutex_unlock(&g_update_lock);
+
         return NULL;
     }
-    
+
     LOG_INFO("文件校验通过");
-    
+
     /* 发送校验成功通知 */
     char *verify_json = malloc(256);
     snprintf(verify_json, 256,
@@ -238,7 +255,7 @@ void *update_download_and_install_thread(void *arg)
              task->download_path);
     socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, verify_json);
     free(verify_json);
-    
+
     /* 发送安装通知 */
     char *install_json = malloc(256);
     snprintf(install_json, 256,
@@ -247,7 +264,7 @@ void *update_download_and_install_thread(void *arg)
              task->download_path);
     socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
     free(install_json);
-    
+
     /* 开始安装 */
     LOG_INFO("开始安装更新包: %s", task->download_path);
     int install_rc = update_install_package(task->download_path);
@@ -256,7 +273,7 @@ void *update_download_and_install_thread(void *arg)
         /* 错误通知已在update_install_package内部发送 */
     } else {
         LOG_INFO("安装成功，准备重启...");
-        
+
         /* 发送完成通知给服务器 */
         char *complete_json = malloc(256);
         snprintf(complete_json, 256,
@@ -264,13 +281,19 @@ void *update_download_and_install_thread(void *arg)
                  task->request_id);
         socket_send_json(g_agent_ctx, MSG_TYPE_UPDATE_PROGRESS, complete_json);
         free(complete_json);
-        
+
         /* 延迟2秒后自动重启 */
         sleep(2);
         update_restart_agent();
     }
-    
+
     free(task);
+
+    /* 清除线程运行标志 */
+    pthread_mutex_lock(&g_update_lock);
+    g_update_thread_running = false;
+    pthread_mutex_unlock(&g_update_lock);
+
     return NULL;
 }
 
@@ -411,16 +434,18 @@ static int extract_update_package(const char *package_path, const char *output_d
     LOG_INFO("包文件大小: %lld 字节", (long long)pkg_st.st_size);
 
     /* 使用 tar 命令解压（使用绝对路径） */
+    /* 注意：使用 --warning=no-timestamp 避免 tar 对时间戳的警告 */
     char extract_cmd[1024];
     snprintf(extract_cmd, sizeof(extract_cmd),
-             "tar -xf '%s' -C '%s' 2>&1",
+             "tar --warning=no-timestamp -xf '%s' -C '%s' 2>&1",
              package_path, output_dir);
 
     LOG_INFO("执行解压命令: %s", extract_cmd);
     int rc = system(extract_cmd);
 
+    /* tar 返回值可能为负数，需要检查文件是否正确解压 */
     if (rc != 0) {
-        LOG_WARN("tar命令返回非零: %d", rc);
+        LOG_WARN("tar命令返回非零: %d (可能是警告，继续验证)", rc);
     }
 
     /* 验证是否成功解压了文件 */
@@ -429,7 +454,27 @@ static int extract_update_package(const char *package_path, const char *output_d
 
     struct stat st;
     if (stat(new_binary, &st) != 0) {
+        /* tar 失败了，尝试其他方法 */
         LOG_ERROR("未找到解压后的二进制文件: %s", new_binary);
+        LOG_ERROR("tar解压失败，请检查tar包是否完整");
+
+        /* 列出目录内容用于调试 */
+        char list_cmd[1024];
+        snprintf(list_cmd, sizeof(list_cmd), "ls -la '%s'", output_dir);
+        LOG_INFO("临时目录内容: %s", list_cmd);
+        system(list_cmd);
+
+        /* 尝试列出tar包内容 */
+        snprintf(list_cmd, sizeof(list_cmd), "tar -tf '%s'", package_path);
+        LOG_INFO("tar包内容: %s", list_cmd);
+        system(list_cmd);
+
+        return -1;
+    }
+
+    /* 验证文件大小是否合理 */
+    if (st.st_size < 1024) {
+        LOG_ERROR("解压后的二进制文件太小: %lld 字节 (可能损坏)", (long long)st.st_size);
         return -1;
     }
 
@@ -545,7 +590,7 @@ static int install_new_binary(const char *new_binary_path)
     /* 保存备份路径供回退使用 */
     char backup_path_file[512];
     snprintf(backup_path_file, sizeof(backup_path_file),
-             "%s/.last_backup", DEFAULT_UPDATE_BACKUP_PATH);
+             "%s/backup/.last_backup", DEFAULT_DATA_DIR);
 
     mkdir_recursive(DEFAULT_UPDATE_BACKUP_PATH, 0755);
 
@@ -665,7 +710,9 @@ void update_restart_agent(void)
     LOG_INFO("准备重启 Agent...");
     
     /* 删除PID文件，避免子进程启动时冲突 */
-    remove_pid_file("/tmp/buildroot-agent.pid");
+    char pid_file[512];
+    snprintf(pid_file, sizeof(pid_file), "%s/buildroot-agent.pid", DEFAULT_DATA_DIR);
+    remove_pid_file(pid_file);
     
     /* 停止服务 */
     agent_stop();
@@ -702,7 +749,7 @@ void update_restart_agent(void)
     /* 保存备份路径到文件（供回退使用）*/
     char backup_path_file[512];
     snprintf(backup_path_file, sizeof(backup_path_file),
-             "%s/.last_backup", DEFAULT_UPDATE_BACKUP_PATH);
+             "%s/backup/.last_backup", DEFAULT_DATA_DIR);
     
     mkdir_recursive(DEFAULT_UPDATE_BACKUP_PATH, 0755);
     
@@ -769,8 +816,10 @@ void update_restart_agent(void)
         /* 子进程：启动新版本 */
         
         /* 打开错误日志文件（在重定向前）*/
-        int error_log_fd = open("/tmp/agent_restart_error.log",
-                               O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        char error_log_path[512];
+        snprintf(error_log_path, sizeof(error_log_path), "%s/temp/agent_restart_error.log",
+                 DEFAULT_DATA_DIR);
+        int error_log_fd = open(error_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         
         setsid();
         
@@ -879,7 +928,7 @@ int update_rollback_to_backup(const char *backup_path)
         /* 尝试从保存的备份路径恢复 */
         char last_backup_path[512];
         snprintf(last_backup_path, sizeof(last_backup_path),
-                 "%s/.last_backup", DEFAULT_UPDATE_BACKUP_PATH);
+                 "%s/backup/.last_backup", DEFAULT_DATA_DIR);
         
         FILE *fp = fopen(last_backup_path, "r");
         if (fp) {
@@ -981,4 +1030,52 @@ int update_report_status(agent_context_t *ctx, update_status_t status, const cha
     }
     
     return 0;
+}
+
+/* 发送更新可用通知给服务器 */
+int update_notify_available(agent_context_t *ctx)
+{
+    if (!ctx) return -1;
+    
+    pthread_mutex_lock(&g_update_lock);
+    
+    if (!g_update_info.has_update) {
+        pthread_mutex_unlock(&g_update_lock);
+        return 0;
+    }
+    
+    char *json = malloc(512);
+    if (!json) {
+        LOG_ERROR("内存分配失败");
+        pthread_mutex_unlock(&g_update_lock);
+        return -1;
+    }
+    
+    snprintf(json, 512,
+             "{\"current_version\":\"%s\","
+             "\"latest_version\":\"%s\","
+             "\"release_notes\":\"%s\","
+             "\"file_size\":%lld,"
+             "\"sha256_checksum\":\"%s\","
+             "\"mandatory\":%s,"
+             "\"request_id\":\"available-%lld\"}",
+             AGENT_VERSION,
+             g_update_info.latest_version,
+             g_update_info.release_notes,
+             (long long)g_update_info.file_size,
+             g_update_info.sha256_checksum,
+             g_update_info.mandatory ? "true" : "false",
+             (long long)get_timestamp_ms());
+    
+    pthread_mutex_unlock(&g_update_lock);
+    
+    int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_AVAILABLE, json);
+    free(json);
+    
+    if (rc == 0) {
+        LOG_INFO("已发送更新可用通知: %s -> %s",
+                 AGENT_VERSION, g_update_info.latest_version);
+    }
+    
+    return rc;
 }

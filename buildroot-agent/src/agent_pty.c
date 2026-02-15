@@ -360,6 +360,11 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
         session_id, session->rows, session->cols, pty_count, MAX_PTY_SESSIONS);
     socket_send_json(ctx, MSG_TYPE_PTY_CREATE, json);
     
+    /* PTY连接成功后，检查并发送更新通知 */
+    if (ctx && ctx->connected) {
+        update_notify_available(ctx);
+    }
+    
     return 0;
 }
 
