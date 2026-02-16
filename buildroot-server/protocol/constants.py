@@ -22,6 +22,7 @@ class MessageType(IntEnum):
     CMD_REQUEST = 0x30
     CMD_RESPONSE = 0x31
     DEVICE_LIST = 0x50
+    DEVICE_DISCONNECT = 0x51
     AUTH = 0xF0
     AUTH_RESULT = 0xF1
     FILE_UPLOAD_START = 0x40

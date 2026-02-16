@@ -72,13 +72,25 @@ class MessageHandler:
     async def handle_update_rollback(self, device_id: str, data: dict) -> None:
         await self.update_handler.handle_update_rollback(device_id, data)
 
-    async def handle_file_upload_start(self, device_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def handle_file_upload_start(
+        self, device_id: str, data: dict, websocket: WebSocketServerProtocol
+    ) -> None:
         await self.file_handler.handle_file_upload_start(device_id, data, websocket)
 
-    async def handle_file_upload_data(self, device_id: str, data: dict, raw_data: bytes, websocket: WebSocketServerProtocol) -> None:
-        await self.file_handler.handle_file_upload_data(device_id, data, raw_data, websocket)
+    async def handle_file_upload_data(
+        self,
+        device_id: str,
+        data: dict,
+        raw_data: bytes,
+        websocket: WebSocketServerProtocol,
+    ) -> None:
+        await self.file_handler.handle_file_upload_data(
+            device_id, data, raw_data, websocket
+        )
 
-    async def handle_file_upload_complete(self, device_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def handle_file_upload_complete(
+        self, device_id: str, data: dict, websocket: WebSocketServerProtocol
+    ) -> None:
         await self.file_handler.handle_file_upload_complete(device_id, data, websocket)
 
     async def handle_file_download_request(self, device_id: str, data: dict) -> None:
@@ -108,21 +120,41 @@ class MessageHandler:
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
         return await self.auth_handler.send_to_device(device_id, msg_type, data)
 
-    async def broadcast_to_web_consoles(self, msg_type: int, data: dict, target_console_id: str = None, target_device_id: str = None) -> None:
-        return await self.auth_handler.broadcast_to_web_consoles(msg_type, data, target_console_id, target_device_id)
+    async def broadcast_to_web_consoles(
+        self,
+        msg_type: int,
+        data: dict,
+        target_console_id: str = None,
+        target_device_id: str = None,
+    ) -> None:
+        return await self.auth_handler.broadcast_to_web_consoles(
+            msg_type, data, target_console_id, target_device_id
+        )
 
-    async def unicast_by_request_id(self, msg_type: int, data: dict, request_id: str) -> None:
+    async def unicast_by_request_id(
+        self, msg_type: int, data: dict, request_id: str
+    ) -> None:
         return await self.auth_handler.unicast_by_request_id(msg_type, data, request_id)
 
     async def notify_device_list_update(self) -> None:
         return await self.auth_handler.notify_device_list_update()
 
-    async def handle_message(self, websocket, device_id: str, data: bytes, is_socket: bool = False) -> None:
+    async def notify_device_disconnect(
+        self, device_id: str, reason: str = "disconnect"
+    ) -> None:
+        return await self.auth_handler.notify_device_disconnect(device_id, reason)
+
+    async def handle_message(
+        self, websocket, device_id: str, data: bytes, is_socket: bool = False
+    ) -> None:
         from protocol.constants import MessageType
 
-        msg_type, json_data = self.auth_handler.__class__.create_message.__self__ if False else (None, {})
-        
+        msg_type, json_data = (
+            self.auth_handler.__class__.create_message.__self__ if False else (None, {})
+        )
+
         import json
+
         if len(data) >= 3:
             msg_type = data[0]
             length_bytes = data[1:3]
@@ -222,10 +254,39 @@ class MessageHandler:
                     request_id,
                 )
         elif msg_type == MessageType.DEVICE_LIST:
-            device_list = self.conn_mgr.get_all_devices()
+            page = json_data.get("page", 0)
+            page_size = json_data.get("page_size", 20)
+            search_keyword = json_data.get("search_keyword", "").lower()
+            sort_by = json_data.get("sort_by", "device_id")
+            sort_order = json_data.get("sort_order", "asc")
+
+            all_devices = self.conn_mgr.get_all_devices()
+
+            filtered_devices = all_devices
+            if search_keyword:
+                filtered_devices = [
+                    d
+                    for d in all_devices
+                    if search_keyword in d.get("device_id", "").lower()
+                ]
+
+            if sort_by:
+                reverse = sort_order.lower() == "desc"
+                filtered_devices.sort(key=lambda x: x.get(sort_by, ""), reverse=reverse)
+
+            total_count = len(filtered_devices)
+            start_index = page * page_size
+            end_index = start_index + page_size
+            paged_devices = filtered_devices[start_index:end_index]
+
             response = self.create_message(
                 MessageType.DEVICE_LIST,
-                {"devices": device_list, "count": len(device_list)},
+                {
+                    "devices": paged_devices,
+                    "total_count": total_count,
+                    "page": page,
+                    "page_size": page_size,
+                },
             )
             if hasattr(websocket, "send") and callable(
                 getattr(websocket, "send", None)
@@ -289,8 +350,6 @@ class CloudServer:
         self.socket_handler = SocketHandler(self.conn_mgr, self.msg_handler)
         self.ws_handler = WebSocketHandler(self.conn_mgr, self.msg_handler)
         self.console = InteractiveConsole(self)
-        self._last_device_count = 0
-        self._device_list_broadcast_task = None
 
     async def run(self) -> None:
         host = settings.host
@@ -302,14 +361,16 @@ class CloudServer:
         logger.info(f"文件上传目录: {os.path.abspath(settings.upload_dir)}")
 
         ws_server = await websockets.serve(
-            self.ws_handler.agent_handler, host, ws_port, ping_interval=settings.ping_interval, ping_timeout=settings.ping_timeout
+            self.ws_handler.agent_handler,
+            host,
+            ws_port,
+            ping_interval=settings.ping_interval,
+            ping_timeout=settings.ping_timeout,
         )
 
         socket_server = await asyncio.start_server(
             self.socket_handler.handle_connection, host, socket_port
         )
-
-        self._start_device_list_monitor()
 
         asyncio.create_task(self.console.interactive_console())
 
@@ -324,16 +385,3 @@ class CloudServer:
             await ws_server.wait_closed()
             socket_server.close()
             await socket_server.wait_closed()
-
-    def _start_device_list_monitor(self) -> None:
-        self._device_list_broadcast_task = asyncio.create_task(
-            self._check_device_list_changes()
-        )
-
-    async def _check_device_list_changes(self) -> None:
-        while True:
-            await asyncio.sleep(15)
-            current_count = len(self.conn_mgr.connected_devices)
-            if current_count > self._last_device_count:
-                await self.msg_handler.notify_device_list_update()
-            self._last_device_count = current_count

@@ -24,7 +24,6 @@ class WebSocketHandler:
         logger.info(f"新连接: {remote}")
 
         self.conn_mgr.add_console(websocket)
-        await self.msg_handler.notify_device_list_update()
 
         device_id: str | None = None
         authenticated = False
@@ -55,7 +54,7 @@ class WebSocketHandler:
                             websocket, json_data
                         )
                         if authenticated:
-                            await self.msg_handler.notify_device_list_update()
+                            pass
                         else:
                             if hasattr(websocket, "close") and callable(
                                 getattr(websocket, "close", None)
@@ -135,10 +134,45 @@ class WebSocketHandler:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
                         else:
                             if msg_type == MessageType.DEVICE_LIST:
-                                device_list = self.conn_mgr.get_all_devices()
+                                page = json_data.get("page", 0)
+                                page_size = json_data.get("page_size", 20)
+                                search_keyword = json_data.get(
+                                    "search_keyword", ""
+                                ).lower()
+                                sort_by = json_data.get("sort_by", "device_id")
+                                sort_order = json_data.get("sort_order", "asc")
+
+                                all_devices = self.conn_mgr.get_all_devices()
+
+                                filtered_devices = all_devices
+                                if search_keyword:
+                                    filtered_devices = [
+                                        d
+                                        for d in all_devices
+                                        if search_keyword
+                                        in d.get("device_id", "").lower()
+                                    ]
+
+                                if sort_by:
+                                    reverse = sort_order.lower() == "desc"
+                                    filtered_devices.sort(
+                                        key=lambda x: x.get(sort_by, ""),
+                                        reverse=reverse,
+                                    )
+
+                                total_count = len(filtered_devices)
+                                start_index = page * page_size
+                                end_index = start_index + page_size
+                                paged_devices = filtered_devices[start_index:end_index]
+
                                 response = self.msg_handler.create_message(
                                     MessageType.DEVICE_LIST,
-                                    {"devices": device_list, "count": len(device_list)},
+                                    {
+                                        "devices": paged_devices,
+                                        "total_count": total_count,
+                                        "page": page,
+                                        "page_size": page_size,
+                                    },
                                 )
                                 if hasattr(websocket, "send") and callable(
                                     getattr(websocket, "send", None)
@@ -156,7 +190,7 @@ class WebSocketHandler:
                 if device_id:
                     self.conn_mgr.remove_device(device_id)
                     logger.info(f"设备断开: {device_id}")
-                    await self.msg_handler.notify_device_list_update()
+                    await self.msg_handler.notify_device_disconnect(device_id)
             else:
                 logger.info(
                     f"Web控制台断开: {remote}, code: {e.code}, reason: {e.reason}"

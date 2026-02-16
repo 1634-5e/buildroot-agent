@@ -1,0 +1,18 @@
+version: 1.1.0
+files:
+  - url: buildroot-agent-1.1.0.tar
+    sha512: 8aeefe495600a576a02afcebb2a1f0b48670f22b9bc1dd17c49f3edefed9b93b4911f95b8a578c68fa27673ddb0653ce688449a79202555751083d0b6db90750
+    size: 1228800
+path: buildroot-agent-1.1.0.tar
+sha512: 8aeefe495600a576a02afcebb2a1f0b48670f22b9bc1dd17c49f3edefed9b93b4911f95b8a578c68fa27673ddb0653ce688449a79202555751083d0b6db90750
+releaseDate: 2026-02-16T14:34:41.000Z
+releaseNotes: |-
+  ### Added
+  - 版本号统一管理优化（VERSION 文件）
+  - 单目录自包含安装（/opt/buildroot-agent）
+  - Electron 风格版本检查（latest.yml + SHA512）
+  - 自动生成发布包（TAR 格式）
+  - CHANGELOG.md 版本变更记录
+  ### Changed
+  - 所有默认路径改为相对路径
+  - 移除 S99agent 启动脚本

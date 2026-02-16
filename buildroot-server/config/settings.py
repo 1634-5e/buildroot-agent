@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
-from typing import Dict
+from typing import Dict, Optional
 from pathlib import Path
 
 
@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     upload_dir: str = Field(default="./uploads", description="上传目录")
     updates_dir: str = Field(default="./updates", description="更新包目录")
+    latest_yaml: str = Field(
+        default="./updates/latest.yml", description="最新版本 YAML 文件路径"
+    )
 
     chunk_sizes: Dict[str, int] = {
         "small": 8 * 1024,

@@ -3,18 +3,19 @@ from typing import List
 
 
 class UpdateCheck(BaseModel):
-    current_version: str = "1.0.0"
+    current_version: str = ""
     channel: str = "stable"
 
 
 class UpdateInfo(BaseModel):
     has_update: str = "false"
-    current_version: str = "1.0.0"
-    latest_version: str = "1.0.0"
+    current_version: str = ""
+    latest_version: str = ""
     channel: str = "stable"
     version_code: int = 0
     file_size: int = 0
     download_url: str = ""
+    sha512_checksum: str = ""
     md5_checksum: str = ""
     sha256_checksum: str = ""
     release_notes: str = ""

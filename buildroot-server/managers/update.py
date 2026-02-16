@@ -2,15 +2,16 @@
 """
 Buildroot Agent 更新管理模块
 为 server_example.py 添加缺失的更新处理功能
+使用 Electron 风格的 YAML 版本格式
 """
 
-import json
 import os
-import hashlib
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+from packaging import version
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -18,95 +19,71 @@ logger = logging.getLogger(__name__)
 class UpdateManager:
     """更新管理器 - 处理Agent更新请求"""
 
-    def __init__(self, updates_dir: str = "../test_packages/updates"):
+    def __init__(
+        self, updates_dir: str = "./updates", latest_yaml: str = "./updates/latest.yml"
+    ):
         self.updates_dir = Path(updates_dir)
-        self.update_metadata = self._load_update_metadata()
+        self.latest_yaml_path = Path(latest_yaml)
+        self.latest_version_data = self._load_latest_yaml()
 
-    def _load_update_metadata(self) -> Dict[str, Any]:
-        """加载更新元数据"""
-        metadata_file = self.updates_dir / "updates.json"
-        if metadata_file.exists():
+    def _load_latest_yaml(self) -> Optional[Dict[str, Any]]:
+        """加载 latest.yml 文件"""
+        if self.latest_yaml_path.exists():
             try:
-                with open(metadata_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    logger.info(f"成功加载更新元数据: {metadata_file}")
+                with open(self.latest_yaml_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    logger.info(f"成功加载版本信息: {self.latest_yaml_path}")
                     return data
             except Exception as e:
-                logger.error(f"加载更新元数据失败: {e}")
+                logger.error(f"加载 latest.yml 失败: {e}")
+        else:
+            logger.warning(f"latest.yml 不存在: {self.latest_yaml_path}")
+        return None
 
-        # 返回默认元数据
-        logger.warning("使用默认更新元数据")
-        return {
-            "channels": {
-                "stable": {"versions": {}, "latest_version": "1.0.0"},
-                "beta": {"latest_version": "1.0.0"},
-                "dev": {"latest_version": "1.0.0"},
-            },
-            "current_default": "stable",
-            "update_policy": {
-                "auto_update_enabled": True,
-                "require_confirmation": True,
-                "backup_enabled": True,
-                "rollback_enabled": True,
-                "checksum_verification": True,
-            },
-        }
+    def _get_file_checksum(self) -> str:
+        """从 YAML 获取文件校验和"""
+        if self.latest_version_data:
+            return self.latest_version_data.get("sha512", "")
+        return ""
 
-    def _get_version_info(
-        self, version: str, channel: str = "stable"
-    ) -> Optional[Dict[str, Any]]:
-        """获取指定版本信息"""
-        try:
-            channels = self.update_metadata.get("channels", {})
-            channel_data = channels.get(channel, {})
-            versions = channel_data.get("versions", {})
-            return versions.get(version)
-        except Exception as e:
-            logger.error(f"获取版本信息失败: {e}")
+    def _get_file_size(self) -> int:
+        """从 YAML 获取文件大小"""
+        if self.latest_version_data:
+            files = self.latest_version_data.get("files", [])
+            if files:
+                return files[0].get("size", 0)
+        return 0
+
+    def _get_file_path(self) -> str:
+        """从 YAML 获取文件路径"""
+        if self.latest_version_data:
+            files = self.latest_version_data.get("files", [])
+            if files:
+                return files[0].get("url", "")
+            return self.latest_version_data.get("path", "")
+        return ""
+
+    def _get_release_notes(self) -> str:
+        """从 YAML 获取发布说明"""
+        if self.latest_version_data:
+            return self.latest_version_data.get("releaseNotes", "")
+        return ""
+
+    def _get_release_date(self) -> str:
+        """从 YAML 获取发布日期"""
+        if self.latest_version_data:
+            return self.latest_version_data.get("releaseDate", "")
+        return ""
+
+    def _get_package_file_path(self) -> Optional[Path]:
+        """获取更新包文件的完整路径"""
+        filename = self._get_file_path()
+        if not filename:
             return None
-
-    def _compare_versions(self, v1: str, v2: str) -> int:
-        """比较版本号 - 返回: -1(v1<v2), 0(v1==v2), 1(v1>v2)"""
-
-        def version_tuple(v):
-            # 移除可能的后缀 (如 -beta, -dev)
-            clean_v = v.split("-")[0]
-            return tuple(map(int, (clean_v.split("."))))
-
-        try:
-            t1 = version_tuple(v1)
-            t2 = version_tuple(v2)
-            return (t1 > t2) - (t1 < t2)
-        except:
-            return 0
-
-    def _get_package_checksums(self, filename: str) -> Dict[str, str]:
-        """获取包的校验和"""
-        checksums = {}
         package_path = self.updates_dir / filename
-
         if package_path.exists():
-            # 读取MD5文件
-            md5_file = self.updates_dir / f"{filename}.md5"
-            if md5_file.exists():
-                try:
-                    with open(md5_file, "r") as f:
-                        md5_line = f.readline().strip()
-                        checksums["md5"] = md5_line.split()[0]
-                except:
-                    pass
-
-            # 读取SHA256文件
-            sha256_file = self.updates_dir / f"{filename}.sha256"
-            if sha256_file.exists():
-                try:
-                    with open(sha256_file, "r") as f:
-                        sha256_line = f.readline().strip()
-                        checksums["sha256"] = sha256_line.split()[0]
-                except:
-                    pass
-
-        return checksums
+            return package_path
+        return None
 
     async def handle_update_check(
         self, device_id: str, json_data: Dict[str, Any]
@@ -114,53 +91,57 @@ class UpdateManager:
         """处理更新检查请求"""
         try:
             current_version = json_data.get("current_version", "1.0.0")
-            channel = json_data.get("channel", "stable")
             device_id_request = json_data.get("device_id", device_id)
 
-            logger.info(
-                f"[{device_id}] 检查更新: 当前版本={current_version}, 渠道={channel}"
-            )
+            logger.info(f"[{device_id}] 检查更新: 当前版本={current_version}")
 
-            # 获取渠道信息
-            channels = self.update_metadata.get("channels", {})
-            channel_data = channels.get(channel, {})
-            latest_version = channel_data.get("latest_version", "1.0.0")
+            # 加载最新版本信息
+            latest_yaml_data = self._load_latest_yaml()
+            if not latest_yaml_data:
+                logger.warning(f"[{device_id}] 无法加载版本信息")
+                return {
+                    "has_update": "false",
+                    "current_version": current_version,
+                    "latest_version": current_version,
+                    "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
+                }
 
-            # 检查是否有更新
-            has_update = self._compare_versions(latest_version, current_version) > 0
+            latest_version = latest_yaml_data.get("version", "1.0.0")
+
+            # 使用 packaging.version 比较版本号
+            try:
+                has_update = version.parse(latest_version) > version.parse(
+                    current_version
+                )
+            except Exception as e:
+                logger.warning(f"[{device_id}] 版本号比较失败: {e}")
+                has_update = False
 
             response = {
                 "has_update": str(has_update).lower(),  # 转换为字符串 "true"/"false"
                 "current_version": current_version,
                 "latest_version": latest_version,
-                "channel": channel,
+                "channel": "stable",  # 单渠道，固定为 stable
                 "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
             }
 
             if has_update:
-                # 获取最新版本信息
-                version_info = self._get_version_info(latest_version, channel)
-                if version_info:
-                    filename = version_info.get(
-                        "file", f"agent-update-{latest_version}.tar.gz"
-                    )
-                    checksums = self._get_package_checksums(filename)
-
-                    response.update(
-                        {
-                            "version_code": int(
-                                latest_version.replace(".", "")
-                            ),  # 简单的版本号转换
-                            "file_size": version_info.get("size", 0),
-                            "download_url": filename,  # 相对路径，由服务器处理
-                            "md5_checksum": checksums.get("md5", ""),
-                            "sha256_checksum": checksums.get("sha256", ""),
-                            "release_notes": version_info.get("description", ""),
-                            "mandatory": version_info.get("mandatory", False),
-                            "release_date": version_info.get("release_date", ""),
-                            "changes": version_info.get("changes", []),
-                        }
-                    )
+                response.update(
+                    {
+                        "version_code": int(
+                            latest_version.replace(".", "")
+                        ),  # 简单的版本号转换
+                        "file_size": self._get_file_size(),
+                        "download_url": self._get_file_path(),  # 相对路径
+                        "sha512_checksum": self._get_file_checksum(),
+                        "md5_checksum": "",  # 不再使用 MD5
+                        "sha256_checksum": "",  # 不再使用 SHA256
+                        "release_notes": self._get_release_notes(),
+                        "mandatory": False,  # 固定为 false
+                        "release_date": self._get_release_date(),
+                        "changes": [],  # 使用 release_notes 代替
+                    }
+                )
 
             logger.info(
                 f"[{device_id}] 更新检查结果: has_update={response['has_update']}, latest={latest_version}"
@@ -174,6 +155,7 @@ class UpdateManager:
                 "error": f"更新检查失败: {str(e)}",
                 "current_version": json_data.get("current_version", "1.0.0"),
                 "latest_version": json_data.get("current_version", "1.0.0"),
+                "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
             }
 
     async def handle_update_download(
@@ -181,53 +163,65 @@ class UpdateManager:
     ) -> Dict[str, Any]:
         """处理更新下载请求"""
         try:
-            version = json_data.get("version", "")
+            version_requested = json_data.get("version", "")
             request_id = json_data.get("request_id", "")
 
             logger.info(
-                f"[{device_id}] 请求下载更新: version={version}, request_id={request_id}"
+                f"[{device_id}] 请求下载更新: version={version_requested}, request_id={request_id}"
             )
 
-            # 获取版本信息
-            channel = json_data.get("channel", "stable")
-            version_info = self._get_version_info(version, channel)
-
-            if not version_info:
+            # 加载最新版本信息
+            latest_yaml_data = self._load_latest_yaml()
+            if not latest_yaml_data:
                 return {
                     "status": "error",
-                    "error": f"版本 {version} 不存在",
+                    "error": "版本信息不可用",
                     "request_id": request_id,
                 }
 
-            filename = version_info.get("file", f"agent-update-{version}.tar.gz")
-            package_path = self.updates_dir / filename
+            latest_version = latest_yaml_data.get("version", "")
 
-            if not package_path.exists():
+            # 验证请求的版本
+            if version_requested and version_requested != latest_version:
+                logger.warning(
+                    f"[{device_id}] 请求的版本 {version_requested} 与最新版本 {latest_version} 不匹配"
+                )
+
+            # 获取文件路径
+            filename = self._get_file_path()
+            if not filename:
+                return {
+                    "status": "error",
+                    "error": "未找到更新包文件",
+                    "request_id": request_id,
+                }
+
+            package_path = self._get_package_file_path()
+            if not package_path or not package_path.exists():
                 return {
                     "status": "error",
                     "error": f"更新包文件不存在: {filename}",
                     "request_id": request_id,
                 }
 
-            # 获取校验和
-            checksums = self._get_package_checksums(filename)
+            # 获取文件实际大小
+            file_size = package_path.stat().st_size
 
             # 构建下载批准响应
             response = {
                 "status": "approved",
-                "download_url": filename,  # 文件名，服务器会处理
-                "file_size": version_info.get("size", package_path.stat().st_size),
-                "md5_checksum": checksums.get("md5", ""),
-                "sha256_checksum": checksums.get("sha256", ""),
+                "download_url": filename,  # 相对路径
+                "file_size": file_size,
+                "sha512_checksum": self._get_file_checksum(),
+                "md5_checksum": "",  # 不再使用 MD5
+                "sha256_checksum": "",  # 不再使用 SHA256
                 "request_id": request_id,
-                "version": version,
-                "mandatory": version_info.get("mandatory", False),
+                "version": latest_version,
+                "mandatory": False,  # 固定为 false
                 "approval_time": datetime.utcnow().isoformat() + "Z",
             }
 
-            logger.info(
-                f"[{device_id}] 下载已批准: {filename}, size={response['file_size']}"
-            )
+            logger.info(f"[{device_id}] 下载已批准: {filename}, size={file_size}")
             return response
 
         except Exception as e:
@@ -390,7 +384,7 @@ def test_update_manager():
         }
 
         result = await manager.handle_update_check("test-device", check_data)
-        print("更新检查结果:", json.dumps(result, indent=2, ensure_ascii=False))
+        print("更新检查结果:", result)
 
         # 测试下载请求
         if result.get("has_update") == "true":
@@ -402,10 +396,7 @@ def test_update_manager():
             download_result = await manager.handle_update_download(
                 "test-device", download_data
             )
-            print(
-                "下载请求结果:",
-                json.dumps(download_result, indent=2, ensure_ascii=False),
-            )
+            print("下载请求结果:", download_result)
 
     asyncio.run(test())
 

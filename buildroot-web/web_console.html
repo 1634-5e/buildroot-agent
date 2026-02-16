@@ -1621,7 +1621,7 @@
                 </div>
             </div>
             <div class="device-search">
-                <input type="text" placeholder="搜索设备..." id="deviceSearch" oninput="filterDevices()">
+                <input type="text" placeholder="搜索设备..." id="deviceSearch" onkeydown="onSearchKeyDown(event)">
             </div>
             <div class="device-list" id="deviceList">
                 <div style="padding: 40px; text-align: center; color: var(--text-muted);">
@@ -2084,8 +2084,9 @@
              FILE_DOWNLOAD_START: 0x44,
              FILE_DOWNLOAD_DATA: 0x45,
              FILE_DOWNLOAD_ACK: 0x46,
-             FILE_TRANSFER_STATUS: 0x47,
-             DEVICE_LIST: 0x50
+              FILE_TRANSFER_STATUS: 0x47,
+              DEVICE_LIST: 0x50,
+              DEVICE_DISCONNECT: 0x51
         };
 
         // ============================================
@@ -2106,6 +2107,16 @@
         let maxReconnectDelay = 30000; // 30 seconds
         let messageQueue = [];
         let consoleId = null;
+
+        // 分页状态
+        let paginationState = {
+            currentPage: 0,
+            pageSize: 20,
+            totalCount: 0,
+            searchKeyword: '',
+            isLoading: false,
+            debounceTimer: null
+        };
 
         // xterm.js 终端实例
         let term = null;
@@ -2173,16 +2184,18 @@
                 
                 // Process any queued messages
                 processMessageQueue();
-                
-                 // Request device list to ensure we get the current list
-                 setTimeout(() => {
-                     sendMessage(MSG_TYPES.DEVICE_LIST, { action: "get_list" });
-                 }, 100);
-                 
-                 // Auto-select first device if available and no device is currently selected
-                 if (devices.length > 0 && !currentDevice) {
-                     setTimeout(() => selectDevice(devices[0].device_id), 200);
-                 }
+
+                // Request device list to ensure we get the current list
+                queryDeviceList({
+                    page: 0,
+                    page_size: paginationState.pageSize,
+                    search_keyword: ''
+                });
+
+                // Auto-select first device if available and no device is currently selected
+                if (devices.length > 0 && !currentDevice) {
+                    setTimeout(() => selectDevice(devices[0].device_id), 200);
+                }
             };
 
             ws.onclose = () => {
@@ -2350,7 +2363,39 @@
                       return false;
                   }
               }
-         }
+          }
+
+        function queryDeviceList(params = {}) {
+            const { page = 0, page_size = 20, search_keyword = '' } = params;
+
+            if (paginationState.debounceTimer) {
+                clearTimeout(paginationState.debounceTimer);
+            }
+
+            paginationState.debounceTimer = setTimeout(() => {
+                paginationState.currentPage = page;
+                paginationState.pageSize = page_size;
+                paginationState.searchKeyword = search_keyword;
+                paginationState.isLoading = true;
+
+                renderPaginationUI();
+
+                try {
+                    sendMessage(MSG_TYPES.DEVICE_LIST, {
+                        action: "get_list",
+                        page: page,
+                        page_size: page_size,
+                        search_keyword: search_keyword,
+                        sort_by: "device_id",
+                        sort_order: "asc"
+                    });
+                } catch (error) {
+                    console.error('查询设备列表失败:', error);
+                    paginationState.isLoading = false;
+                    renderPaginationUI();
+                }
+            }, 300);
+        }
 
         // ============================================
         // Message Handler
@@ -2358,7 +2403,28 @@
         function handleMessage(type, data) {
             switch(type) {
                 case MSG_TYPES.DEVICE_LIST:
-                    updateDeviceList(data.devices || data);
+                    const { devices: newDevices, total_count, page, page_size } = data;
+                    paginationState.totalCount = total_count;
+                    paginationState.currentPage = page;
+                    paginationState.pageSize = page_size;
+                    paginationState.isLoading = false;
+
+                    updateDeviceList(newDevices || []);
+                    renderPaginationUI();
+                    break;
+                case MSG_TYPES.DEVICE_DISCONNECT:
+                    const { device_id: disconnectDeviceId, reason: disconnectReason } = data;
+
+                    showToast(`设备 ${disconnectDeviceId} 已断开: ${disconnectReason}`, 'warning');
+
+                    if (currentDevice && currentDevice.device_id === disconnectDeviceId) {
+                        disconnectDevice();
+                    }
+
+                    devices = devices.filter(d => d.device_id !== disconnectDeviceId);
+                    renderDeviceList();
+                    paginationState.totalCount--;
+                    renderPaginationUI();
                     break;
                 case MSG_TYPES.SYSTEM_STATUS:
                     updateSystemStatus(data);
@@ -2540,7 +2606,149 @@
         }
 
         function filterDevices() {
-            renderDeviceList();
+            const searchInput = safeGetElement('deviceSearch');
+            if (searchInput) {
+                queryDeviceList({
+                    page: 0,
+                    page_size: paginationState.pageSize,
+                    search_keyword: searchInput.value.trim()
+                });
+            }
+        }
+
+        function onSearchKeyDown(event) {
+            if (event.key === 'Enter') {
+                filterDevices();
+            }
+        }
+
+        function renderPaginationUI() {
+            const deviceListEl = safeGetElement('deviceList');
+            if (!deviceListEl) return;
+
+            const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize);
+            const displayPage = paginationState.currentPage + 1;
+
+            let paginationHTML = `
+                <div class="pagination" style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 16px;
+                    border-top: 1px solid var(--border-color);
+                    margin-top: 8px;
+                ">
+                    <div style="color: var(--text-secondary); font-size: 14px;">
+                        共 ${paginationState.totalCount} 条记录，第 ${displayPage} / ${totalPages || 1} 页
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button
+                            onclick="prevPage()"
+                            ${paginationState.currentPage === 0 || paginationState.isLoading ? 'disabled' : ''}
+                            style="
+                                padding: 6px 12px;
+                                border: 1px solid var(--border-color);
+                                background: var(--bg-tertiary);
+                                color: var(--text-primary);
+                                border-radius: 4px;
+                                cursor: ${paginationState.currentPage === 0 || paginationState.isLoading ? 'not-allowed' : 'pointer'};
+                                opacity: ${paginationState.currentPage === 0 || paginationState.isLoading ? '0.5' : '1'};
+                                font-size: 14px;
+                            "
+                        >上一页</button>
+                        <button
+                            onclick="nextPage()"
+                            ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? 'disabled' : ''}
+                            style="
+                                padding: 6px 12px;
+                                border: 1px solid var(--border-color);
+                                background: var(--bg-tertiary);
+                                color: var(--text-primary);
+                                border-radius: 4px;
+                                cursor: ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? 'not-allowed' : 'pointer'};
+                                opacity: ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? '0.5' : '1'};
+                                font-size: 14px;
+                            "
+                        >下一页</button>
+                        <input
+                            type="number"
+                            id="jumpPageInput"
+                            min="1"
+                            max="${totalPages}"
+                            value="${displayPage}"
+                            style="
+                                width: 60px;
+                                padding: 6px;
+                                border: 1px solid var(--border-color);
+                                background: var(--bg-tertiary);
+                                color: var(--text-primary);
+                                border-radius: 4px;
+                                font-size: 14px;
+                                text-align: center;
+                            "
+                        />
+                        <button
+                            onclick="jumpToPage()"
+                            ${paginationState.isLoading ? 'disabled' : ''}
+                            style="
+                                padding: 6px 12px;
+                                border: 1px solid var(--border-color);
+                                background: var(--accent-primary);
+                                color: white;
+                                border-radius: 4px;
+                                cursor: ${paginationState.isLoading ? 'not-allowed' : 'pointer'};
+                                opacity: ${paginationState.isLoading ? '0.5' : '1'};
+                                font-size: 14px;
+                            "
+                        >跳转</button>
+                    </div>
+                </div>
+            `;
+
+            const existingPagination = deviceListEl.querySelector('.pagination');
+            if (existingPagination) {
+                existingPagination.outerHTML = paginationHTML;
+            } else {
+                deviceListEl.innerHTML += paginationHTML;
+            }
+        }
+
+        function prevPage() {
+            if (paginationState.currentPage > 0) {
+                queryDeviceList({
+                    page: paginationState.currentPage - 1,
+                    page_size: paginationState.pageSize,
+                    search_keyword: paginationState.searchKeyword
+                });
+            }
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize);
+            if (paginationState.currentPage < totalPages - 1) {
+                queryDeviceList({
+                    page: paginationState.currentPage + 1,
+                    page_size: paginationState.pageSize,
+                    search_keyword: paginationState.searchKeyword
+                });
+            }
+        }
+
+        function jumpToPage() {
+            const input = document.getElementById('jumpPageInput');
+            if (input) {
+                const targetPage = parseInt(input.value) - 1;
+                const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize);
+                if (targetPage >= 0 && targetPage < totalPages) {
+                    queryDeviceList({
+                        page: targetPage,
+                        page_size: paginationState.pageSize,
+                        search_keyword: paginationState.searchKeyword
+                    });
+                } else {
+                    showToast('页码超出范围', 'error');
+                }
+            }
         }
 
         function selectDevice(deviceId) {

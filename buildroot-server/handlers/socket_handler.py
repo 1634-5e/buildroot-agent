@@ -83,7 +83,7 @@ class SocketHandler:
         finally:
             if device_id:
                 self.conn_mgr.remove_device(device_id)
-                await self._notify_device_list_update()
+                await self._notify_device_disconnect(device_id)
             writer.close()
             await writer.wait_closed()
 
@@ -107,3 +107,7 @@ class SocketHandler:
         await self.msg_handler.broadcast_to_web_consoles(
             MessageType.DEVICE_LIST, {"devices": device_list, "count": len(device_list)}
         )
+
+    async def _notify_device_disconnect(self, device_id: str) -> None:
+        """通知设备断开"""
+        await self.msg_handler.notify_device_disconnect(device_id)

@@ -1,0 +1,6 @@
+Buildroot Agent
+Version: @PROJECT_VERSION@
+Build Date: @BUILD_DATE@
+Git Commit: @GIT_COMMIT@
+Build Type: @CMAKE_BUILD_TYPE@
+Compiler: @CMAKE_C_COMPILER_ID@ @CMAKE_C_COMPILER_VERSION@

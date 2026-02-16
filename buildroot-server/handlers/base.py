@@ -1,4 +1,5 @@
 import logging
+import time
 import websockets
 from typing import Optional
 from websockets.server import WebSocketServerProtocol
@@ -187,4 +188,17 @@ class BaseHandler:
         await self.broadcast_to_web_consoles(
             MessageType.DEVICE_LIST,
             DeviceList(devices=device_list, count=len(device_list)).model_dump(),
+        )
+
+    async def notify_device_disconnect(
+        self, device_id: str, reason: str = "disconnect"
+    ) -> None:
+        """通知设备断开，仅发送给已连接该设备的 web 控制台"""
+        data = {
+            "device_id": device_id,
+            "reason": reason,
+            "timestamp": int(time.time() * 1000),
+        }
+        await self.broadcast_to_web_consoles(
+            MessageType.DEVICE_DISCONNECT, data, target_device_id=device_id
         )

@@ -18,17 +18,16 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
-/* 版本信息 */
-#define AGENT_VERSION       "1.0.0"
+/* 版本信息 (由构建系统从 VERSION 文件传入) */
 #define AGENT_NAME          "buildroot-agent"
 
 /* 默认配置 */
 #define DEFAULT_SERVER_ADDR     "127.0.0.1:8766"
 #define DEFAULT_HEARTBEAT_SEC   30
 #define DEFAULT_RECONNECT_SEC   5
-#define DEFAULT_LOG_PATH        "/var/log"
-#define DEFAULT_SCRIPT_PATH     "/tmp/agent_scripts"
-#define DEFAULT_CONFIG_PATH     "/etc/agent/agent.conf"
+#define DEFAULT_LOG_PATH        "./log"
+#define DEFAULT_SCRIPT_PATH     "./scripts"
+#define DEFAULT_CONFIG_PATH     "./agent.conf"
 
 /* 消息协议 */
 #define MESSAGE_HEADER_SIZE 3     /* msg_type(1) + length(2) */
@@ -37,8 +36,8 @@
 /* 更新相关默认配置 */
 #define DEFAULT_UPDATE_CHECK_INTERVAL   86400      /* 24小时 */
 #define DEFAULT_UPDATE_CHANNEL          "stable"
-#define DEFAULT_UPDATE_TEMP_PATH       "/var/lib/agent/temp"
-#define DEFAULT_UPDATE_BACKUP_PATH     "/var/lib/agent/backup"
+#define DEFAULT_UPDATE_TEMP_PATH       "./tmp"
+#define DEFAULT_UPDATE_BACKUP_PATH     "./backup"
 #define DEFAULT_UPDATE_ROLLBACK_TIMEOUT 300        /* 5分钟 */
 #define DEFAULT_DOWNLOAD_TIMEOUT       1800       /* 30分钟 */
 #define DEFAULT_MAX_DOWNLOAD_SPEED    1048576    /* 1MB/s */
@@ -65,6 +64,7 @@ typedef enum {
     MSG_TYPE_CMD_REQUEST    = 0x30,     /* 命令请求 */
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
     MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
+    MSG_TYPE_DEVICE_DISCONNECT = 0x51,  /* 设备断开通知 */
     MSG_TYPE_AUTH           = 0xF0,     /* 认证 */
     MSG_TYPE_AUTH_RESULT    = 0xF1,     /* 认证结果 */
     

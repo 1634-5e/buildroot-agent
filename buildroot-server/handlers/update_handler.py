@@ -1,5 +1,6 @@
 import logging
 from typing import Dict, Any
+from datetime import datetime
 
 from handlers.base import BaseHandler
 from protocol.constants import MessageType
@@ -9,9 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 class UpdateHandler(BaseHandler):
-    def __init__(self, conn_mgr):
+    def __init__(
+        self,
+        conn_mgr,
+        updates_dir: str = "./updates",
+        latest_yaml: str = "./updates/latest.yml",
+    ):
         super().__init__(conn_mgr)
-        self.update_manager = UpdateManager()
+        self.update_manager = UpdateManager(updates_dir, latest_yaml)
         self.update_manager._broadcast_update_progress = self._broadcast_update_progress
         self.update_manager._broadcast_update_status = self._broadcast_update_status
 
@@ -27,8 +33,9 @@ class UpdateHandler(BaseHandler):
             error_response = {
                 "has_update": "false",
                 "error": f"更新检查失败: {str(e)}",
-                "current_version": json_data.get("current_version", "1.0.0"),
-                "latest_version": json_data.get("current_version", "1.0.0"),
+                "current_version": json_data.get("current_version", ""),
+                "latest_version": json_data.get("current_version", ""),
+                "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
             }
             await self.send_to_device(
                 device_id, MessageType.UPDATE_INFO, error_response
