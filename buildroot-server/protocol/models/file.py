@@ -26,37 +26,6 @@ class FileListResponse(BaseModel):
     files: List[Dict[str, str]] = []
 
 
-class FileUploadStart(BaseModel):
-    filename: str = ""
-    file_size: int = 0
-    checksum: str = ""
-    resume_transfer_id: str = ""
-
-
-class FileUploadData(BaseModel):
-    transfer_id: str = ""
-    chunk_index: int = -1
-    chunk_data: str = ""
-
-
-class FileUploadAck(BaseModel):
-    transfer_id: str = ""
-    chunk_index: int = -1
-    success: bool = False
-    message: str = ""
-    chunk_size: int = 0
-    total_chunks: int = 0
-    received_chunks: List[int] = []
-    resume: bool = False
-
-
-class FileUploadComplete(BaseModel):
-    transfer_id: str = ""
-    success: bool = False
-    filepath: str = ""
-    error: str = ""
-
-
 class FileDownloadRequest(BaseModel):
     action: str = ""
     file_path: str = ""

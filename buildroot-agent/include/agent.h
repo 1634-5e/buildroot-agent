@@ -61,7 +61,6 @@ typedef enum {
     MSG_TYPE_DOWNLOAD_PACKAGE = 0x24,   /* 打包下载响应/请求 */
     MSG_TYPE_FILE_DOWNLOAD_REQUEST = 0x25,  /* TCP下载请求 */
     MSG_TYPE_FILE_DOWNLOAD_DATA = 0x26,    /* TCP下载数据 */
-    MSG_TYPE_FILE_DOWNLOAD_CONTROL = 0x27, /* TCP下载控制 */
     MSG_TYPE_CMD_REQUEST    = 0x30,     /* 命令请求 */
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
     MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */

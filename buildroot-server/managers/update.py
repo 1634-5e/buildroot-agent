@@ -100,7 +100,7 @@ class UpdateManager:
             if not latest_yaml_data:
                 logger.warning(f"[{device_id}] 无法加载版本信息")
                 return {
-                    "has_update": "false",
+                    "has_update": False,
                     "current_version": current_version,
                     "latest_version": current_version,
                     "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
@@ -118,10 +118,10 @@ class UpdateManager:
                 has_update = False
 
             response = {
-                "has_update": str(has_update).lower(),  # 转换为字符串 "true"/"false"
+                "has_update": has_update,
                 "current_version": current_version,
                 "latest_version": latest_version,
-                "channel": "stable",  # 单渠道，固定为 stable
+                "channel": "stable",
                 "request_id": f"check-{device_id}-{int(datetime.now().timestamp())}",
             }
 
@@ -151,7 +151,7 @@ class UpdateManager:
         except Exception as e:
             logger.error(f"[{device_id}] 处理更新检查失败: {e}")
             return {
-                "has_update": "false",
+                "has_update": False,
                 "error": f"更新检查失败: {str(e)}",
                 "current_version": json_data.get("current_version", "1.0.0"),
                 "latest_version": json_data.get("current_version", "1.0.0"),
@@ -387,7 +387,7 @@ def test_update_manager():
         print("更新检查结果:", result)
 
         # 测试下载请求
-        if result.get("has_update") == "true":
+        if result.get("has_update"):
             download_data = {
                 "version": result["latest_version"],
                 "request_id": "test-123",

@@ -31,7 +31,7 @@ class UpdateHandler(BaseHandler):
         except Exception as e:
             logger.error(f"[{device_id}] 处理更新检查失败: {e}")
             error_response = {
-                "has_update": "false",
+                "has_update": False,
                 "error": f"更新检查失败: {str(e)}",
                 "current_version": json_data.get("current_version", ""),
                 "latest_version": json_data.get("current_version", ""),

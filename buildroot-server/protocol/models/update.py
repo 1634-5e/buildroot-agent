@@ -8,7 +8,7 @@ class UpdateCheck(BaseModel):
 
 
 class UpdateInfo(BaseModel):
-    has_update: str = "false"
+    has_update: bool = False
     current_version: str = ""
     latest_version: str = ""
     channel: str = "stable"

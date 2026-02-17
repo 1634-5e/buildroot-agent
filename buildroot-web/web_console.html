@@ -2163,11 +2163,7 @@
              DOWNLOAD_PACKAGE: 0x24,
              CMD_REQUEST: 0x30,
              CMD_RESPONSE: 0x31,
-             FILE_DOWNLOAD_START: 0x44,
-             FILE_DOWNLOAD_DATA: 0x45,
-             FILE_DOWNLOAD_ACK: 0x46,
-              FILE_TRANSFER_STATUS: 0x47,
-              DEVICE_LIST: 0x50,
+             DEVICE_LIST: 0x50,
               DEVICE_DISCONNECT: 0x51
         };
 
@@ -2600,9 +2596,6 @@
                     break;
                 case MSG_TYPES.DOWNLOAD_PACKAGE:
                     handleDownloadPackage(data);
-                    break;
-                case MSG_TYPES.FILE_TRANSFER_STATUS:
-                    handleFileTransferStatus(data);
                     break;
                 default:
                     console.log('Unknown message type:', type, data);
@@ -3489,8 +3482,15 @@
             const isExpanded = expandedDirs.has(path);
             
             if (isExpanded) {
-                // Collapse
+                // Collapse: remove from expandedDirs and all subdirectories
                 expandedDirs.delete(path);
+                // 递归移除所有子目录的展开状态
+                const pathPrefix = path === '/' ? '/' : path + '/';
+                expandedDirs.forEach(subPath => {
+                    if (subPath.startsWith(pathPrefix)) {
+                        expandedDirs.delete(subPath);
+                    }
+                });
                 element.classList.remove('expanded');
                 const childrenContainer = element.nextElementSibling;
                 if (childrenContainer && childrenContainer.classList.contains('tree-children')) {

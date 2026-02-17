@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-from websockets.server import WebSocketServerProtocol
 import websockets
 
 from config.settings import settings
@@ -37,7 +36,7 @@ class MessageHandler:
 
         self.download_chunks = {}
 
-    async def handle_auth(self, websocket: WebSocketServerProtocol, data: dict) -> bool:
+    async def handle_auth(self, websocket, data: dict) -> bool:
         return await self.register_handler.handle_auth(websocket, data)
 
     async def handle_heartbeat(self, device_id: str, data: dict) -> None:
@@ -80,27 +79,6 @@ class MessageHandler:
 
     async def handle_update_rollback(self, device_id: str, data: dict) -> None:
         await self.update_handler.handle_update_rollback(device_id, data)
-
-    async def handle_file_upload_start(
-        self, device_id: str, data: dict, websocket: WebSocketServerProtocol
-    ) -> None:
-        await self.file_handler.handle_file_upload_start(device_id, data, websocket)
-
-    async def handle_file_upload_data(
-        self,
-        device_id: str,
-        data: dict,
-        raw_data: bytes,
-        websocket: WebSocketServerProtocol,
-    ) -> None:
-        await self.file_handler.handle_file_upload_data(
-            device_id, data, raw_data, websocket
-        )
-
-    async def handle_file_upload_complete(
-        self, device_id: str, data: dict, websocket: WebSocketServerProtocol
-    ) -> None:
-        await self.file_handler.handle_file_upload_complete(device_id, data, websocket)
 
     async def handle_file_download_request(self, device_id: str, data: dict) -> None:
         await self.file_handler.handle_file_download_request(device_id, data)
@@ -181,16 +159,7 @@ class MessageHandler:
 
         json_data = json_data or {}
 
-        if msg_type == MessageType.FILE_UPLOAD_START:
-            await self.handle_file_upload_start(device_id, json_data, websocket)
-            return
-        elif msg_type == MessageType.FILE_UPLOAD_DATA:
-            await self.handle_file_upload_data(device_id, json_data, data, websocket)
-            return
-        elif msg_type == MessageType.FILE_UPLOAD_COMPLETE:
-            await self.handle_file_upload_complete(device_id, json_data, websocket)
-            return
-        elif msg_type == MessageType.FILE_LIST_REQUEST:
+        if msg_type == MessageType.FILE_LIST_REQUEST:
             if device_id and self.conn_mgr.is_device_connected(device_id):
                 await self.send_to_device(device_id, msg_type, json_data)
             return

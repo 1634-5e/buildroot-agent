@@ -1,7 +1,7 @@
 # Buildroot Agent 通信协议规范
 
-> 版本: 1.0.0
-> 最后更新: 2024-02-16
+> 版本: 1.1.0
+> 最后更新: 2024-02-17
 > 状态: 正式版
 
 ---
@@ -154,7 +154,6 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 | DOWNLOAD_PACKAGE | 0x24 | 打包下载 | 双向 | ✓ | ✓ | ✓ | 文件打包下载 |
 | FILE_DOWNLOAD_REQUEST | 0x25 | 下载请求 | Server→Client | ✓ | ✓ | ✗ | TCP下载请求 |
 | FILE_DOWNLOAD_DATA | 0x26 | 下载数据 | 双向 | ✓ | ✓ | ✓ | TCP下载数据 |
-| FILE_DOWNLOAD_CONTROL | 0x27 | 下载控制 | 双向 | ✓ | ✓ | ✗ | TCP下载控制 |
 | CMD_REQUEST | 0x30 | 命令请求 | Server→Client | ✓ | ✓ | ✓ | 执行命令 |
 | CMD_RESPONSE | 0x31 | 命令响应 | Client→Server | ✓ | ✓ | ✓ | 命令执行结果 |
 | DEVICE_LIST | 0x50 | 设备列表 | 双向 | ✓ | ✓ | ✓ | 设备列表查询 |
@@ -167,10 +166,6 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 | UPDATE_COMPLETE | 0x65 | 更新完成 | Server→Client | ✓ | ✓ | ✗ | 更新完成 |
 | UPDATE_ERROR | 0x66 | 更新错误 | 双向 | ✓ | ✓ | ✗ | 更新错误 |
 | UPDATE_ROLLBACK | 0x67 | 更新回滚 | Server→Client | ✓ | ✓ | ✗ | 回滚更新 |
-| FILE_UPLOAD_START | 0x40 | 上传开始 | 双向 | ✗ | ✓ | ✗ | 文件上传开始 |
-| FILE_UPLOAD_DATA | 0x41 | 上传数据 | 双向 | ✗ | ✓ | ✗ | 上传数据块 |
-| FILE_UPLOAD_ACK | 0x42 | 上传确认 | 双向 | ✗ | ✓ | ✗ | 上传确认 |
-| FILE_UPLOAD_COMPLETE | 0x43 | 上传完成 | 双向 | ✗ | ✓ | ✗ | 上传完成 |
 
 ---
 
@@ -814,22 +809,6 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 
 ---
 
-#### FILE_DOWNLOAD_CONTROL (0x27) - TCP 下载控制
-
-**方向:** 双向 (Client↔Server)
-
-**描述:** 控制 TCP 下载流程（暂停、恢复、取消）。
-
-**数据结构:**
-
-| 字段名 | 类型 | 必选 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| action | string | 是 | - | 控制动作 (pause/resume/cancel) |
-| file_path | string | 是 | - | 文件路径 |
-| request_id | string | 否 | - | 请求 ID |
-
----
-
 ### 4.4 命令消息
 
 #### CMD_REQUEST (0x30) - 命令请求
@@ -842,12 +821,8 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 
 | 字段名 | 类型 | 必选 | 默认值 | 描述 |
 |--------|------|------|--------|------|
-| cmd / command | string | 是 | - | 命令（支持两种命名） |
+| cmd | string | 是 | - | 命令 |
 | request_id | string | 否 | - | 请求 ID |
-
-**命名兼容性:**
-- 支持 `cmd` 和 `command` 两种字段名
-- 推荐：使用 `cmd`
 
 **内置命令:**
 
@@ -1043,11 +1018,10 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 
 | 字段名 | 类型 | 必选 | 默认值 | 描述 |
 |--------|------|------|--------|------|
-| has_update | string | 是 | "false" | 是否有更新 ("true"/"false") |
+| has_update | boolean | 是 | false | 是否有更新 |
 | current_version | string | 否 | - | 当前版本 |
 | latest_version | string | 否 | - | 最新版本 |
 | channel | string | 否 | "stable" | 更新渠道 |
-| version_code | int | 否 | 0 | 版本号（用于比较） |
 | file_size | int | 否 | 0 | 文件大小（字节） |
 | download_url | string | 是 | - | 下载 URL |
 | md5_checksum | string | 是 | - | MD5 校验和 |
@@ -1059,16 +1033,12 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 | changes | array | 否 | [] | 变更列表 |
 | request_id | string | 否 | - | 请求 ID |
 
-**类型说明:**
-- `has_update` 字段使用字符串类型 ("true"/"false")，而非布尔值
-- C 代码处理: `strcmp(has_update_str, "true") != 0`
-
 **示例:**
 
 有更新:
 ```json
 {
-  "has_update": "true",
+  "has_update": true,
   "current_version": "1.2.3",
   "latest_version": "1.3.0",
   "channel": "stable",
@@ -1088,7 +1058,7 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 无更新:
 ```json
 {
-  "has_update": "false"
+  "has_update": false
 }
 ```
 
@@ -1298,69 +1268,6 @@ Buildroot Agent 使用基于 TCP Socket 的二进制协议进行通信，消息�
 
 **Agent 行为:**
 - 如果 `backup_path` 为空，尝试自动回滚到最近备份
-
-
-### 4.7 文件上传消息
-
-> **注意:** 以下消息类型 (0x40-0x43) 仅在 Server 端定义，Agent 和 Web 端未实现。
-
-#### FILE_UPLOAD_START (0x40) - 上传开始
-
-**方向:** 双向
-
-**数据结构:**
-
-| 字段名 | 类型 | 必选 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| filename | string | 是 | - | 文件名 |
-| file_size | int | 是 | - | 文件大小 |
-| checksum | string | 是 | - | 校验和（MD5/SHA256） |
-| resume_transfer_id | string | 否 | - | 断点续传 ID |
-
-
-#### FILE_UPLOAD_DATA (0x41) - 上传数据
-
-**方向:** 双向
-
-**数据结构:**
-
-| 字段名 | 类型 | 必选 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| transfer_id | string | 是 | - | 传输 ID |
-| chunk_index | int | 是 | - | 块索引 |
-| chunk_data | string | 是 | - | 块数据（base64） |
-
-
-#### FILE_UPLOAD_ACK (0x42) - 上传确认
-
-**方向:** 双向
-
-**数据结构:**
-
-| 字段名 | 类型 | 必选 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| transfer_id | string | 是 | - | 传输 ID |
-| chunk_index | int | 是 | - | 已接收块索引 |
-| success | boolean | 是 | - | 是否成功 |
-| message | string | 否 | - | 消息 |
-| chunk_size | int | 否 | - | 块大小 |
-| total_chunks | int | 否 | - | 总块数 |
-| received_chunks | array | 否 | [] | 已接收块列表 |
-| resume | boolean | 否 | false | 是否需要恢复 |
-
-
-#### FILE_UPLOAD_COMPLETE (0x43) - 上传完成
-
-**方向:** 双向
-
-**数据结构:**
-
-| 字段名 | 类型 | 必选 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| transfer_id | string | 是 | - | 传输 ID |
-| success | boolean | 是 | - | 是否成功 |
-| filepath | string | 否 | - | 文件路径 |
-| error | string | 否 | - | 错误信息 |
 
 
 ## 5. 通信流程
@@ -1685,74 +1592,19 @@ void escape_shell_arg(const char *src, char *dst, size_t dst_size) {
 
 ## 7. 已知问题与建议
 
-### 7.1 不一致性问题
-
-#### 1. 消息类型缺失
-
-**JavaScript 缺失:**
-- 0x25 (FILE_DOWNLOAD_REQUEST)
-- 0x27 (FILE_DOWNLOAD_CONTROL)
-- 0x60-0x67 (所有更新消息)
-
-**说明:** JavaScript 不直接与 Agent 通信，通过 Server 中转，因此缺失这些消息是设计上的合理差异。
-
-**建议:** 保持现状，无需修改。
-
-#### 2. Python 独有消息
-
-**消息类型:**
-- 0x40-0x43 (文件上传系列)
-
-**说明:** 这些消息在 Server 端定义，但 Agent 和 Web 未实现。
-
-**建议:**
-- **选项 A:** 在 Agent 和 Web 中实现文件上传功能
-- **选项 B:** 移除未使用的消息定义
-- **选项 C:** 标记为 "未实现" 并保留定义
-
-**推荐:** 选项 C
-
-#### 3. 字段命名差异
-
-**问题描述:**
-- PTY 消息支持 `session_id` 和 `sessionId` 两种命名
-- 命令消息支持 `cmd` 和 `command` 两种命名
-
-**建议:**
-1. 统一使用 snake_case (`session_id`, `cmd`)
-2. 保留兼容性代码一段时间
-3. 在下一版本中移除兼容性代码
-
-#### 4. 数据类型不一致
-
-**UPDATE_INFO.has_update:**
-- 当前: 字符串 `"true"/"false"`
-- 应该: 布尔值 `true/false`
-
-**建议:**
-1. 修改 Python 模型为布尔值
-2. 修改 C 代码处理逻辑
-3. 保持向后兼容（同时支持字符串和布尔）
-4. 在下一个主版本中移除字符串支持
-
-### 7.2 未实现功能
+### 7.1 未实现功能
 
 #### 1. 断点续传
 - `FILE_DOWNLOAD_REQUEST` 支持 `offset` 参数
 - Agent 已实现部分逻辑
 - 建议完善断点续传功能
 
-#### 2. 文件上传
-- Python 定义了 0x40-0x43 消息
-- Agent 和 Web 未实现
-- 建议实现或明确标记为废弃
-
-#### 3. TLS/SSL 加密
+#### 2. TLS/SSL 加密
 - 当前使用明文 TCP
 - 生产环境存在安全风险
 - 建议添加 TLS 支持
 
-### 7.3 性能优化建议
+### 7.2 性能优化建议
 
 #### 1. 消息压缩
 - 大文件传输时可启用压缩
@@ -1768,7 +1620,7 @@ void escape_shell_arg(const char *src, char *dst, size_t dst_size) {
 - Server 可维护连接池
 - 建议：保持现状，简单可靠
 
-### 7.4 文档改进
+### 7.3 文档改进
 
 #### 1. 自动生成代码
 - 从 PROTOCOL.md 生成代码
@@ -1791,6 +1643,7 @@ void escape_shell_arg(const char *src, char *dst, size_t dst_size) {
 
 | 版本 | 日期 | 作者 | 变更 |
 |------|------|------|------|
+| 1.1.0 | 2024-02-17 | AI Assistant | 删除未实现的消息类型(0x27, 0x40-0x47)，修复 has_update 为布尔类型，统一字段命名为 snake_case |
 | 1.0.0 | 2024-02-16 | AI Assistant | 初始版本，完整协议规范 |
 
 ---

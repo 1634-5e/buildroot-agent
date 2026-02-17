@@ -43,10 +43,10 @@ log_level = debug
 
 # 更新配置
 # 是否启用自动更新
-enable_auto_update = false
+enable_auto_update = true
 
 # 更新检查间隔（秒，默认86400=24小时）
-update_check_interval = 86400
+update_check_interval = 600
 
 # 更新渠道 (stable/beta/dev)
 update_channel = stable

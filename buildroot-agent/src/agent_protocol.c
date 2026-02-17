@@ -391,16 +391,12 @@ cleanup:
 /* 处理PTY创建请求 */
 static void handle_pty_create(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
-    }
+    int session_id = json_get_int(data, "session_id", -1);
     int rows = json_get_int(data, "rows", 24);
     int cols = json_get_int(data, "cols", 80);
 
     if (session_id < 0) {
-        LOG_ERROR("PTY创建请求缺少session_id或sessionId");
+        LOG_ERROR("PTY创建请求缺少session_id");
         return;
     }
 
@@ -410,11 +406,7 @@ static void handle_pty_create(agent_context_t *ctx, const char *data)
 /* 处理PTY数据 */
 static void handle_pty_data(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
-    }
+    int session_id = json_get_int(data, "session_id", -1);
     char *pty_data = json_get_string(data, "data");
 
     if (session_id < 0 || !pty_data) {
@@ -429,11 +421,7 @@ static void handle_pty_data(agent_context_t *ctx, const char *data)
 /* 处理PTY窗口大小调整 */
 static void handle_pty_resize(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
-    }
+    int session_id = json_get_int(data, "session_id", -1);
     int rows = json_get_int(data, "rows", 24);
     int cols = json_get_int(data, "cols", 80);
 
@@ -445,11 +433,7 @@ static void handle_pty_resize(agent_context_t *ctx, const char *data)
 /* 处理PTY关闭 */
 static void handle_pty_close(agent_context_t *ctx, const char *data)
 {
-    /* 支持 sessionId (驼峰) 和 session_id (下划线) 两种命名 */
-    int session_id = json_get_int(data, "sessionId", -1);
-    if (session_id < 0) {
-        session_id = json_get_int(data, "session_id", -1);
-    }
+    int session_id = json_get_int(data, "session_id", -1);
 
     if (session_id >= 0) {
         pty_close_session(ctx, session_id);
@@ -1048,18 +1032,15 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
 static void handle_cmd_request(agent_context_t *ctx, const char *data)
 {
     char *cmd = json_get_string(data, "cmd");
-    char *command = json_get_string(data, "command");
     char *request_id = json_get_string(data, "request_id");
     
-    /* 兼容前端：优先使用 cmd，其次使用 command */
-    char *actual_cmd = cmd ? cmd : command;
-    
-    if (!actual_cmd) {
-        goto cleanup;
+    if (!cmd) {
+        if (request_id) free(request_id);
+        return;
     }
     
     /* 内置命令处理 */
-    if (strcmp(actual_cmd, "status") == 0) {
+    if (strcmp(cmd, "status") == 0) {
         /* 立即上报状态 */
         LOG_INFO("收到状态查询命令，开始收集系统信息");
         system_status_t status;
@@ -1083,7 +1064,7 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
             free(json);
             LOG_INFO("系统状态已上报");
         }
-    } else if (strcmp(actual_cmd, "system_status") == 0) {
+    } else if (strcmp(cmd, "system_status") == 0) {
         /* 前端发送的 system_status 命令，同 status */
         LOG_INFO("收到 system_status 命令，开始收集系统信息");
         system_status_t status;
@@ -1107,21 +1088,19 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
             free(json);
             LOG_INFO("系统状态已上报");
         }
-    } else if (strcmp(actual_cmd, "reboot") == 0) {
+    } else if (strcmp(cmd, "reboot") == 0) {
         LOG_WARN("收到重启命令");
         system("reboot");
-    } else if (strcmp(actual_cmd, "pty_list") == 0) {
+    } else if (strcmp(cmd, "pty_list") == 0) {
         pty_list_sessions(ctx);
-    } else if (strcmp(actual_cmd, "script_list") == 0) {
+    } else if (strcmp(cmd, "script_list") == 0) {
         script_list(ctx);
     } else {
         /* 执行shell命令 */
-        script_execute_inline(ctx, request_id ? request_id : "cmd", actual_cmd);
+        script_execute_inline(ctx, request_id ? request_id : "cmd", cmd);
     }
     
-cleanup:
     if (cmd) free(cmd);
-    if (command) free(command);
     if (request_id) free(request_id);
 }
 
@@ -1229,15 +1208,19 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     case MSG_TYPE_UPDATE_INFO:
         /* 更新信息响应 */
         {
-            char *has_update_str = json_get_string(json_data, "has_update");
+            bool has_update = json_get_bool(json_data, "has_update", false);
             char *latest_version = json_get_string(json_data, "latest_version");
             char *download_url = json_get_string(json_data, "download_url");
             char *md5_checksum = json_get_string(json_data, "md5_checksum");
             char *release_notes = json_get_string(json_data, "release_notes");
             int mandatory = json_get_bool(json_data, "mandatory", false);
             
-            if (!has_update_str || strcmp(has_update_str, "true") != 0) {
+            if (!has_update) {
                 LOG_INFO("当前版本已是最新: %s", AGENT_VERSION);
+                if (latest_version) free(latest_version);
+                if (download_url) free(download_url);
+                if (md5_checksum) free(md5_checksum);
+                if (release_notes) free(release_notes);
                 break;
             }
             
@@ -1264,6 +1247,10 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             } else {
                 LOG_INFO("等待服务器批准下载");
             }
+            if (latest_version) free(latest_version);
+            if (download_url) free(download_url);
+            if (md5_checksum) free(md5_checksum);
+            if (release_notes) free(release_notes);
             break;
         }
         
