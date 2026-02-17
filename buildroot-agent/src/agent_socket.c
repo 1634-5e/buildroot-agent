@@ -52,7 +52,12 @@ typedef struct {
     pthread_mutex_t reconnect_lock;    /* 重连状态互斥锁 */
     pthread_cond_t reconnect_cond;     /* 重连条件变量（用于通知连接断开） */
     bool reconnect_notify;             /* 连接断开通知标志 */
-    
+
+    /* 注册状态 */
+    pthread_mutex_t register_lock;     /* 注册状态互斥锁 */
+    pthread_cond_t register_cond;      /* 注册条件变量 */
+    bool register_completed;           /* 注册完成标志 */
+
     agent_context_t *agent_ctx;
 } socket_client_t;
 
@@ -301,6 +306,9 @@ static int do_connect(socket_client_t *client, const char *host, int port)
     return -1;
 }
 
+/* 发送注册消息前向声明 */
+static int send_register_message(agent_context_t *ctx);
+
 /* 重连服务器（不销毁客户端结构）*/
 static int do_reconnect(socket_client_t *client, const char *host, int port)
 {
@@ -360,26 +368,50 @@ static int do_reconnect(socket_client_t *client, const char *host, int port)
     
     if (ret == 0) {
         pthread_create(&client->recv_thread, NULL, socket_recv_thread, client);
-        
+
         client->send_thread_running = true;
         pthread_create(&client->send_thread, NULL, socket_send_thread, client);
-        
-        char *auth_msg = protocol_create_auth_msg(client->agent_ctx);
-        if (auth_msg) {
-            socket_send_json(client->agent_ctx, MSG_TYPE_AUTH, auth_msg);
-            LOG_INFO("已发送设备注册消息: %s", client->agent_ctx->config.device_id);
-            free(auth_msg);
-        }
-        
-        client->agent_ctx->authenticated = false;
-        
+
         pthread_mutex_lock(&client->agent_ctx->lock);
         client->agent_ctx->connected = true;
+        client->agent_ctx->registered = false;
         pthread_mutex_unlock(&client->agent_ctx->lock);
-        
+
+        /* 重置注册完成标志 */
+        pthread_mutex_lock(&client->register_lock);
+        client->register_completed = false;
+        pthread_mutex_unlock(&client->register_lock);
+
         LOG_INFO("Agent已连接，设备ID: %s", client->agent_ctx->config.device_id);
+
+        /* 发送注册消息 */
+        if (send_register_message(client->agent_ctx) != 0) {
+            LOG_ERROR("重连后发送注册消息失败");
+            ret = -1;
+        } else {
+            /* 等待注册结果（5秒超时） */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 5;
+
+            pthread_mutex_lock(&client->register_lock);
+            while (!client->register_completed && ret == 0) {
+                int wait_ret = pthread_cond_timedwait(&client->register_cond,
+                                                       &client->register_lock, &ts);
+                if (wait_ret == ETIMEDOUT) {
+                    LOG_ERROR("等待注册结果超时");
+                    ret = -1;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&client->register_lock);
+
+            if (ret == 0) {
+                LOG_INFO("设备重新注册成功");
+            }
+        }
     }
-    
+
     return ret;
 }
 
@@ -407,13 +439,17 @@ static socket_client_t *socket_client_init(agent_context_t *ctx)
     client->msg_tail = NULL;
     client->queued_count = 0;
     client->agent_ctx = ctx;
-    
+
     pthread_mutex_init(&client->send_lock, NULL);
     pthread_cond_init(&client->send_cond, NULL);
     pthread_mutex_init(&client->reconnect_lock, NULL);
     pthread_cond_init(&client->reconnect_cond, NULL);
     client->reconnect_notify = false;
-    
+
+    pthread_mutex_init(&client->register_lock, NULL);
+    pthread_cond_init(&client->register_cond, NULL);
+    client->register_completed = false;
+
     return client;
 }
 
@@ -430,6 +466,12 @@ static void socket_client_cleanup(socket_client_t *client)
     client->connected = false;
     pthread_cond_broadcast(&client->reconnect_cond);
     pthread_mutex_unlock(&client->reconnect_lock);
+
+    /* 重置注册状态 */
+    pthread_mutex_lock(&client->register_lock);
+    client->register_completed = false;
+    pthread_cond_broadcast(&client->register_cond);
+    pthread_mutex_unlock(&client->register_lock);
     
     /* 停止并等待发送线程退出 */
     pthread_mutex_lock(&client->send_lock);
@@ -468,6 +510,9 @@ static void socket_client_cleanup(socket_client_t *client)
     pthread_cond_destroy(&client->send_cond);
     pthread_mutex_destroy(&client->reconnect_lock);
     pthread_cond_destroy(&client->reconnect_cond);
+
+    pthread_mutex_destroy(&client->register_lock);
+    pthread_cond_destroy(&client->register_cond);
 }
 
 /* 解析服务器地址 (host:port) */
@@ -536,26 +581,96 @@ int socket_connect(agent_context_t *ctx)
         /* 启动发送线程 */
         pthread_create(&g_socket_client->send_thread, NULL, socket_send_thread, g_socket_client);
 
-        /* 发送设备注册消息（去认证化，仅用device_id区分）*/
-        char *auth_msg = protocol_create_auth_msg(g_socket_client->agent_ctx);
-        if (auth_msg) {
-            socket_send_json(g_socket_client->agent_ctx, MSG_TYPE_AUTH, auth_msg);
-            LOG_INFO("已发送设备注册消息: %s", g_socket_client->agent_ctx->config.device_id);
-            free(auth_msg);
-        }
-
-        /* 等待注册响应后再设置authenticated标志 */
-        g_socket_client->agent_ctx->authenticated = false;
-
         /* 设置agent的connected状态，使心跳和状态线程能够工作 */
         pthread_mutex_lock(&g_socket_client->agent_ctx->lock);
         g_socket_client->agent_ctx->connected = true;
+        g_socket_client->agent_ctx->registered = false;
         pthread_mutex_unlock(&g_socket_client->agent_ctx->lock);
 
-        LOG_INFO("Agent已连接，设备ID: %s", g_socket_client->agent_ctx->config.device_id);
+        /* 重置注册完成标志 */
+        pthread_mutex_lock(&g_socket_client->register_lock);
+        g_socket_client->register_completed = false;
+        pthread_mutex_unlock(&g_socket_client->register_lock);
+
+            LOG_INFO("Agent已连接，设备ID: %s", g_socket_client->agent_ctx->config.device_id);
+
+        /* 发送注册消息 */
+        if (send_register_message(g_socket_client->agent_ctx) != 0) {
+            LOG_ERROR("发送注册消息失败");
+            ret = -1;
+        } else {
+            /* 等待注册结果（5秒超时） */
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 5;
+
+            pthread_mutex_lock(&g_socket_client->register_lock);
+            while (!g_socket_client->register_completed && ret == 0) {
+                int wait_ret = pthread_cond_timedwait(&g_socket_client->register_cond,
+                                                       &g_socket_client->register_lock, &ts);
+                if (wait_ret == ETIMEDOUT) {
+                    LOG_ERROR("等待注册结果超时");
+                    ret = -1;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&g_socket_client->register_lock);
+
+            if (ret == 0) {
+                LOG_INFO("设备注册成功");
+            }
+        }
     }
-    
+
     return ret;
+}
+
+/* 发送注册消息 */
+static int send_register_message(agent_context_t *ctx)
+{
+    if (!ctx) {
+        return -1;
+    }
+
+    char json[512];
+    int len = snprintf(json, sizeof(json),
+        "{\"device_id\":\"%s\",\"version\":\"%s\"}",
+        ctx->config.device_id,
+        ctx->config.version);
+
+    if (len < 0 || len >= (int)sizeof(json)) {
+        LOG_ERROR("构建注册消息失败");
+        return -1;
+    }
+
+    LOG_DEBUG("发送注册消息: %s", json);
+
+    if (socket_send_json(ctx, MSG_TYPE_REGISTER, json) != 0) {
+        LOG_ERROR("发送注册消息失败");
+        return -1;
+    }
+
+    LOG_INFO("注册消息已发送，设备ID: %s", ctx->config.device_id);
+    return 0;
+}
+
+/* 标记注册完成 */
+void socket_registration_complete(agent_context_t *ctx, bool success)
+{
+    if (!ctx || !g_socket_client) {
+        return;
+    }
+
+    pthread_mutex_lock(&ctx->lock);
+    ctx->registered = success;
+    pthread_mutex_unlock(&ctx->lock);
+
+    pthread_mutex_lock(&g_socket_client->register_lock);
+    g_socket_client->register_completed = true;
+    pthread_cond_broadcast(&g_socket_client->register_cond);
+    pthread_mutex_unlock(&g_socket_client->register_lock);
+
+    LOG_INFO("注册状态更新: %s", success ? "成功" : "失败");
 }
 
 /* 断开连接 */
@@ -569,9 +684,10 @@ void socket_disconnect(agent_context_t *ctx)
         return;
     }
 
-    /* 设置agent的connected状态，停止心跳和状态线程 */
+    /* 设置agent的connected和registered状态，停止心跳和状态线程 */
     pthread_mutex_lock(&ctx->lock);
     ctx->connected = false;
+    ctx->registered = false;
     pthread_mutex_unlock(&ctx->lock);
 
     g_socket_client->should_reconnect = false;
@@ -597,6 +713,19 @@ int socket_send_message(agent_context_t *ctx, msg_type_t type, const char *data,
 
     if (!connected) {
         return -1;
+    }
+
+    /* 检查注册状态 - 只有REGISTER消息可以在未注册时发送 */
+    if (type != MSG_TYPE_REGISTER) {
+        bool registered;
+        pthread_mutex_lock(&g_socket_client->agent_ctx->lock);
+        registered = g_socket_client->agent_ctx->registered;
+        pthread_mutex_unlock(&g_socket_client->agent_ctx->lock);
+
+        if (!registered) {
+            LOG_ERROR("消息发送失败: 设备未注册，消息类型=0x%02X", type);
+            return -1;
+        }
     }
 
     /* 消息格式: [type(1字节)] + [length(2字节,大端)] + [data] */

@@ -44,6 +44,7 @@
 
 /* 消息类型定义 */
 typedef enum {
+    MSG_TYPE_REGISTER     = 0xF0,     /* 设备注册 */
     MSG_TYPE_HEARTBEAT      = 0x01,     /* 心跳 */
     MSG_TYPE_SYSTEM_STATUS  = 0x02,     /* 系统状态 */
     MSG_TYPE_LOG_UPLOAD     = 0x03,     /* 日志上传 */
@@ -65,9 +66,8 @@ typedef enum {
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
     MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
     MSG_TYPE_DEVICE_DISCONNECT = 0x51,  /* 设备断开通知 */
-    MSG_TYPE_AUTH           = 0xF0,     /* 认证 */
-    MSG_TYPE_AUTH_RESULT    = 0xF1,     /* 认证结果 */
-    
+    MSG_TYPE_REGISTER_RESULT = 0xF1,    /* 注册结果 */
+
     /* 更新管理消息 */
     MSG_TYPE_UPDATE_CHECK         = 0x60,   /* 检查更新请求 */
     MSG_TYPE_UPDATE_INFO          = 0x61,   /* 更新信息响应 */
@@ -182,7 +182,8 @@ typedef struct {
 typedef struct {
     char server_addr[256];      /* Socket服务器地址 (host:port) */
     char device_id[64];         /* 设备ID */
-    char auth_token[128];       /* 认证Token */
+    char version[32];           /* Agent版本 */
+    char auth_token[128];       /* Token（已废弃，保留用于向后兼容） */
     int heartbeat_interval;     /* 心跳间隔 (秒) */
     int reconnect_interval;     /* 重连间隔 (秒) */
     int status_interval;        /* 状态上报间隔 (秒) */
@@ -224,8 +225,8 @@ typedef struct {
     agent_config_t config;      /* 配置 */
     void *socket_client;        /* Socket客户端 */
     bool connected;             /* 连接状态 */
+    bool registered;            /* 注册状态 */
     bool running;               /* 运行状态 */
-    bool authenticated;         /* 认证状态 */
     pthread_mutex_t lock;       /* 互斥锁 */
     pty_session_t *pty_sessions;/* PTY会话数组 */
     int pty_session_count;      /* PTY会话数量 */
@@ -262,6 +263,7 @@ int socket_send_json(agent_context_t *ctx, msg_type_t type, const char *json);
 void socket_cleanup(void);
 void socket_enable_reconnect(agent_context_t *ctx);
 void socket_disable_reconnect(agent_context_t *ctx);
+void socket_registration_complete(agent_context_t *ctx, bool success);
 
 /* agent_status.c */
 int status_collect(system_status_t *status);
@@ -297,7 +299,6 @@ void *pty_timeout_thread(void *arg);
 
 /* agent_protocol.c */
 int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len);
-char *protocol_create_auth_msg(agent_context_t *ctx);
 char *protocol_create_heartbeat(agent_context_t *ctx);
 
 /* agent_http.c */

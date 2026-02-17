@@ -67,7 +67,7 @@ static void *heartbeat_thread(void *arg)
     LOG_INFO("心跳线程启动");
     
     while (ctx->running) {
-        if (ctx->connected) {
+        if (ctx->connected && ctx->registered) {
             char *heartbeat = protocol_create_heartbeat(ctx);
             if (heartbeat) {
                 socket_send_json(ctx, MSG_TYPE_HEARTBEAT, heartbeat);
@@ -75,9 +75,9 @@ static void *heartbeat_thread(void *arg)
                 free(heartbeat);
             }
         }
-        
+
         /* 分段sleep，每1秒检查一次停止标志 */
-        int sleep_time = ctx->config.heartbeat_interval > 0 ? 
+        int sleep_time = ctx->config.heartbeat_interval > 0 ?
                         ctx->config.heartbeat_interval : DEFAULT_HEARTBEAT_SEC;
         for (int i = 0; i < sleep_time && ctx->running; i++) {
             sleep(1);
@@ -96,7 +96,7 @@ static void *update_check_thread(void *arg)
     LOG_INFO("更新检查线程启动");
     
     while (ctx->running) {
-        if (ctx->connected) {
+        if (ctx->connected && ctx->registered) {
             int rc = update_check_version(ctx);
             if (rc != 0) {
                 LOG_DEBUG("更新检查失败: %d", rc);
@@ -289,7 +289,7 @@ static void print_help(const char *prog)
     printf("选项:\n");
     printf("  -c, --config <path>   指定配置文件路径 (默认: %s)\n", DEFAULT_CONFIG_PATH);
     printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
-    printf("  -t, --token <token>   指定认证Token\n");
+    printf("  -t, --token <token>   指定Token（已废弃）\n");
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
     printf("  -g, --generate        生成默认配置文件\n");
@@ -314,11 +314,11 @@ int main(int argc, char *argv[])
 {
     const char *config_path = NULL;
     const char *server_addr = NULL;
-    const char *auth_token = NULL;
+    const char *auth_token = NULL;  /* 已废弃，保留用于向后兼容 */
     bool daemon_mode = false;
     bool verbose = false;
     bool generate_config = false;
-    
+
     /* 解析命令行参数 */
     static struct option long_options[] = {
         {"config",   required_argument, 0, 'c'},
@@ -415,6 +415,8 @@ int main(int argc, char *argv[])
         strncpy(g_agent_ctx->config.server_addr, server_addr,
                 sizeof(g_agent_ctx->config.server_addr) - 1);
     }
+
+    /* Token：已废弃，不再使用，保留用于向后兼容 */
     if (auth_token) {
         strncpy(g_agent_ctx->config.auth_token, auth_token,
                 sizeof(g_agent_ctx->config.auth_token) - 1);

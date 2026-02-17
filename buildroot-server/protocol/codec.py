@@ -6,8 +6,8 @@ from pydantic import BaseModel, ValidationError
 from protocol.constants import MessageType
 from protocol.models import (
     BaseMessage,
-    AuthRequest,
-    AuthResult,
+    RegisterRequest,
+    RegisterResult,
     Heartbeat,
     SystemStatus,
     LogUpload,
@@ -48,8 +48,8 @@ class MessageCodec:
     """消息编解码器"""
 
     MESSAGE_MODEL_MAP: Dict[int, type[BaseModel]] = {
-        MessageType.AUTH: AuthRequest,
-        MessageType.AUTH_RESULT: AuthResult,
+        MessageType.REGISTER: RegisterRequest,
+        MessageType.REGISTER_RESULT: RegisterResult,
         MessageType.HEARTBEAT: Heartbeat,
         MessageType.SYSTEM_STATUS: SystemStatus,
         MessageType.LOG_UPLOAD: LogUpload,

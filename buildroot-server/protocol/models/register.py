@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 
 
-class AuthRequest(BaseModel):
+class RegisterRequest(BaseModel):
     device_id: str
     version: str = "unknown"
 
 
-class AuthResult(BaseModel):
+class RegisterResult(BaseModel):
     success: bool
     message: str = ""

@@ -1,5 +1,5 @@
 from .base import BaseMessage
-from .auth import AuthRequest, AuthResult
+from .register import RegisterRequest, RegisterResult
 from .system import Heartbeat, SystemStatus, LogUpload, ScriptRecv, ScriptResult
 from .pty import PtyCreate, PtyData, PtyResize, PtyClose
 from .file import (
@@ -20,8 +20,8 @@ from .update import (
     UpdateCheck,
     UpdateInfo,
     UpdateDownload,
-    UpdateApprove,
     UpdateProgress,
+    UpdateApprove,
     UpdateComplete,
     UpdateError,
     UpdateRollback,
@@ -29,8 +29,8 @@ from .update import (
 
 __all__ = [
     "BaseMessage",
-    "AuthRequest",
-    "AuthResult",
+    "RegisterRequest",
+    "RegisterResult",
     "Heartbeat",
     "SystemStatus",
     "LogUpload",
@@ -57,8 +57,8 @@ __all__ = [
     "UpdateCheck",
     "UpdateInfo",
     "UpdateDownload",
-    "UpdateApprove",
     "UpdateProgress",
+    "UpdateApprove",
     "UpdateComplete",
     "UpdateError",
     "UpdateRollback",

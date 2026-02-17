@@ -760,10 +760,10 @@ void *status_thread(void *arg)
     LOG_INFO("状态采集线程启动");
     
     while (ctx->running) {
-        /* 等待连接 */
-        if (ctx->connected) {
+        /* 等待连接和注册 */
+        if (ctx->connected && ctx->registered) {
             system_status_t status;
-            
+
             if (status_collect(&status) == 0) {
                 char *json = status_to_json(&status);
                 if (json) {

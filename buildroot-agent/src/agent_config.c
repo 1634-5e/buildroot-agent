@@ -19,6 +19,7 @@ void config_set_defaults(agent_config_t *config)
     strncpy(config->server_addr, DEFAULT_SERVER_ADDR, sizeof(config->server_addr) - 1);
     strncpy(config->log_path, DEFAULT_LOG_PATH, sizeof(config->log_path) - 1);
     strncpy(config->script_path, DEFAULT_SCRIPT_PATH, sizeof(config->script_path) - 1);
+    strncpy(config->version, "1.0.0", sizeof(config->version) - 1);
     
     /* 获取设备ID */
     char *device_id = get_device_id();
@@ -53,6 +54,8 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
         strncpy(config->server_addr, value, sizeof(config->server_addr) - 1);
     } else if (strcmp(key, "device_id") == 0) {
         strncpy(config->device_id, value, sizeof(config->device_id) - 1);
+    } else if (strcmp(key, "version") == 0) {
+        strncpy(config->version, value, sizeof(config->version) - 1);
     } else if (strcmp(key, "auth_token") == 0) {
         strncpy(config->auth_token, value, sizeof(config->auth_token) - 1);
     } else if (strcmp(key, "heartbeat_interval") == 0) {
@@ -233,8 +236,8 @@ int config_save(agent_config_t *config, const char *path)
     
     fprintf(fp, "# 设备ID (唯一标识)\n");
     fprintf(fp, "device_id = \"%s\"\n\n", config->device_id);
-    
-    fprintf(fp, "# 认证Token\n");
+
+    fprintf(fp, "# Token（已废弃，保留用于向后兼容）\n");
     fprintf(fp, "auth_token = \"%s\"\n\n", config->auth_token);
     
     fprintf(fp, "# 心跳间隔 (秒)\n");

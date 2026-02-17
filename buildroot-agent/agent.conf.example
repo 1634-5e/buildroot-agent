@@ -1,12 +1,15 @@
-# Buildroot Agent Configuration
-# Generated automatically
+# Buildroot Agent Configuration Example
+# 
+# 使用说明：
+# 1. 复制此文件为 agent.conf: cp agent.conf.example agent.conf
+# 2. 根据实际情况修改配置项
+# 3. 运行 agent: ./buildroot-agent -c ./agent.conf
 
-# 服务器地址 (WebSocket)
-#server_addr = "110.41.178.220:20002"
+# 服务器地址 (host:port)
 server_addr = "127.0.0.1:8766"
 
-# 设备ID (唯一标识)
-device_id = "HTCU-开发板-001"
+# 设备ID (唯一标识) - 请修改为实际设备ID
+device_id = "your-device-id-here"
 
 # Agent版本
 version = "1.0.0"

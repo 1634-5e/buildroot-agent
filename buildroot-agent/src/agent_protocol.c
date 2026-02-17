@@ -347,27 +347,6 @@ bool json_get_bool(const char *json, const char *key, bool default_val)
     return default_val;
 }
 
-/* 处理认证结果 */
-static void handle_auth_result(agent_context_t *ctx, const char *data)
-{
-    LOG_DEBUG("收到认证响应JSON: %s", data ? data : "null");
-
-    bool success = json_get_bool(data, "success", false);
-    char *message = json_get_string(data, "message");
-
-    LOG_DEBUG("解析认证结果: success=%d, message=%s", success, message ? message : "null");
-
-    if (success) {
-        ctx->authenticated = true;
-        LOG_INFO("认证成功: %s", message ? message : "");
-    } else {
-        ctx->authenticated = false;
-        LOG_ERROR("认证失败: %s", message ? message : "unknown");
-    }
-
-    if (message) free(message);
-}
-
 /* 处理脚本接收 */
 static void handle_script_recv(agent_context_t *ctx, const char *data)
 {
@@ -1174,10 +1153,6 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     }
     
     switch (type) {
-    case MSG_TYPE_AUTH_RESULT:
-        handle_auth_result(ctx, json_data);
-        break;
-        
     case MSG_TYPE_SCRIPT_RECV:
         handle_script_recv(ctx, json_data);
         break;
@@ -1218,6 +1193,24 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     case MSG_TYPE_HEARTBEAT:
         /* 心跳响应 */
         LOG_DEBUG("收到心跳响应");
+        break;
+
+    case MSG_TYPE_REGISTER_RESULT:
+        /* 注册结果 */
+        {
+            bool success = json_get_bool(json_data, "success", false);
+            char *message = json_get_string(json_data, "message");
+
+            if (success) {
+                LOG_INFO("注册成功: %s", message ? message : "");
+                socket_registration_complete(ctx, true);
+            } else {
+                LOG_ERROR("注册失败: %s", message ? message : "未知错误");
+                socket_registration_complete(ctx, false);
+            }
+
+            if (message) free(message);
+        }
         break;
 
     case MSG_TYPE_DEVICE_LIST:
@@ -1435,29 +1428,6 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
     }
     
     return 0;
-}
-
-/* 创建认证消息 */
-char *protocol_create_auth_msg(agent_context_t *ctx)
-{
-    if (!ctx) return NULL;
-    
-    char *json = malloc(512);
-    if (!json) return NULL;
-    
-    snprintf(json, 512,
-        "{"
-        "\"device_id\":\"%s\","
-        "\"token\":\"%s\","
-        "\"version\":\"%s\","
-        "\"timestamp\":%" PRIu64 ""
-        "}",
-        ctx->config.device_id,
-        ctx->config.auth_token,
-        AGENT_VERSION,
-        get_timestamp_ms());
-    
-    return json;
 }
 
 /* 创建心跳消息 */

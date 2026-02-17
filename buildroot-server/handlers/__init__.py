@@ -1,5 +1,5 @@
 from .base import BaseHandler
-from .auth_handler import AuthHandler
+from .register_handler import RegisterHandler
 from .system_handler import SystemHandler
 from .pty_handler import PtyHandler
 from .file_handler import FileHandler
@@ -9,7 +9,7 @@ from .socket_handler import SocketHandler
 
 __all__ = [
     "BaseHandler",
-    "AuthHandler",
+    "RegisterHandler",
     "SystemHandler",
     "PtyHandler",
     "FileHandler",

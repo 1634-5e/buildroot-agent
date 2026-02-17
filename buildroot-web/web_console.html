@@ -206,6 +206,88 @@
             padding: 8px;
         }
 
+        /* Pagination - Ultra Minimal */
+        .pagination {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 16px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 8px;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pagination-info {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .pagination-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            font-size: 14px;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .pagination-page {
+            min-width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .pagination-page:hover:not(.active) {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .pagination-page.active {
+            background: var(--accent-primary);
+            color: white;
+            font-weight: 600;
+        }
+
+        .pagination-ellipsis {
+            color: var(--text-muted);
+            font-size: 14px;
+            padding: 0 4px;
+            user-select: none;
+        }
+
         .device-card {
             padding: 16px;
             background: var(--bg-secondary);
@@ -2024,7 +2106,7 @@
                     <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">留空则自动检测（当前页面地址:8765）</div>
                 </div>
                 <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">认证 Token</label>
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">Token（已废弃）</label>
                     <input type="text" id="settingsAuthToken" placeholder="your-auth-token" 
                            style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none; font-family: 'JetBrains Mono', monospace;">
                 </div>
@@ -2627,80 +2709,27 @@
             if (!deviceListEl) return;
 
             const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize);
-            const displayPage = paginationState.currentPage + 1;
+            const currentPage = paginationState.currentPage;
 
-            let paginationHTML = `
-                <div class="pagination" style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    padding: 16px;
-                    border-top: 1px solid var(--border-color);
-                    margin-top: 8px;
-                ">
-                    <div style="color: var(--text-secondary); font-size: 14px;">
-                        共 ${paginationState.totalCount} 条记录，第 ${displayPage} / ${totalPages || 1} 页
+            if (totalPages <= 1) return;
+
+            const pages = generatePageNumbers(currentPage, totalPages);
+
+            const paginationHTML = `
+                <div class="pagination">
+                    <div class="pagination-controls">
+                        <button class="pagination-btn" onclick="prevPage()" ${currentPage === 0 ? 'disabled' : ''}>◀</button>
+                        ${pages.map(page => {
+                            if (page === '...') {
+                                return '<span class="pagination-ellipsis">...</span>';
+                            }
+                            return `<button class="pagination-page ${page === currentPage ? 'active' : ''}"
+                                             onclick="goToPage(${page})">${page + 1}</button>`;
+                        }).join('')}
+                        <button class="pagination-btn" onclick="nextPage()" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>▶</button>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <button
-                            onclick="prevPage()"
-                            ${paginationState.currentPage === 0 || paginationState.isLoading ? 'disabled' : ''}
-                            style="
-                                padding: 6px 12px;
-                                border: 1px solid var(--border-color);
-                                background: var(--bg-tertiary);
-                                color: var(--text-primary);
-                                border-radius: 4px;
-                                cursor: ${paginationState.currentPage === 0 || paginationState.isLoading ? 'not-allowed' : 'pointer'};
-                                opacity: ${paginationState.currentPage === 0 || paginationState.isLoading ? '0.5' : '1'};
-                                font-size: 14px;
-                            "
-                        >上一页</button>
-                        <button
-                            onclick="nextPage()"
-                            ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? 'disabled' : ''}
-                            style="
-                                padding: 6px 12px;
-                                border: 1px solid var(--border-color);
-                                background: var(--bg-tertiary);
-                                color: var(--text-primary);
-                                border-radius: 4px;
-                                cursor: ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? 'not-allowed' : 'pointer'};
-                                opacity: ${paginationState.currentPage >= totalPages - 1 || paginationState.isLoading ? '0.5' : '1'};
-                                font-size: 14px;
-                            "
-                        >下一页</button>
-                        <input
-                            type="number"
-                            id="jumpPageInput"
-                            min="1"
-                            max="${totalPages}"
-                            value="${displayPage}"
-                            style="
-                                width: 60px;
-                                padding: 6px;
-                                border: 1px solid var(--border-color);
-                                background: var(--bg-tertiary);
-                                color: var(--text-primary);
-                                border-radius: 4px;
-                                font-size: 14px;
-                                text-align: center;
-                            "
-                        />
-                        <button
-                            onclick="jumpToPage()"
-                            ${paginationState.isLoading ? 'disabled' : ''}
-                            style="
-                                padding: 6px 12px;
-                                border: 1px solid var(--border-color);
-                                background: var(--accent-primary);
-                                color: white;
-                                border-radius: 4px;
-                                cursor: ${paginationState.isLoading ? 'not-allowed' : 'pointer'};
-                                opacity: ${paginationState.isLoading ? '0.5' : '1'};
-                                font-size: 14px;
-                            "
-                        >跳转</button>
+                    <div class="pagination-info">
+                        共 ${paginationState.totalCount} 条 · 第 ${currentPage + 1}/${totalPages} 页
                     </div>
                 </div>
             `;
@@ -2711,6 +2740,56 @@
             } else {
                 deviceListEl.innerHTML += paginationHTML;
             }
+        }
+
+        function generatePageNumbers(currentPage, totalPages) {
+            const pages = [];
+            const maxVisible = 5;
+
+            if (totalPages <= maxVisible) {
+                for (let i = 0; i < totalPages; i++) {
+                    pages.push(i);
+                }
+            } else {
+                pages.push(0);
+
+                let start = Math.max(1, currentPage - 1);
+                let end = Math.min(totalPages - 2, currentPage + 1);
+
+                if (currentPage < 3) {
+                    start = 1;
+                    end = 3;
+                }
+
+                if (currentPage > totalPages - 4) {
+                    start = totalPages - 4;
+                    end = totalPages - 2;
+                }
+
+                if (start > 1) {
+                    pages.push('...');
+                }
+
+                for (let i = start; i <= end; i++) {
+                    pages.push(i);
+                }
+
+                if (end < totalPages - 2) {
+                    pages.push('...');
+                }
+
+                pages.push(totalPages - 1);
+            }
+
+            return pages;
+        }
+
+        function goToPage(page) {
+            queryDeviceList({
+                page: page,
+                page_size: paginationState.pageSize,
+                search_keyword: paginationState.searchKeyword
+            });
         }
 
         function prevPage() {
@@ -2731,23 +2810,6 @@
                     page_size: paginationState.pageSize,
                     search_keyword: paginationState.searchKeyword
                 });
-            }
-        }
-
-        function jumpToPage() {
-            const input = document.getElementById('jumpPageInput');
-            if (input) {
-                const targetPage = parseInt(input.value) - 1;
-                const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize);
-                if (targetPage >= 0 && targetPage < totalPages) {
-                    queryDeviceList({
-                        page: targetPage,
-                        page_size: paginationState.pageSize,
-                        search_keyword: paginationState.searchKeyword
-                    });
-                } else {
-                    showToast('页码超出范围', 'error');
-                }
             }
         }
 

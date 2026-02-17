@@ -269,7 +269,7 @@ static void *log_watch_thread(void *arg)
             
             while (fgets(buffer, sizeof(buffer), fp) != NULL) {
                 /* 发送新日志行 */
-                if (watch->ctx->connected) {
+                if (watch->ctx->connected && watch->ctx->registered) {
                     char *json = malloc(strlen(buffer) + 512);
                     if (json) {
                         /* 移除换行符 */

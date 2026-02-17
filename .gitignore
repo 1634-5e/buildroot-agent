@@ -8,3 +8,6 @@ node_modules
 dist
 .alma-snapshots
 build
+
+# Agent 配置文件（用户本地配置，不提交）
+agent.conf

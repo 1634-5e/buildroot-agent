@@ -31,9 +31,28 @@ class ConnectionManager:
         }
         self.pty_sessions[device_id] = {}
 
+        logger.info(
+            f"[ADD_DEVICE] 设备已添加 - device_id={device_id}, "
+            f"conn_type={conn_type}, "
+            f"当前设备数={len(self.connected_devices)}, "
+            f"所有设备={list(self.connected_devices.keys())}"
+        )
+
     def remove_device(self, device_id: str) -> None:
+        existed = device_id in self.connected_devices
         self.connected_devices.pop(device_id, None)
         self.pty_sessions.pop(device_id, None)
+
+        if existed:
+            logger.info(
+                f"[REMOVE_DEVICE] 设备已移除 - device_id={device_id}, "
+                f"剩余设备数={len(self.connected_devices)}, "
+                f"所有设备={list(self.connected_devices.keys())}"
+            )
+        else:
+            logger.warning(
+                f"[REMOVE_DEVICE] 尝试移除不存在的设备 - device_id={device_id}"
+            )
 
     def add_console(self, websocket: WebSocketServerProtocol) -> None:
         console_id = str(uuid.uuid4())[:8]
@@ -136,6 +155,12 @@ class ConnectionManager:
         return device_id in self.connected_devices
 
     def get_all_devices(self) -> list[Dict[str, Any]]:
+        logger.debug(
+            f"[GET_ALL_DEVICES] 查询设备列表 - "
+            f"connected_devices数量={len(self.connected_devices)}, "
+            f"设备IDs={list(self.connected_devices.keys())}"
+        )
+
         devices = []
         for device_id, dev_info in self.connected_devices.items():
             conn = dev_info["connection"]
@@ -150,6 +175,12 @@ class ConnectionManager:
                     "remote_addr": remote_addr,
                 }
             )
+
+        logger.debug(
+            f"[GET_ALL_DEVICES] 返回设备列表 - 数量={len(devices)}, "
+            f"设备IDs={[d['device_id'] for d in devices]}"
+        )
+
         return devices
 
     def _get_remote_address(self, connection: Any, conn_type: str) -> str:

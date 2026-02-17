@@ -23,7 +23,7 @@ class SocketHandler:
             logger.info(f"新Agent Socket连接: {addr}")
 
             device_id = None
-            authenticated = False
+            registered = False
 
             while True:
                 try:
@@ -33,22 +33,44 @@ class SocketHandler:
                     length_bytes = await reader.readexactly(2)
                     json_len = (length_bytes[0] << 8) | length_bytes[1]
 
+                    logger.debug(
+                        f"[SOCKET] 收到消息 - msg_type=0x{msg_type:02X}, "
+                        f"json_len={json_len}, registered={registered}"
+                    )
+
                     if json_len > 65535:
                         logger.error(f"消息长度过大: {json_len}")
                         break
 
                     data = await reader.readexactly(json_len)
 
-                    if msg_type == MessageType.AUTH and not authenticated:
+                    # 注册模式：处理 REGISTER 消息（首次连接或重新注册）
+                    if msg_type == MessageType.REGISTER:
+                        logger.info(f"[SOCKET] 收到REGISTER注册消息 - 尝试注册设备")
                         try:
                             json_str = data.decode("utf-8")
                             json_data = json.loads(json_str)
-                            device_id = json_data.get("device_id", "unknown")
+                            new_device_id = json_data.get("device_id", "unknown")
+                            version = json_data.get("version", "unknown")
 
-                            await self.msg_handler.handle_auth(
-                                self._create_socket_writer_wrapper(writer), json_data
+                            # 如果device_id发生变化，先移除旧设备
+                            if device_id and device_id != new_device_id:
+                                self.conn_mgr.remove_device(device_id)
+                                logger.info(
+                                    f"设备ID变更: {device_id} -> {new_device_id}"
+                                )
+
+                            device_id = new_device_id
+
+                            # 注册或更新连接
+                            await self.msg_handler.handle_device_connect(
+                                self._create_socket_writer_wrapper(writer),
+                                device_id,
+                                version,
+                                "socket",
                             )
-                            authenticated = True
+                            registered = True
+                            continue
                         except json.JSONDecodeError as e:
                             logger.error(f"解析注册消息失败: {e}")
                             logger.debug(f"原始JSON数据（前200字节）: {json_str[:200]}")
@@ -61,7 +83,7 @@ class SocketHandler:
                             await writer.wait_closed()
                             return
 
-                    elif authenticated and device_id:
+                    elif registered and device_id:
                         logger.info(
                             f"收到Agent消息 [0x{msg_type:02X}] 从 {device_id}, 长度={json_len}"
                         )

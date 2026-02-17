@@ -8,7 +8,7 @@ from config.settings import settings
 from managers.connection import ConnectionManager
 from managers.file_transfer import FileTransferManager
 from managers.update import UpdateManager
-from handlers.auth_handler import AuthHandler
+from handlers.register_handler import RegisterHandler
 from handlers.system_handler import SystemHandler
 from handlers.pty_handler import PtyHandler
 from handlers.file_handler import FileHandler
@@ -27,7 +27,7 @@ class MessageHandler:
     def __init__(self, conn_mgr: ConnectionManager):
         self.conn_mgr = conn_mgr
 
-        self.auth_handler = AuthHandler(conn_mgr)
+        self.register_handler = RegisterHandler(conn_mgr)
         self.system_handler = SystemHandler(conn_mgr)
         self.pty_handler = PtyHandler(conn_mgr)
         self.file_handler = FileHandler(conn_mgr)
@@ -37,7 +37,7 @@ class MessageHandler:
         self.download_chunks = {}
 
     async def handle_auth(self, websocket: WebSocketServerProtocol, data: dict) -> bool:
-        return await self.auth_handler.handle_auth(websocket, data)
+        return await self.register_handler.handle_auth(websocket, data)
 
     async def handle_heartbeat(self, device_id: str, data: dict) -> None:
         await self.system_handler.handle_heartbeat(device_id, data)
@@ -52,7 +52,15 @@ class MessageHandler:
         await self.system_handler.handle_script_result(device_id, data)
 
     async def handle_auth_result(self, device_id: str, data: dict) -> None:
-        await self.auth_handler.handle_auth_result(device_id, data)
+        await self.register_handler.handle_auth_result(device_id, data)
+
+    async def handle_device_connect(
+        self, connection, device_id: str, version: str, conn_type: str = "websocket"
+    ) -> bool:
+        """处理设备连接（注册模式）"""
+        return await self.register_handler.handle_device_connect(
+            connection, device_id, version, conn_type
+        )
 
     async def handle_update_check(self, device_id: str, data: dict) -> None:
         await self.update_handler.handle_update_check(device_id, data)
@@ -115,10 +123,10 @@ class MessageHandler:
         await self.command_handler.handle_cmd_response(device_id, data)
 
     async def create_message(self, msg_type: int, data: dict) -> bytes:
-        return self.auth_handler.create_message(msg_type, data)
+        return self.register_handler.create_message(msg_type, data)
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
-        return await self.auth_handler.send_to_device(device_id, msg_type, data)
+        return await self.register_handler.send_to_device(device_id, msg_type, data)
 
     async def broadcast_to_web_consoles(
         self,
@@ -127,22 +135,24 @@ class MessageHandler:
         target_console_id: str = None,
         target_device_id: str = None,
     ) -> None:
-        return await self.auth_handler.broadcast_to_web_consoles(
+        return await self.register_handler.broadcast_to_web_consoles(
             msg_type, data, target_console_id, target_device_id
         )
 
     async def unicast_by_request_id(
         self, msg_type: int, data: dict, request_id: str
     ) -> None:
-        return await self.auth_handler.unicast_by_request_id(msg_type, data, request_id)
+        return await self.register_handler.unicast_by_request_id(
+            msg_type, data, request_id
+        )
 
     async def notify_device_list_update(self) -> None:
-        return await self.auth_handler.notify_device_list_update()
+        return await self.register_handler.notify_device_list_update()
 
     async def notify_device_disconnect(
         self, device_id: str, reason: str = "disconnect"
     ) -> None:
-        return await self.auth_handler.notify_device_disconnect(device_id, reason)
+        return await self.register_handler.notify_device_disconnect(device_id, reason)
 
     async def handle_message(
         self, websocket, device_id: str, data: bytes, is_socket: bool = False
@@ -150,7 +160,9 @@ class MessageHandler:
         from protocol.constants import MessageType
 
         msg_type, json_data = (
-            self.auth_handler.__class__.create_message.__self__ if False else (None, {})
+            self.register_handler.__class__.create_message.__self__
+            if False
+            else (None, {})
         )
 
         import json
@@ -216,7 +228,6 @@ class MessageHandler:
             MessageType.SYSTEM_STATUS: self.handle_system_status,
             MessageType.LOG_UPLOAD: self.handle_log_upload,
             MessageType.SCRIPT_RESULT: self.handle_script_result,
-            MessageType.AUTH_RESULT: self.handle_auth_result,
             MessageType.UPDATE_CHECK: self.handle_update_check,
             MessageType.UPDATE_DOWNLOAD: self.handle_update_download,
             MessageType.UPDATE_PROGRESS: self.handle_update_progress,
@@ -260,7 +271,18 @@ class MessageHandler:
             sort_by = json_data.get("sort_by", "device_id")
             sort_order = json_data.get("sort_order", "asc")
 
+            logger.debug(
+                f"[DEVICE_LIST] 收到Socket请求 - "
+                f"page={page}, page_size={page_size}, "
+                f"search_keyword='{search_keyword}', sort_by={sort_by}, sort_order={sort_order}"
+            )
+
             all_devices = self.conn_mgr.get_all_devices()
+
+            logger.info(
+                f"[DEVICE_LIST] 当前连接设备数={len(all_devices)}, "
+                f"设备列表={[d['device_id'] for d in all_devices]}"
+            )
 
             filtered_devices = all_devices
             if search_keyword:
@@ -269,17 +291,38 @@ class MessageHandler:
                     for d in all_devices
                     if search_keyword in d.get("device_id", "").lower()
                 ]
+                logger.debug(
+                    f"[DEVICE_LIST] 搜索关键词='{search_keyword}' - "
+                    f"过滤前={len(all_devices)}, 过滤后={len(filtered_devices)}"
+                )
 
             if sort_by:
                 reverse = sort_order.lower() == "desc"
                 filtered_devices.sort(key=lambda x: x.get(sort_by, ""), reverse=reverse)
+                logger.debug(
+                    f"[DEVICE_LIST] 排序 - sort_by={sort_by}, reverse={reverse}, "
+                    f"前3个设备={[d.get('device_id') for d in filtered_devices[:3]]}"
+                )
 
             total_count = len(filtered_devices)
             start_index = page * page_size
             end_index = start_index + page_size
             paged_devices = filtered_devices[start_index:end_index]
 
-            response = self.create_message(
+            logger.debug(
+                f"[DEVICE_LIST] 分页计算 - "
+                f"total_count={total_count}, page={page}, page_size={page_size}, "
+                f"start_index={start_index}, end_index={end_index}, "
+                f"返回设备数={len(paged_devices)}"
+            )
+
+            if total_count == 0:
+                logger.warning(
+                    f"[DEVICE_LIST] 返回空设备列表 - "
+                    f"search_keyword='{search_keyword}', 可能原因: 无设备连接或搜索无匹配"
+                )
+
+            response = await self.create_message(
                 MessageType.DEVICE_LIST,
                 {
                     "devices": paged_devices,
@@ -292,6 +335,12 @@ class MessageHandler:
                 getattr(websocket, "send", None)
             ):
                 await websocket.send(response)
+                logger.info(
+                    f"[DEVICE_LIST] 已发送到Web控制台 - "
+                    f"当前页={page + 1}/{((total_count - 1) // page_size) + 1 if total_count > 0 else 0}, "
+                    f"本页设备={len(paged_devices)}, 总设备={total_count}, "
+                    f"设备IDs={[d['device_id'] for d in paged_devices]}"
+                )
         else:
             logger.warning(f"未知消息类型: 0x{msg_type:02X}")
 

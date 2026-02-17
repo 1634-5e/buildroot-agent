@@ -169,7 +169,7 @@ static void *pty_read_thread(void *arg)
         LOG_INFO("PTY读取: session_id=%d, bytes=%zd", session->session_id, n);
         
         /* Base64编码并发送 */
-        if (ctx && ctx->connected) {
+        if (ctx && ctx->connected && ctx->registered) {
             size_t encoded_len;
             char *encoded = base64_encode_pty((unsigned char *)buf, n, &encoded_len);
             if (encoded) {
@@ -198,9 +198,9 @@ static void *pty_read_thread(void *arg)
     
     /* 关闭会话 */
     session->active = false;
-    
+
     /* 通知云端会话已关闭 */
-    if (ctx && ctx->connected) {
+    if (ctx && ctx->connected && ctx->registered) {
         char json[128];
         snprintf(json, sizeof(json), 
             "{\"session_id\":%d,\"reason\":\"closed\"}", session->session_id);
@@ -624,8 +624,8 @@ void pty_check_timeout(agent_context_t *ctx)
                 }
                 
                 LOG_INFO("PTY会话已超时关闭: session_id=%d", session_id);
-                
-                if (ctx && ctx->connected) {
+
+                if (ctx && ctx->connected && ctx->registered) {
                     char json[128];
                     snprintf(json, sizeof(json),
                         "{\"session_id\":%d,\"reason\":\"session timeout\"}", session_id);

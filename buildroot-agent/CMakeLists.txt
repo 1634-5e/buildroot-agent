@@ -53,8 +53,8 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION .
 )
 
-# 安装配置文件
-install(FILES agent.conf
+# 安装配置文件示例
+install(FILES agent.conf.example
     DESTINATION .
 )
 

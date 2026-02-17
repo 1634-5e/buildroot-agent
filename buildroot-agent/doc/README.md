@@ -12,7 +12,11 @@
    cd buildroot-agent
    ```
 
-2. 编辑配置文件 `agent.conf`
+2. 创建配置文件（从示例复制）：
+   ```bash
+   cp agent.conf.example agent.conf
+   vim agent.conf  # 编辑配置
+   ```
 
 3. 启动服务：
    ```bash
