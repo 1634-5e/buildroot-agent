@@ -3277,6 +3277,9 @@
                 console.warn('fileTreeRoot element not found, cannot refresh');
                 return;
             }
+            // 刷新时重置展开状态，仅保留根目录
+            expandedDirs.clear();
+            expandedDirs.add('/');
             console.log('Loading root directory tree...');
             loadTreeItem('/', container);
         }
@@ -5345,7 +5348,8 @@
                     }, 50);
                 }
             } else if (tab === 'files') {
-                refreshFiles();
+                // 切换回文件页时不自动刷新，保留文件树的展开状态
+                // 用户需要刷新时可手动点击刷新按钮
             } else if (tab === 'monitor') {
                 // Immediate refresh when switching to monitor tab
                 refreshSystemStatus();
