@@ -44,7 +44,9 @@ static char *base64_encode_local(const unsigned char *data, size_t input_len, si
     return encoded;
 }
 
-/* JSON字符串转义（处理特殊字符如、"\、/、\b、\f、\n、\r、\t） */
+/* JSON字符串转义（处理特殊字符如、"\、/、\b、\f、\n、\r、\t）
+ * UTF-8多字节字符直接输出，不做转义（符合RFC 8259规范）
+ */
 static char *json_escape_string(const char *src, size_t max_len)
 {
     if (!src) return NULL;
@@ -87,10 +89,11 @@ static char *json_escape_string(const char *src, size_t max_len)
                 dst[j++] = 't';
                 break;
             default:
-                if (c < 0x20 || c >= 0x80) {
-                    /* 控制字符和非ASCII用\uXXXX表示 */
+                if (c < 0x20) {
+                    /* 控制字符必须转义 */
                     j += snprintf(dst + j, max_len * 6 - j, "\\u%04x", c);
                 } else {
+                    /* ASCII可打印字符和UTF-8多字节字符直接输出 */
                     dst[j++] = c;
                 }
                 break;
