@@ -153,6 +153,32 @@ size_t base64_decode(const char *input, unsigned char *output)
     return output_len;
 }
 
+char *get_exe_path(void)
+{
+    char *path = malloc(512);
+    if (!path) return NULL;
+    
+    ssize_t len = readlink("/proc/self/exe", path, 511);
+    if (len < 0) {
+        free(path);
+        return NULL;
+    }
+    path[len] = '\0';
+    return path;
+}
+
+char *get_exe_dir(void)
+{
+    char *path = get_exe_path();
+    if (!path) return NULL;
+    
+    char *last_slash = strrchr(path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+    }
+    return path;
+}
+
 /* 获取设备ID */
 char *get_device_id(void)
 {

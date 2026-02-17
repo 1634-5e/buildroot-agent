@@ -81,6 +81,19 @@ add_custom_target(release
     COMMENT "Stripping symbols from ${PROJECT_NAME}"
 )
 
+# Generate config example (auto-regenerate when agent.h changes)
+add_custom_command(
+    OUTPUT ${CMAKE_SOURCE_DIR}/agent.conf.example
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> -g -e -c ${CMAKE_SOURCE_DIR}/agent.conf.example
+    DEPENDS ${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/include/agent.h
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Generating agent.conf.example"
+)
+
+add_custom_target(config-example ALL
+    DEPENDS ${CMAKE_SOURCE_DIR}/agent.conf.example
+)
+
 # 打包规则 - 使用 TAR（不压缩）
 set(CPACK_PACKAGE_NAME "buildroot-agent")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})

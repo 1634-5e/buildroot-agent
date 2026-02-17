@@ -29,6 +29,27 @@
 #define DEFAULT_SCRIPT_PATH     "./scripts"
 #define DEFAULT_CONFIG_PATH     "./agent.conf"
 
+/* 配置加载结果 */
+typedef enum {
+    CONFIG_LOAD_OK = 0,
+    CONFIG_LOAD_NOT_FOUND,
+    CONFIG_LOAD_PARSE_ERROR,
+} config_load_result_t;
+
+/* 配置覆盖项 (用于命令行参数和环境变量) */
+typedef struct {
+    const char *server_addr;
+    const char *device_id;
+    const char *auth_token;
+    const char *log_path;
+    const char *script_path;
+    int log_level;
+    bool log_level_set;
+    bool use_ssl;
+    bool use_ssl_set;
+    const char *ca_path;
+} config_override_t;
+
 /* 消息协议 */
 #define MESSAGE_HEADER_SIZE 3     /* msg_type(1) + length(2) */
 #define MAX_MESSAGE_SIZE 65535     /* 最大消息大小 */
@@ -243,15 +264,19 @@ extern agent_context_t *g_agent_ctx;
 /* 函数声明 */
 
 /* agent_main.c */
-int agent_init(const char *config_path);
+int agent_init(const char *config_path, const config_override_t *overrides);
 int agent_start(void);
 void agent_stop(void);
 void agent_cleanup(void);
 
 /* agent_config.c */
-int config_load(agent_config_t *config, const char *path);
+config_load_result_t config_load(agent_config_t *config, const char *path);
 int config_save(agent_config_t *config, const char *path);
+int config_save_example(agent_config_t *config, const char *path);
 void config_set_defaults(agent_config_t *config);
+void config_apply_overrides(agent_config_t *config, const config_override_t *overrides);
+void config_load_from_env(agent_config_t *config);
+int config_validate(agent_config_t *config);
 void config_print(agent_config_t *config);
 
 /* agent_socket.c */
@@ -344,6 +369,8 @@ void agent_log(int level, const char *fmt, ...);
 void set_log_level(int level);
 int set_log_file(const char *path);
 char *get_device_id(void);
+char *get_exe_path(void);
+char *get_exe_dir(void);
 uint64_t get_timestamp_ms(void);
 int mkdir_recursive(const char *path, mode_t mode);
 bool file_exists(const char *path);

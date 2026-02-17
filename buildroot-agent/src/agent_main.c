@@ -115,40 +115,58 @@ static void *update_check_thread(void *arg)
     return NULL;
 }
 
-/* 初始化Agent */
-int agent_init(const char *config_path)
+int agent_init(const char *config_path, const config_override_t *overrides)
 {
-    /* 分配上下文 */
     g_agent_ctx = calloc(1, sizeof(agent_context_t));
     if (!g_agent_ctx) {
         fprintf(stderr, "内存分配失败\n");
         return -1;
     }
     
-    /* 初始化互斥锁 */
     pthread_mutex_init(&g_agent_ctx->lock, NULL);
     
-    /* 加载配置 */
-    const char *conf_path = config_path ? config_path : DEFAULT_CONFIG_PATH;
-    if (config_load(&g_agent_ctx->config, conf_path) != 0) {
-        LOG_WARN("加载配置失败，使用默认配置");
+    char default_conf_path[512] = {0};
+    const char *conf_path = config_path;
+    
+    if (!conf_path) {
+        char *exe_dir = get_exe_dir();
+        if (exe_dir) {
+            snprintf(default_conf_path, sizeof(default_conf_path), 
+                     "%s/agent.conf", exe_dir);
+            free(exe_dir);
+            conf_path = default_conf_path;
+        } else {
+            conf_path = "agent.conf";
+        }
     }
     
-    /* 初始化TCP下载模块（用于自动更新）*/
+    config_load_result_t result = config_load(&g_agent_ctx->config, conf_path);
+    if (result == CONFIG_LOAD_NOT_FOUND) {
+        LOG_WARN("配置文件不存在，使用默认配置: %s", conf_path);
+    } else if (result == CONFIG_LOAD_PARSE_ERROR) {
+        LOG_ERROR("配置文件解析错误: %s", conf_path);
+    }
+    
+    config_load_from_env(&g_agent_ctx->config);
+    
+    if (overrides) {
+        config_apply_overrides(&g_agent_ctx->config, overrides);
+    }
+    
+    if (config_validate(&g_agent_ctx->config) != 0) {
+        LOG_WARN("配置验证失败，使用修正后的配置");
+    }
+    
     if (tcp_download_init() != 0) {
         LOG_WARN("TCP下载模块初始化失败，自动更新功能不可用");
     }
     
-    /* 设置日志级别 */
     set_log_level(g_agent_ctx->config.log_level);
     
-    /* 打印配置 */
     config_print(&g_agent_ctx->config);
     
-    /* 确保脚本目录存在 */
     mkdir_recursive(g_agent_ctx->config.script_path, 0755);
     
-    /* 初始化PTY会话 */
     g_agent_ctx->max_pty_sessions = 8;
     g_agent_ctx->pty_sessions = calloc(g_agent_ctx->max_pty_sessions, sizeof(pty_session_t));
     if (!g_agent_ctx->pty_sessions) {
@@ -287,18 +305,20 @@ static void print_help(const char *prog)
     printf("Buildroot Agent v%s\n\n", AGENT_VERSION);
     printf("用法: %s [选项]\n\n", prog);
     printf("选项:\n");
-    printf("  -c, --config <path>   指定配置文件路径 (默认: %s)\n", DEFAULT_CONFIG_PATH);
+    printf("  -c, --config <path>   指定配置文件路径 (默认: <exe_dir>/agent.conf)\n");
     printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
     printf("  -t, --token <token>   指定Token（已废弃）\n");
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
     printf("  -g, --generate        生成默认配置文件\n");
+    printf("  -e, --example         生成完整配置示例 (与 -g 配合使用)\n");
     printf("  -h, --help            显示帮助信息\n");
     printf("  -V, --version         显示版本信息\n");
     printf("\n");
     printf("示例:\n");
     printf("  %s -c /etc/agent.conf -d\n", prog);
     printf("  %s -s 192.168.1.100:8766 -t mytoken\n", prog);
+    printf("  %s -g -e -c agent.conf.example\n", prog);
     printf("\n");
 }
 
@@ -318,6 +338,7 @@ int main(int argc, char *argv[])
     bool daemon_mode = false;
     bool verbose = false;
     bool generate_config = false;
+    bool generate_example = false;
 
     /* 解析命令行参数 */
     static struct option long_options[] = {
@@ -327,13 +348,14 @@ int main(int argc, char *argv[])
         {"daemon",   no_argument,       0, 'd'},
         {"verbose",  no_argument,       0, 'v'},
         {"generate", no_argument,       0, 'g'},
+        {"example",  no_argument,       0, 'e'},
         {"help",     no_argument,       0, 'h'},
         {"version",  no_argument,       0, 'V'},
         {0, 0, 0, 0}
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:s:t:dvghV", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:s:t:dvgehV", long_options, NULL)) != -1) {
         switch (opt) {
         case 'c':
             config_path = optarg;
@@ -353,6 +375,9 @@ int main(int argc, char *argv[])
         case 'g':
             generate_config = true;
             break;
+        case 'e':
+            generate_example = true;
+            break;
         case 'h':
             print_help(argv[0]);
             return 0;
@@ -365,13 +390,21 @@ int main(int argc, char *argv[])
         }
     }
     
-    /* 生成默认配置文件 */
+    /* 生成配置文件 */
     if (generate_config) {
         agent_config_t config;
         config_set_defaults(&config);
         
         const char *path = config_path ? config_path : DEFAULT_CONFIG_PATH;
-        if (config_save(&config, path) == 0) {
+        int result;
+        
+        if (generate_example) {
+            result = config_save_example(&config, path);
+        } else {
+            result = config_save(&config, path);
+        }
+        
+        if (result == 0) {
             printf("配置文件已生成: %s\n", path);
             return 0;
         } else {
@@ -398,32 +431,30 @@ int main(int argc, char *argv[])
         set_log_file("/var/log/buildroot-agent.log");
     }
     
-    /* 写入PID文件 */
+/* 写入PID文件 */
     write_pid_file(PID_FILE);
     
     /* 设置信号处理 */
     setup_signals();
     
+    /* 准备配置覆盖项 */
+    config_override_t overrides = {
+        .server_addr = server_addr,
+        .device_id = NULL,
+        .auth_token = auth_token,
+        .log_path = NULL,
+        .script_path = NULL,
+        .log_level = verbose ? LOG_LEVEL_DEBUG : -1,
+        .log_level_set = verbose,
+        .use_ssl = false,
+        .use_ssl_set = false,
+        .ca_path = NULL,
+    };
+    
     /* 初始化Agent */
-    if (agent_init(config_path) != 0) {
+    if (agent_init(config_path, &overrides) != 0) {
         fprintf(stderr, "Agent初始化失败\n");
         return 1;
-    }
-    
-    /* 覆盖命令行参数 */
-    if (server_addr) {
-        strncpy(g_agent_ctx->config.server_addr, server_addr,
-                sizeof(g_agent_ctx->config.server_addr) - 1);
-    }
-
-    /* Token：已废弃，不再使用，保留用于向后兼容 */
-    if (auth_token) {
-        strncpy(g_agent_ctx->config.auth_token, auth_token,
-                sizeof(g_agent_ctx->config.auth_token) - 1);
-    }
-    if (verbose) {
-        g_agent_ctx->config.log_level = LOG_LEVEL_DEBUG;
-        set_log_level(LOG_LEVEL_DEBUG);
     }
     
     /* 启动Agent */

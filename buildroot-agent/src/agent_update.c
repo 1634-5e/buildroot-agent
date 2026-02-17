@@ -25,7 +25,6 @@ static bool g_update_thread_running = false;
 /* 内部函数 */
 static int parse_version(const char *version_str, int *major, int *minor, int *patch);
 static int compare_versions(const char *v1, const char *v2);
-static char *get_current_binary_path(void);
 static int create_backup(const char *backup_path, char *backup_file);
 static int extract_update_package(const char *package_path, const char *output_dir);
 static int install_new_binary(const char *new_binary_path);
@@ -241,14 +240,14 @@ int update_verify_package(const char *filepath, const char *expected_md5, const 
 /* 备份当前版本 */
 int update_backup_current_version(const char *backup_dir, char *backup_path)
 {
-    char current_binary[512];
     char backup_file[512];
     time_t now = time(NULL);
     struct tm *tm_info = localtime(&now);
     
     /* 获取当前二进制路径 */
-    if (readlink("/proc/self/exe", current_binary, sizeof(current_binary)) < 0) {
-        LOG_ERROR("无法获取当前二进制路径: %s", strerror(errno));
+    char *current_binary = get_exe_path();
+    if (!current_binary) {
+        LOG_ERROR("无法获取当前二进制路径");
         return -1;
     }
     
@@ -272,6 +271,7 @@ int update_backup_current_version(const char *backup_dir, char *backup_path)
     
     if (!src_fp || !dst_fp) {
         LOG_ERROR("打开文件失败: %s", strerror(errno));
+        free(current_binary);
         if (src_fp) fclose(src_fp);
         if (dst_fp) fclose(dst_fp);
         return -1;
@@ -295,6 +295,7 @@ int update_backup_current_version(const char *backup_dir, char *backup_path)
         strcpy(backup_path, backup_file);
     }
     
+    free(current_binary);
     return 0;
 }
 
@@ -323,27 +324,10 @@ static int extract_update_package(const char *package_path, const char *output_d
     return 0;
 }
 
-/* 获取当前二进制路径 */
-static char *get_current_binary_path(void)
-{
-    char *path = (char *)malloc(512);
-    if (!path) {
-        return NULL;
-    }
-    
-    if (readlink("/proc/self/exe", path, sizeof(path)) < 0) {
-        LOG_ERROR("无法获取当前二进制路径");
-        free(path);
-        return NULL;
-    }
-    
-    return path;
-}
-
 /* 安装新二进制 */
 static int install_new_binary(const char *new_binary_path)
 {
-    char *current_binary = get_current_binary_path();
+    char *current_binary = get_exe_path();
     if (!current_binary) {
         LOG_ERROR("无法获取当前二进制路径");
         return -1;
@@ -434,7 +418,7 @@ static int install_new_binary(const char *new_binary_path)
 static int verify_installation(void)
 {
     /* 验证新版本可以执行 */
-    char *binary_path = get_current_binary_path();
+    char *binary_path = get_exe_path();
     if (!binary_path) {
         return -1;
     }
@@ -535,11 +519,18 @@ void update_restart_agent(void)
     /* 清理资源 */
     socket_cleanup();
     
-    /* 获取配置文件路径 */
-    char config_file[512] = DEFAULT_CONFIG_PATH;
+    /* 获取配置文件路径 - 从 exe 目录 */
+    char config_file[512] = {0};
+    char *exe_dir = get_exe_dir();
+    if (exe_dir) {
+        snprintf(config_file, sizeof(config_file), "%s/agent.conf", exe_dir);
+        free(exe_dir);
+    } else {
+        strcpy(config_file, "agent.conf");
+    }
     
     /* 获取二进制路径 */
-    char *binary_path = get_current_binary_path();
+    char *binary_path = get_exe_path();
     if (!binary_path) {
         LOG_ERROR("无法获取二进制路径");
         return;
@@ -615,7 +606,7 @@ int update_rollback_to_backup(const char *backup_path)
         }
     }
     
-    char *current_binary = get_current_binary_path();
+    char *current_binary = get_exe_path();
     if (!current_binary) {
         LOG_ERROR("无法获取当前二进制路径");
         pthread_mutex_lock(&g_update_lock);
