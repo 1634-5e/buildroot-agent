@@ -3884,7 +3884,7 @@
         function previewFile(path, name, size) {
             console.log('Previewing file:', path, name, size);
 
-            if (isEditorActive && isEditorModified) {
+            if (isEditorActive && isEditorDirty()) {
                 if (!confirm('当前文件已修改但未保存，确定切换？')) return;
             }
             if (isEditorActive) exitEditor();

@@ -17,6 +17,7 @@ from handlers.command_handler import CommandHandler
 from server.websocket_handler import WebSocketHandler
 from handlers.socket_handler import SocketHandler
 from console.interactive import InteractiveConsole
+from protocol.constants import MessageType
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +158,6 @@ class MessageHandler:
     async def handle_message(
         self, websocket, device_id: str, data: bytes, is_socket: bool = False
     ) -> None:
-        from protocol.constants import MessageType
-
         msg_type, json_data = (
             self.register_handler.__class__.create_message.__self__
             if False
