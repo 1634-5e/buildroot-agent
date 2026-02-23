@@ -49,7 +49,9 @@ class UpdateHandler(BaseHandler):
                 device_id, json_data
             )
             if result.get("status") == "approved":
-                await self.send_to_device(device_id, MessageType.UPDATE_APPROVE, result)
+                await self.send_to_device(
+                    device_id, MessageType.UPDATE_APPROVE_DOWNLOAD, result
+                )
                 logger.info(f"[{device_id}] 已批准下载: {result.get('download_url')}")
             else:
                 await self.send_to_device(device_id, MessageType.UPDATE_ERROR, result)
@@ -131,4 +133,134 @@ class UpdateHandler(BaseHandler):
         else:
             await self.broadcast_to_web_consoles(
                 MessageType.UPDATE_PROGRESS, status_data
+            )
+
+    async def handle_update_request_approval(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        try:
+            logger.info(f"[{device_id}] 收到更新批准请求，转发到Web")
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_REQUEST_APPROVAL,
+                {"device_id": device_id, **json_data},
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理批准请求失败: {e}")
+
+    async def handle_update_download_ready(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        try:
+            logger.info(f"[{device_id}] 下载完成，转发到Web")
+            await self.broadcast_to_web_consoles(
+                MessageType.UPDATE_DOWNLOAD_READY, {"device_id": device_id, **json_data}
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理下载完成通知失败: {e}")
+
+    async def handle_update_approve_install(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        try:
+            logger.info(f"[{device_id}] 收到安装批准，转发到Agent")
+            logger.debug(f"[{device_id}] 完整数据: {json_data}")
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_APPROVE_INSTALL, json_data
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理安装批准失败: {e}")
+
+    async def handle_update_deny(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        try:
+            logger.info(f"[{device_id}] 收到拒绝请求，转发到Agent")
+            await self.send_to_device(device_id, MessageType.UPDATE_DENY, json_data)
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理拒绝请求失败: {e}")
+
+    async def handle_update_approve_download(
+        self, device_id: str, json_data: Dict[str, Any]
+    ) -> None:
+        try:
+            logger.info(f"[{device_id}] 收到Web下载批准，转发到Agent")
+            # 从版本信息获取下载URL和校验信息
+            version = json_data.get("version", "")
+            latest_yaml_data = self.update_manager._load_latest_yaml()
+
+            if not latest_yaml_data:
+                logger.error(f"[{device_id}] 无法加载版本信息")
+                await self.send_to_device(
+                    device_id,
+                    MessageType.UPDATE_ERROR,
+                    {
+                        "status": "error",
+                        "error": "版本信息不可用",
+                        "request_id": json_data.get("request_id", ""),
+                    },
+                )
+                return
+
+            latest_version = latest_yaml_data.get("version", "")
+            if version != latest_version:
+                logger.warning(
+                    f"[{device_id}] 请求的版本 {version} 与最新版本 {latest_version} 不匹配"
+                )
+
+            # 获取文件信息
+            filename = self.update_manager._get_file_path()
+            if not filename:
+                await self.send_to_device(
+                    device_id,
+                    MessageType.UPDATE_ERROR,
+                    {
+                        "status": "error",
+                        "error": "未找到更新包文件",
+                        "request_id": json_data.get("request_id", ""),
+                    },
+                )
+                return
+
+            package_path = self.update_manager._get_package_file_path()
+            if not package_path or not package_path.exists():
+                await self.send_to_device(
+                    device_id,
+                    MessageType.UPDATE_ERROR,
+                    {
+                        "status": "error",
+                        "error": f"更新包文件不存在: {filename}",
+                        "request_id": json_data.get("request_id", ""),
+                    },
+                )
+                return
+
+            file_size = package_path.stat().st_size
+
+            # 构建批准响应
+            response = {
+                "status": "approved",
+                "download_url": filename,
+                "file_size": file_size,
+                "sha512_checksum": self.update_manager._get_file_checksum(),
+                "md5_checksum": "",
+                "sha256_checksum": "",
+                "request_id": json_data.get("request_id", ""),
+                "version": latest_version,
+                "mandatory": False,
+                "approval_time": datetime.utcnow().isoformat() + "Z",
+            }
+
+            logger.info(f"[{device_id}] 下载已批准: {filename}, size={file_size}")
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_APPROVE_DOWNLOAD, response
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 处理Web下载批准失败: {e}")
+            error_response = {
+                "status": "error",
+                "error": f"下载批准处理失败: {str(e)}",
+                "request_id": json_data.get("request_id", ""),
+            }
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_ERROR, error_response
             )

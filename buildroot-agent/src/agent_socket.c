@@ -636,7 +636,7 @@ static int send_register_message(agent_context_t *ctx)
     int len = snprintf(json, sizeof(json),
         "{\"device_id\":\"%s\",\"version\":\"%s\"}",
         ctx->config.device_id,
-        ctx->config.version);
+        AGENT_VERSION);
 
     if (len < 0 || len >= (int)sizeof(json)) {
         LOG_ERROR("构建注册消息失败");

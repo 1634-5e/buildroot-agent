@@ -18,12 +18,6 @@ server_addr = "127.0.0.1:8766"
 # 设备ID (唯一标识，留空则自动生成)
 device_id = ""
 
-# Agent版本
-version = "1.0.0"
-
-# Token（已废弃，保留用于向后兼容）
-# auth_token = ""
-
 # ========================================
 # 连接配置
 # ========================================
@@ -78,7 +72,7 @@ ca_path = ""
 enable_auto_update = false
 
 # 更新检查间隔 (秒)
-update_check_interval = 86400
+update_check_interval = 1800
 
 # 更新渠道 (stable/beta/dev)
 update_channel = "stable"
@@ -101,5 +95,3 @@ update_rollback_timeout = 300
 # 是否校验文件校验和
 update_verify_checksum = true
 
-# 更新CA证书路径 (可选，留空使用系统证书)
-update_ca_cert_path = ""

@@ -27,7 +27,6 @@ void config_set_defaults(agent_config_t *config)
     set_string_field(config->server_addr, sizeof(config->server_addr), DEFAULT_SERVER_ADDR);
     set_string_field(config->log_path, sizeof(config->log_path), DEFAULT_LOG_PATH);
     set_string_field(config->script_path, sizeof(config->script_path), DEFAULT_SCRIPT_PATH);
-    set_string_field(config->version, sizeof(config->version), "1.0.0");
     
     config->heartbeat_interval = DEFAULT_HEARTBEAT_SEC;
     config->reconnect_interval = DEFAULT_RECONNECT_SEC;
@@ -45,7 +44,6 @@ void config_set_defaults(agent_config_t *config)
     config->update_rollback_on_fail = true;
     config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
     config->update_verify_checksum = true;
-    config->update_ca_cert_path[0] = '\0';
 }
 
 void config_apply_overrides(agent_config_t *config, const config_override_t *overrides)
@@ -57,9 +55,6 @@ void config_apply_overrides(agent_config_t *config, const config_override_t *ove
     }
     if (overrides->device_id) {
         set_string_field(config->device_id, sizeof(config->device_id), overrides->device_id);
-    }
-    if (overrides->auth_token) {
-        set_string_field(config->auth_token, sizeof(config->auth_token), overrides->auth_token);
     }
     if (overrides->log_path) {
         set_string_field(config->log_path, sizeof(config->log_path), overrides->log_path);
@@ -90,16 +85,6 @@ void config_load_from_env(agent_config_t *config)
     }
     
     val = getenv("BUILDROOT_DEVICE_ID");
-    if (val) {
-        set_string_field(config->device_id, sizeof(config->device_id), val);
-    }
-    
-    val = getenv("BUILDROOT_AUTH_TOKEN");
-    if (val) {
-        set_string_field(config->auth_token, sizeof(config->auth_token), val);
-    }
-    
-    val = getenv("BUILDROOT_LOG_PATH");
     if (val) {
         set_string_field(config->log_path, sizeof(config->log_path), val);
     }
@@ -200,12 +185,6 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
     if (strcmp(key, "server_addr") == 0) {
         set_string_field(config->server_addr, sizeof(config->server_addr), value);
     } else if (strcmp(key, "device_id") == 0) {
-        set_string_field(config->device_id, sizeof(config->device_id), value);
-    } else if (strcmp(key, "version") == 0) {
-        set_string_field(config->version, sizeof(config->version), value);
-    } else if (strcmp(key, "auth_token") == 0) {
-        set_string_field(config->auth_token, sizeof(config->auth_token), value);
-    } else if (strcmp(key, "heartbeat_interval") == 0) {
         config->heartbeat_interval = atoi(value);
     } else if (strcmp(key, "reconnect_interval") == 0) {
         config->reconnect_interval = atoi(value);
@@ -247,8 +226,6 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
         config->update_rollback_timeout = atoi(value);
     } else if (strcmp(key, "update_verify_checksum") == 0) {
         config->update_verify_checksum = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);
-    } else if (strcmp(key, "update_ca_cert_path") == 0) {
-        set_string_field(config->update_ca_cert_path, sizeof(config->update_ca_cert_path), value);
     } else {
         return -1;
     }
@@ -353,9 +330,6 @@ int config_save(agent_config_t *config, const char *path)
     
     fprintf(fp, "# 设备ID (唯一标识)\n");
     fprintf(fp, "device_id = \"%s\"\n\n", config->device_id);
-
-    fprintf(fp, "# Token（已废弃，保留用于向后兼容）\n");
-    fprintf(fp, "auth_token = \"%s\"\n\n", config->auth_token);
     
     fprintf(fp, "# 心跳间隔 (秒)\n");
     fprintf(fp, "heartbeat_interval = %d\n\n", config->heartbeat_interval);
@@ -405,9 +379,6 @@ int config_save(agent_config_t *config, const char *path)
     fprintf(fp, "update_rollback_on_fail = %s\n", config->update_rollback_on_fail ? "true" : "false");
     fprintf(fp, "update_rollback_timeout = %d\n", config->update_rollback_timeout);
     fprintf(fp, "update_verify_checksum = %s\n", config->update_verify_checksum ? "true" : "false");
-    if (config->update_ca_cert_path[0] != '\0') {
-        fprintf(fp, "update_ca_cert_path = \"%s\"\n", config->update_ca_cert_path);
-    }
     
     fclose(fp);
     
@@ -453,12 +424,6 @@ int config_save_example(agent_config_t *config, const char *path)
     
     fprintf(fp, "# 设备ID (唯一标识，留空则自动生成)\n");
     fprintf(fp, "device_id = \"%s\"\n\n", config->device_id);
-    
-    fprintf(fp, "# Agent版本\n");
-    fprintf(fp, "version = \"%s\"\n\n", config->version);
-    
-    fprintf(fp, "# Token（已废弃，保留用于向后兼容）\n");
-    fprintf(fp, "# auth_token = \"%s\"\n\n", config->auth_token);
     
     fprintf(fp, "# ========================================\n");
     fprintf(fp, "# 连接配置\n");
@@ -543,9 +508,6 @@ int config_save_example(agent_config_t *config, const char *path)
     
     fprintf(fp, "# 是否校验文件校验和\n");
     fprintf(fp, "update_verify_checksum = %s\n\n", config->update_verify_checksum ? "true" : "false");
-    
-    fprintf(fp, "# 更新CA证书路径 (可选，留空使用系统证书)\n");
-    fprintf(fp, "update_ca_cert_path = \"%s\"\n", config->update_ca_cert_path);
     
     fclose(fp);
     

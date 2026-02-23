@@ -30,11 +30,15 @@ from protocol.models import (
     UpdateCheck,
     UpdateInfo,
     UpdateDownload,
-    UpdateApprove,
     UpdateProgress,
     UpdateComplete,
     UpdateError,
     UpdateRollback,
+    UpdateRequestApproval,
+    UpdateDownloadReady,
+    UpdateApproveInstall,
+    UpdateDeny,
+    UpdateApproveDownload,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,11 +72,12 @@ class MessageCodec:
         MessageType.UPDATE_CHECK: UpdateCheck,
         MessageType.UPDATE_INFO: UpdateInfo,
         MessageType.UPDATE_DOWNLOAD: UpdateDownload,
-        MessageType.UPDATE_APPROVE: UpdateApprove,
         MessageType.UPDATE_PROGRESS: UpdateProgress,
-        MessageType.UPDATE_COMPLETE: UpdateComplete,
-        MessageType.UPDATE_ERROR: UpdateError,
-        MessageType.UPDATE_ROLLBACK: UpdateRollback,
+        MessageType.UPDATE_REQUEST_APPROVAL: UpdateRequestApproval,
+        MessageType.UPDATE_DOWNLOAD_READY: UpdateDownloadReady,
+        MessageType.UPDATE_APPROVE_INSTALL: UpdateApproveInstall,
+        MessageType.UPDATE_DENY: UpdateDeny,
+        MessageType.UPDATE_APPROVE_DOWNLOAD: UpdateApproveDownload,
     }
 
     @classmethod

@@ -29,6 +29,12 @@ static void signal_handler(int sig)
         /* 额外处理：通知所有线程退出 */
         /* 心跳和状态线程会检查running标志，无需额外操作 */
         /* 重连线程和接收线程由socket模块管理 */
+        
+        /* 更新模式下，不立即退出，等待fork完成 */
+        if (g_in_update && sig != SIGQUIT) {
+            LOG_INFO("更新模式：延迟退出直到fork完成");
+            return;  // 不退出，让update_restart_agent继续执行
+        }
     }
     
     /* 特殊处理SIGQUIT - 立即退出（可能不清理）*/
@@ -37,6 +43,7 @@ static void signal_handler(int sig)
         _exit(1);
     }
 }
+
 
 /* 设置信号处理 */
 static void setup_signals(void)
@@ -114,6 +121,9 @@ static void *update_check_thread(void *arg)
     LOG_INFO("更新检查线程退出");
     return NULL;
 }
+
+/* 更新模式标志，防止信号处理导致提前退出 */
+bool g_in_update = false;
 
 int agent_init(const char *config_path, const config_override_t *overrides)
 {
@@ -334,7 +344,6 @@ int main(int argc, char *argv[])
 {
     const char *config_path = NULL;
     const char *server_addr = NULL;
-    const char *auth_token = NULL;  /* 已废弃，保留用于向后兼容 */
     bool daemon_mode = false;
     bool verbose = false;
     bool generate_config = false;
@@ -362,9 +371,6 @@ int main(int argc, char *argv[])
             break;
         case 's':
             server_addr = optarg;
-            break;
-        case 't':
-            auth_token = optarg;
             break;
         case 'd':
             daemon_mode = true;
@@ -441,7 +447,6 @@ int main(int argc, char *argv[])
     config_override_t overrides = {
         .server_addr = server_addr,
         .device_id = NULL,
-        .auth_token = auth_token,
         .log_path = NULL,
         .script_path = NULL,
         .log_level = verbose ? LOG_LEVEL_DEBUG : -1,

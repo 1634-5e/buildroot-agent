@@ -42,6 +42,7 @@ typedef struct download_session {
     download_state_t state;          /* 下载状态 */
     progress_callback_t callback;    /* 进度回调 */
     void *user_data;                 /* 用户数据 */
+    completion_callback_t completion; /* 完成回调 */
     pthread_mutex_t mutex;           /* 互斥锁 */
     time_t last_activity;            /* 最后活动时间 */
     struct download_session *next;   /* 链表指针 */
@@ -70,17 +71,17 @@ static download_session_t *find_session(const char *session_id) {
 }
 
 /* 创建下载会话 */
-static download_session_t *create_session(const char *file_path, const char *output_path, 
-                                         tcp_download_config_t *config) {
+static download_session_t *create_session(const char *file_path, const char *output_path,
+                                          tcp_download_config_t *config) {
     download_session_t *session = (download_session_t *)calloc(1, sizeof(download_session_t));
     if (!session) {
         return NULL;
     }
-    
+
     generate_session_id(session->session_id, sizeof(session->session_id));
     strncpy(session->file_path, file_path, sizeof(session->file_path) - 1);
     strncpy(session->output_path, output_path, sizeof(session->output_path) - 1);
-    
+
     session->offset = 0;
     session->downloaded = 0;
     session->chunk_size = config ? config->chunk_size : 16384;  /* 默认16KB */
@@ -90,13 +91,14 @@ static download_session_t *create_session(const char *file_path, const char *out
     session->state = DOWNLOAD_STATE_IDLE;
     session->callback = config ? config->callback : NULL;
     session->user_data = config ? config->user_data : NULL;
+    session->completion = config ? config->completion : NULL;
     session->last_activity = time(NULL);
-    
+
     if (pthread_mutex_init(&session->mutex, NULL) != 0) {
         free(session);
         return NULL;
     }
-    
+
     return session;
 }
 
@@ -397,15 +399,21 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
             session->state = DOWNLOAD_STATE_COMPLETED;
             fclose(session->fp);
             session->fp = NULL;
-            
+
             LOG_INFO("下载完成: %s", session->output_path);
-            
+
             /* 最终进度回调 */
             if (session->callback) {
                 session->callback(session->file_path, 100, session->downloaded,
                                  session->file_size, session->user_data);
             }
-            
+
+            /* 调用完成回调（成功） */
+            if (session->completion) {
+                session->completion(session->file_path, session->output_path,
+                                   session->file_size, true, NULL, session->user_data);
+            }
+
             /* 移除会话 */
             pthread_mutex_unlock(&session->mutex);
             remove_session(session_id);
@@ -431,12 +439,20 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
         /* 处理下载错误 */
         char *session_id = json_get_string(data, "request_id");
         char *error_msg = json_get_string(data, "error");
-        
+
         if (session_id) {
             download_session_t *session = find_session(session_id);
             if (session) {
                 session->state = DOWNLOAD_STATE_ERROR;
                 LOG_ERROR("下载错误: %s", error_msg ? error_msg : "未知错误");
+
+                /* 调用完成回调（失败） */
+                if (session->completion) {
+                    session->completion(session->file_path, session->output_path,
+                                       session->downloaded, false, error_msg,
+                                       session->user_data);
+                }
+
                 remove_session(session_id);
             }
         }

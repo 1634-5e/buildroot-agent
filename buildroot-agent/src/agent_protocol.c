@@ -1213,6 +1213,9 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             char *download_url = json_get_string(json_data, "download_url");
             char *md5_checksum = json_get_string(json_data, "md5_checksum");
             char *release_notes = json_get_string(json_data, "release_notes");
+            char *current_version = json_get_string(json_data, "current_version");
+            char *request_id = json_get_string(json_data, "request_id");
+            int64_t file_size = json_get_int(json_data, "file_size", 0);
             int mandatory = json_get_bool(json_data, "mandatory", false);
             
             if (!has_update) {
@@ -1229,108 +1232,139 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             LOG_INFO("MD5校验和: %s", md5_checksum);
             LOG_INFO("更新说明: %s", release_notes);
             LOG_INFO("是否强制更新: %s", mandatory ? "是" : "否");
-            
-            /* 如果配置了自动确认，或者强制更新，自动请求下载 */
-            if ((!g_agent_ctx->config.update_require_confirm) || mandatory) {
-                LOG_INFO("自动请求下载更新");
-                /* 发送下载请求 */
-                char *json = malloc(256);
-                snprintf(json, 256,
-                         "{\"version\":\"%s\",\"request_id\":\"update-%lld\"}",
-                         latest_version, (long long)get_timestamp_ms());
-                int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_DOWNLOAD, json);
-                free(json);
-                
+
+            /* 强制更新：直接启动下载（无需Web批准） */
+            if (mandatory) {
+                LOG_INFO("强制更新，直接启动下载");
+
+                /* 保存更新信息到全局变量（用于下载） */
+                pthread_mutex_lock(&g_update_lock);
+                g_update_info.has_update = true;
+                if (latest_version) {
+                    strncpy(g_update_info.latest_version, latest_version,
+                            sizeof(g_update_info.latest_version) - 1);
+                }
+                if (current_version) {
+                    strncpy(g_update_info.current_version, current_version,
+                            sizeof(g_update_info.current_version) - 1);
+                }
+                g_update_info.file_size = file_size;
+                if (download_url) {
+                    strncpy(g_update_info.download_url, download_url,
+                            sizeof(g_update_info.download_url) - 1);
+                }
+                if (md5_checksum) {
+                    strncpy(g_update_info.md5_checksum, md5_checksum,
+                            sizeof(g_update_info.md5_checksum) - 1);
+                }
+                if (release_notes) {
+                    strncpy(g_update_info.release_notes, release_notes,
+                            sizeof(g_update_info.release_notes) - 1);
+                }
+                if (request_id) {
+                    strncpy(g_update_info.request_id, request_id,
+                            sizeof(g_update_info.request_id) - 1);
+                }
+                g_update_info.mandatory = mandatory;
+                pthread_mutex_unlock(&g_update_lock);
+
+                /* 直接启动下载（无需Web批准） */
+                if (!download_url) {
+                    LOG_ERROR("下载URL为空，无法启动自动下载");
+                    if (latest_version) free(latest_version);
+                    if (download_url) free(download_url);
+                    if (md5_checksum) free(md5_checksum);
+                    if (release_notes) free(release_notes);
+                    if (request_id) free(request_id);
+                    if (current_version) free(current_version);
+                    break;
+                }
+
+                /* 设置状态为 APPROVED_DOWNLOAD */
+                pthread_mutex_lock(&g_update_lock);
+                g_update_status = UPDATE_STATUS_APPROVED_DOWNLOAD;
+                g_approval_sent = false;
+                pthread_mutex_unlock(&g_update_lock);
+
+                /* 准备下载路径 */
+                char download_path[512];
+                char temp_dir[512];
+                time_t now = time(NULL);
+                snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
+                         g_agent_ctx->config.update_temp_path, (long long)now);
+                snprintf(download_path, sizeof(download_path),
+                         "%s/agent-update-%lld.tar",
+                         temp_dir, (long long)now);
+
+                /* 创建临时目录 */
+                mkdir_recursive(temp_dir, 0755);
+
+                LOG_INFO("准备下载到: %s (URL: %s, size: %lld bytes)",
+                         download_path, download_url, (long long)file_size);
+
+                /* 开始下载 */
+                int rc = update_download_package(
+                    download_url,
+                    download_path,
+                    download_progress_callback,
+                    g_agent_ctx
+                );
+
                 if (rc != 0) {
-                    LOG_ERROR("发送下载请求失败");
+                    LOG_ERROR("自动下载失败");
+                    pthread_mutex_lock(&g_update_lock);
+                    g_update_status = UPDATE_STATUS_FAILED;
+                    pthread_mutex_unlock(&g_update_lock);
                 }
             } else {
-                LOG_INFO("等待服务器批准下载");
+                /* 非强制更新：设置状态为 CHECKED，等待 PTY 创建时请求批准 */
+                pthread_mutex_lock(&g_update_lock);
+                g_update_status = UPDATE_STATUS_CHECKED;
+
+                /* 保存更新信息 - 所有字段 */
+                g_update_info.has_update = true;
+                if (latest_version) {
+                    strncpy(g_update_info.latest_version, latest_version,
+                            sizeof(g_update_info.latest_version) - 1);
+                }
+                if (current_version) {
+                    strncpy(g_update_info.current_version, current_version,
+                            sizeof(g_update_info.current_version) - 1);
+                }
+                g_update_info.file_size = file_size;
+                if (download_url) {
+                    strncpy(g_update_info.download_url, download_url,
+                            sizeof(g_update_info.download_url) - 1);
+                }
+                if (md5_checksum) {
+                    strncpy(g_update_info.md5_checksum, md5_checksum,
+                            sizeof(g_update_info.md5_checksum) - 1);
+                }
+                if (release_notes) {
+                    strncpy(g_update_info.release_notes, release_notes,
+                            sizeof(g_update_info.release_notes) - 1);
+                }
+                if (request_id) {
+                    strncpy(g_update_info.request_id, request_id,
+                            sizeof(g_update_info.request_id) - 1);
+                }
+                g_update_info.mandatory = mandatory;
+
+                pthread_mutex_unlock(&g_update_lock);
+
+                LOG_INFO("非强制更新已检查，等待 PTY 创建触发批准请求");
             }
+
             if (latest_version) free(latest_version);
+            if (current_version) free(current_version);
             if (download_url) free(download_url);
             if (md5_checksum) free(md5_checksum);
             if (release_notes) free(release_notes);
+            if (request_id) free(request_id);
             break;
         }
-        
-    case MSG_TYPE_UPDATE_APPROVE:
-        /* 服务器批准下载，提供下载URL */
-        {
-            LOG_INFO("收到下载批准");
-            char *download_url = json_get_string(json_data, "download_url");
-            char *request_id = json_get_string(json_data, "request_id");
-            
-            if (!download_url) {
-                LOG_ERROR("下载URL为空");
-                /* 发送错误通知 */
-                char *error_json = malloc(256);
-                snprintf(error_json, 256,
-                         "{\"status\":\"failed\",\"error\":\"no_download_url\",\"request_id\":\"%s\"}",
-                         request_id ? request_id : "unknown");
-                socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
-                free(error_json);
-                break;
-            }
-            
-            /* 准备下载路径 */
-            char download_path[512];
-            char temp_dir[512];
-            time_t now = time(NULL);
-            snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
-                     g_agent_ctx->config.update_temp_path, (long long)now);
-            snprintf(download_path, sizeof(download_path),
-                     "%s/agent-update-%lld.tar",
-                     temp_dir, (long long)now);
-            
-            /* 创建临时目录 */
-            mkdir_recursive(temp_dir, 0755);
-            
-            /* 开始下载 */
-            int rc = update_download_package(
-                download_url,
-                download_path,
-                download_progress_callback,
-                g_agent_ctx
-            );
-            
-            if (rc == 0) {
-                LOG_INFO("下载成功，开始安装");
-                
-                /* 发送进度：下载完成 */
-                char *progress_json = malloc(256);
-                snprintf(progress_json, 256,
-                         "{\"status\":\"downloaded\",\"request_id\":\"%s\",\"progress\":100}",
-                         request_id ? request_id : "unknown");
-                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, progress_json);
-                free(progress_json);
-                
-                /* 发送安装通知 */
-                char *install_json = malloc(256);
-                snprintf(install_json, 256,
-                         "{\"status\":\"installing\",\"request_id\":\"%s\",\"path\":\"%s\"}",
-                         request_id ? request_id : "unknown",
-                         download_path);
-                socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, install_json);
-                free(install_json);
-                
-                /* 开始安装 */
-                update_install_package(download_path);
-            } else {
-                LOG_ERROR("下载失败");
-                
-                /* 发送错误通知 */
-                char *error_json = malloc(256);
-                snprintf(error_json, 256,
-                         "{\"status\":\"failed\",\"error\":\"download_failed\",\"request_id\":\"%s\"}",
-                         request_id ? request_id : "unknown");
-                socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
-                free(error_json);
-            }
-            break;
-        }
-        
-    case MSG_TYPE_UPDATE_PROGRESS:
+
+        case MSG_TYPE_UPDATE_PROGRESS:
         /* 更新进度上报 */
         {
             char *status = json_get_string(json_data, "status");
@@ -1412,9 +1446,78 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             }
             break;
         
-    default:
-        LOG_WARN("未知消息类型: 0x%02X", type);
-        break;
+    case MSG_TYPE_UPDATE_APPROVE_INSTALL:
+        /* Web 批准安装和重启 */
+        {
+            LOG_INFO("收到安装批准");
+            update_handle_approve_install(ctx, json_data);
+            break;
+            }
+        
+        case MSG_TYPE_UPDATE_APPROVE_DOWNLOAD:
+        /* Web 批准下载（Server 转发） */
+        {
+            LOG_INFO("收到Web下载批准");
+            
+            char *download_url = json_get_string(json_data, "download_url");
+            char *version = json_get_string(json_data, "version");
+            char *file_size_str = json_get_string(json_data, "file_size");
+            char *md5_checksum = json_get_string(json_data, "md5_checksum");
+            char *sha512_checksum = json_get_string(json_data, "sha512_checksum");
+            
+            if (!download_url) {
+                LOG_ERROR("下载URL为空");
+                char *error_json = malloc(256);
+                snprintf(error_json, 256,
+                         "{\"status\":\"failed\",\"error\":\"no_download_url\",\"request_id\":\"unknown\"}");
+                socket_send_json(ctx, MSG_TYPE_UPDATE_ERROR, error_json);
+                free(error_json);
+                break;
+            }
+            
+            /* 设置状态为 APPROVED_DOWNLOAD */
+            pthread_mutex_lock(&g_update_lock);
+            g_update_status = UPDATE_STATUS_APPROVED_DOWNLOAD;
+            g_approval_sent = false;
+            pthread_mutex_unlock(&g_update_lock);
+            
+            /* 准备下载路径 */
+            char download_path[512];
+            char temp_dir[512];
+            time_t now = time(NULL);
+            snprintf(temp_dir, sizeof(temp_dir), "%s/%lld",
+                     g_agent_ctx->config.update_temp_path, (long long)now);
+            snprintf(download_path, sizeof(download_path),
+                     "%s/agent-update-%lld.tar",
+                     temp_dir, (long long)now);
+            
+            /* 创建临时目录 */
+            mkdir_recursive(temp_dir, 0755);
+            
+            LOG_INFO("准备下载到: %s (URL: %s, size: %s bytes)", 
+                     download_path, download_url, 
+                     file_size_str ? file_size_str : "unknown");
+            
+            /* 开始下载 */
+            int rc = update_download_package(
+                download_url,
+                download_path,
+                download_progress_callback,
+                g_agent_ctx
+            );
+            
+            if (rc != 0) {
+                LOG_ERROR("下载失败");
+                pthread_mutex_lock(&g_update_lock);
+                g_update_status = UPDATE_STATUS_FAILED;
+                pthread_mutex_unlock(&g_update_lock);
+            }
+            break;
+        }
+
+        default:
+            LOG_WARN("未知消息类型: 0x%02X", type);
+            break;
     }
     
     return 0;

@@ -16,11 +16,13 @@
 #define SHA256_DIGEST_LENGTH 32
 
 /* 全局变量 */
-static update_status_t g_update_status = UPDATE_STATUS_IDLE;
-static pthread_mutex_t g_update_lock = PTHREAD_MUTEX_INITIALIZER;
-static update_info_t g_update_info;
+update_status_t g_update_status = UPDATE_STATUS_IDLE;
+pthread_mutex_t g_update_lock = PTHREAD_MUTEX_INITIALIZER;
+update_info_t g_update_info;
 static pthread_t g_update_thread;
 static bool g_update_thread_running = false;
+static int g_last_reported_progress = -1;  /* 用于避免频繁上报进度 */
+bool g_approval_sent = false;
 
 /* 内部函数 */
 static int parse_version(const char *version_str, int *major, int *minor, int *patch);
@@ -31,15 +33,38 @@ static int install_new_binary(const char *new_binary_path);
 static int verify_installation(void);
 static int send_update_progress(agent_context_t *ctx, int progress, const char *message);
 
-/* 进度回调 */
+/* 进度回调 - 只在阶段性状态变化时上报，不频繁发送百分比 */
 void download_progress_callback(const char *url, int progress, int64_t downloaded, int64_t total_size, void *user_data)
 {
     agent_context_t *ctx = (agent_context_t *)user_data;
-    if (ctx) {
-        char message[256];
-        snprintf(message, sizeof(message), "下载中 %lld/%lld bytes (%d%%)",
-                 (long long)downloaded, (long long)total_size, progress);
-        send_update_progress(ctx, progress, message);
+    if (!ctx) return;
+    
+    /* 只在关键进度点上报: 0%, 25%, 50%, 75%, 100% */
+    int report_points[] = {0, 25, 50, 75, 100};
+    
+    for (int i = 0; i < 5; i++) {
+        if (progress >= report_points[i] && g_last_reported_progress < report_points[i]) {
+            const char *stage;
+            switch (report_points[i]) {
+                case 0:   stage = "开始下载"; break;
+                case 25:  stage = "下载中 (25%)"; break;
+                case 50:  stage = "下载中 (50%)"; break;
+                case 75:  stage = "下载中 (75%)"; break;
+                case 100: stage = "下载完成"; break;
+                default:  stage = "下载中"; break;
+            }
+            
+            LOG_INFO("下载进度: %d%% (%lld/%lld bytes) - %s", 
+                     progress, (long long)downloaded, (long long)total_size, stage);
+            
+            /* 发送阶段性状态更新 */
+            char message[256];
+            snprintf(message, sizeof(message), "%s", stage);
+            send_update_progress(ctx, report_points[i], message);
+            
+            g_last_reported_progress = report_points[i];
+            break;
+        }
     }
 }
 
@@ -73,7 +98,7 @@ static int compare_versions(const char *v1, const char *v2)
     return 0;
 }
 
-/* 发送更新进度 */
+/* 发送更新进度 - 包含当前状态 */
 static int send_update_progress(agent_context_t *ctx, int progress, const char *message)
 {
     if (!ctx) return -1;
@@ -84,9 +109,21 @@ static int send_update_progress(agent_context_t *ctx, int progress, const char *
         return -1;
     }
     
+    /* 根据进度确定状态描述 */
+    const char *status = "downloading";
+    if (progress >= 100) {
+        status = "downloaded";
+    } else if (progress >= 75) {
+        status = "downloading_75";
+    } else if (progress >= 50) {
+        status = "downloading_50";
+    } else if (progress >= 25) {
+        status = "downloading_25";
+    }
+    
     snprintf(json, 512,
-             "{\"progress\":%d,\"message\":\"%s\",\"status\":\"downloading\"}",
-             progress, message ? message : "");
+             "{\"progress\":%d,\"message\":\"%s\",\"status\":\"%s\"}",
+             progress, message ? message : "", status);
     
     int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_PROGRESS, json);
     free(json);
@@ -140,6 +177,9 @@ int update_check_version(agent_context_t *ctx)
 int update_download_package(const char *url, const char *output_path, progress_callback_t callback, void *user_data)
 {
     LOG_INFO("开始TCP下载更新包: %s", url);
+    
+    /* 重置进度追踪 */
+    g_last_reported_progress = -1;
     
     pthread_mutex_lock(&g_update_lock);
     g_update_status = UPDATE_STATUS_DOWNLOADING;
@@ -469,7 +509,7 @@ int update_install_package(const char *package_path)
     
     /* 查找新的二进制文件 */
     char new_binary[512];
-    snprintf(new_binary, sizeof(new_binary), "%s/buildroot-agent", temp_dir);
+    snprintf(new_binary, sizeof(new_binary), "%s/buildroot-agent/buildroot-agent", temp_dir);
     
     /* 验证新二进制存在 */
     struct stat st;
@@ -509,6 +549,7 @@ int update_install_package(const char *package_path)
 }
 
 /* 重启agent */
+extern bool g_in_update;
 void update_restart_agent(void)
 {
     LOG_INFO("准备重启 Agent...");
@@ -537,7 +578,9 @@ void update_restart_agent(void)
     }
     
     /* 启动新进程 */
-    pid_t pid = fork();
+        /* 设置更新模式标志，防止信号处理导致提前退出 */
+    g_in_update = true;
+pid_t pid = fork();
     if (pid < 0) {
         LOG_ERROR("fork失败: %s", strerror(errno));
         return;
@@ -574,6 +617,8 @@ void update_restart_agent(void)
         LOG_ERROR("新进程启动失败，可能需要手动干预");
     }
     
+    /* 清除更新模式标志 */
+    g_in_update = false;
     /* 父进程退出，让主进程重新启动 */
     _exit(0);
 }
@@ -692,5 +737,95 @@ int update_report_status(agent_context_t *ctx, update_status_t status, const cha
         send_update_progress(ctx, progress, message);
     }
     
+    return 0;
+}
+
+/* Stub implementations for missing functions */
+int update_send_approval_request(agent_context_t *ctx, update_info_t *info) {
+    if (!ctx || !info) {
+        return -1;
+    }
+    
+    /* Create JSON message with update info */
+    char *json = malloc(2048);
+    if (!json) {
+        LOG_ERROR("内存分配失败");
+        return -1;
+    }
+    
+    snprintf(json, 2048,
+             "{"
+               "\"has_update\":%s,"
+               "\"current_version\":\"%s\","
+               "\"latest_version\":\"%s\","
+               "\"version\":\"%s\","
+               "\"version_code\":%lld,"
+               "\"file_size\":%lld,"
+               "\"download_url\":\"%s\","
+               "\"md5_checksum\":\"%s\","
+               "\"sha256_checksum\":\"%s\","
+               "\"release_notes\":\"%s\","
+               "\"mandatory\":%s,"
+               "\"request_id\":\"%s\","
+               "\"status\":\"pending_approval\""
+             "}",
+             info->has_update ? "true" : "false",
+             info->current_version,
+             info->latest_version,
+             info->latest_version,  /* version field mirrors latest_version for web compatibility */
+             (long long)info->version_code,
+             (long long)info->file_size,
+             info->download_url,
+             info->md5_checksum,
+             info->sha256_checksum,
+             info->release_notes,
+             info->mandatory ? "true" : "false",
+             info->request_id);
+    
+    /* Send approval request to server */
+    int rc = socket_send_json(ctx, MSG_TYPE_UPDATE_REQUEST_APPROVAL, json);
+    
+    if (rc != 0) {
+        LOG_ERROR("发送更新批准请求失败: %d", rc);
+    } else {
+        LOG_INFO("已发送更新批准请求: version=%s, request_id=%s", 
+                 info->latest_version, info->request_id);
+    }
+    
+    free(json);
+    return rc;
+}
+
+
+int update_handle_approve_install(agent_context_t *ctx, const char *data) {
+    if (!ctx || !data) {
+        return -1;
+    }
+    
+    /* Parse approval JSON */
+    char *action = json_get_string(data, "action");
+    if (!action) {
+        LOG_ERROR("无法解析安装批准消息");
+        return -1;
+    }
+    
+    LOG_INFO("收到安装批准: action=%s", action);
+    
+    if (strcmp(action, "install_and_restart") == 0) {
+        /* Install and restart */
+        char *package_path = json_get_string(data, "package_path");
+        if (package_path) {
+            if (update_install_package(package_path) == 0) {
+                /* Send approval received */
+                update_report_status(ctx, UPDATE_STATUS_APPROVED_INSTALL, "收到安装批准", 100);
+                
+                /* Restart agent */
+                update_restart_agent();
+            }
+            free(package_path);
+        }
+    }
+    
+    free(action);
     return 0;
 }

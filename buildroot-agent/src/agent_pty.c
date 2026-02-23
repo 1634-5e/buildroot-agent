@@ -343,8 +343,26 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
     
     pthread_mutex_unlock(&g_pty_lock);
     
-    LOG_INFO("PTY会话已创建: session_id=%d, pid=%d, fd=%d, size=%dx%d", 
+    LOG_INFO("PTY会话已创建: session_id=%d, pid=%d, fd=%d, size=%dx%d",
              session_id, pid, master_fd, session->cols, session->rows);
+    
+    /* 检查是否有待批准的更新请求 */
+    extern update_status_t g_update_status;
+    extern update_info_t g_update_info;
+    extern pthread_mutex_t g_update_lock;
+    extern int update_send_approval_request(agent_context_t *ctx, update_info_t *info);
+    
+    pthread_mutex_lock(&g_update_lock);
+    bool has_pending_update = (g_update_status == UPDATE_STATUS_CHECKED && g_update_info.has_update);
+    pthread_mutex_unlock(&g_update_lock);
+    
+    if (has_pending_update) {
+        LOG_INFO("检测到待批准的更新请求，发送批准请求");
+        int rc = update_send_approval_request(ctx, &g_update_info);
+        if (rc != 0) {
+            LOG_ERROR("发送更新批准请求失败: %d", rc);
+        }
+    }
     
     /* 发送创建成功消息 */
     int pty_count = 0;

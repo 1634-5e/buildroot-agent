@@ -5,6 +5,7 @@ import websockets
 from websockets.server import WebSocketServerProtocol
 
 from protocol.constants import MessageType
+from protocol.codec import MessageCodec
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ class WebSocketHandler:
                             end_index = start_index + page_size
                             paged_devices = filtered_devices[start_index:end_index]
 
-                            response = await self.msg_handler.create_message(
+                            response = MessageCodec.encode(
                                 MessageType.DEVICE_LIST,
                                 {
                                     "devices": paged_devices,

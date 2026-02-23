@@ -17,12 +17,14 @@ from server.websocket_handler import WebSocketHandler
 from handlers.socket_handler import SocketHandler
 from console.interactive import InteractiveConsole
 from protocol.constants import MessageType
+from protocol.codec import MessageCodec
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-class MessageHandler:
-    """消息处理器整合类"""
+class MessageRouter:
+    """消息路由器 - 路由消息到各个Handler"""
 
     def __init__(self, conn_mgr: ConnectionManager):
         self.conn_mgr = conn_mgr
@@ -35,6 +37,126 @@ class MessageHandler:
         self.command_handler = CommandHandler(conn_mgr)
 
         self.download_chunks = {}
+
+    async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
+        """发送消息到指定设备"""
+        if not self.conn_mgr.is_device_connected(device_id):
+            logger.warning(f"设备未连接: {device_id}")
+            return False
+
+        try:
+            dev_info = self.conn_mgr.get_device(device_id)
+            if not dev_info:
+                logger.error(f"设备连接为空: {device_id}")
+                return False
+
+            conn_type = dev_info["type"]
+            connection = dev_info["connection"]
+
+            message = MessageCodec.encode(msg_type, data)
+            logger.debug(
+                f"[SEND_TO_DEVICE] device={device_id}, type=0x{msg_type:02X}, msg_hex={message.hex()[:50]}...{message.hex()[-30:] if len(message.hex()) > 80 else ''}, total_len={len(message)}"
+            )
+
+            if conn_type == "websocket":
+                if hasattr(connection, "state") and connection.state.name != "OPEN":
+                    logger.warning(f"设备WebSocket连接未开启: {device_id}")
+                    self.conn_mgr.remove_device(device_id)
+                    return False
+
+                if not hasattr(connection, "send") or not callable(
+                    getattr(connection, "send", None)
+                ):
+                    logger.error(f"设备WebSocket无效: {device_id}")
+                    return False
+
+                await connection.send(message)
+                return True
+
+            elif conn_type == "socket":
+                if hasattr(connection, "send") and callable(
+                    getattr(connection, "send", None)
+                ):
+                    await connection.send(message)
+                    return True
+                else:
+                    logger.error(f"设备Socket无效: {device_id}")
+                    return False
+
+            else:
+                logger.warning(f"未知的连接类型: {conn_type}")
+                return False
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.warning(
+                f"设备连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
+            )
+            self.conn_mgr.remove_device(device_id)
+            return False
+        except Exception as e:
+            logger.error(f"发送失败: {e}")
+            return False
+
+    async def broadcast_to_web_consoles(
+        self,
+        msg_type: int,
+        data: dict,
+        target_console_id: Optional[str] = None,
+        target_device_id: Optional[str] = None,
+    ) -> None:
+        """广播消息到Web控制台"""
+        if not self.conn_mgr.web_consoles:
+            return
+
+        try:
+            message = MessageCodec.encode(msg_type, data)
+            to_remove = []
+
+            for console in list(self.conn_mgr.web_consoles):
+                try:
+                    if hasattr(console, "state") and console.state.name != "OPEN":
+                        logger.debug("Web控制台连接未开启，移除连接")
+                        to_remove.append(console)
+                        continue
+
+                    console_info = self.conn_mgr.get_console_info(console)
+                    if not console_info:
+                        to_remove.append(console)
+                        continue
+
+                    if (
+                        target_console_id
+                        and console_info.get("console_id") != target_console_id
+                    ):
+                        continue
+
+                    if (
+                        target_device_id
+                        and console_info.get("device_id") is not None
+                        and console_info.get("device_id") != target_device_id
+                    ):
+                        continue
+
+                    if hasattr(console, "send") and callable(
+                        getattr(console, "send", None)
+                    ):
+                        await console.send(message)
+                    else:
+                        logger.warning("Web控制台没有send方法")
+                        to_remove.append(console)
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.warning(
+                        f"Web控制台连接已关闭: code={e.code}, reason={e.reason}"
+                    )
+                    to_remove.append(console)
+                except Exception as e:
+                    logger.warning(f"向web控制台发送失败: {e}")
+                    to_remove.append(console)
+
+            for console in to_remove:
+                self.conn_mgr.remove_console(console)
+        except Exception as e:
+            logger.error(f"发送消息失败: {e}")
 
     async def handle_auth(self, websocket, data: dict) -> bool:
         return await self.register_handler.handle_auth(websocket, data)
@@ -80,43 +202,26 @@ class MessageHandler:
     async def handle_update_rollback(self, device_id: str, data: dict) -> None:
         await self.update_handler.handle_update_rollback(device_id, data)
 
-    async def handle_file_download_request(self, device_id: str, data: dict) -> None:
-        await self.file_handler.handle_file_download_request(device_id, data)
+    async def handle_update_request_approval(self, device_id: str, data: dict) -> None:
+        await self.update_handler.handle_update_request_approval(device_id, data)
 
-    async def handle_pty_data(self, device_id: str, data: dict) -> None:
-        await self.pty_handler.handle_pty_data(device_id, data)
+    async def handle_update_download_ready(self, device_id: str, data: dict) -> None:
+        await self.update_handler.handle_update_download_ready(device_id, data)
 
-    async def handle_pty_create(self, device_id: str, data: dict) -> None:
-        await self.pty_handler.handle_pty_create(device_id, data)
+    async def handle_update_approve_install(self, device_id: str, data: dict) -> None:
+        await self.update_handler.handle_update_approve_install(device_id, data)
 
-    async def handle_pty_resize(self, device_id: str, data: dict) -> None:
-        await self.pty_handler.handle_pty_resize(device_id, data)
+    async def handle_update_deny(self, device_id: str, data: dict) -> None:
+        await self.update_handler.handle_update_deny(device_id, data)
 
-    async def handle_pty_close(self, device_id: str, data: dict) -> None:
-        await self.pty_handler.handle_pty_close(device_id, data)
-
-    async def handle_cmd_request(self, device_id: str, data: dict, websocket) -> None:
-        await self.command_handler.handle_cmd_request(device_id, data, websocket)
-
-    async def handle_cmd_response(self, device_id: str, data: dict) -> None:
-        await self.command_handler.handle_cmd_response(device_id, data)
-
-    async def create_message(self, msg_type: int, data: dict) -> bytes:
-        return self.register_handler.create_message(msg_type, data)
-
-    async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
-        return await self.register_handler.send_to_device(device_id, msg_type, data)
-
-    async def broadcast_to_web_consoles(
-        self,
-        msg_type: int,
-        data: dict,
-        target_console_id: str = None,
-        target_device_id: str = None,
-    ) -> None:
-        return await self.register_handler.broadcast_to_web_consoles(
-            msg_type, data, target_console_id, target_device_id
-        )
+    async def handle_update_approve_download(self, device_id: str, data: dict) -> None:
+        try:
+            logger.info(f"[{device_id}] 收到Web下载批准，转发到Agent")
+            await self.send_to_device(
+                device_id, MessageType.UPDATE_APPROVE_DOWNLOAD, data
+            )
+        except Exception as e:
+            logger.error(f"[{device_id}] 转发下载批准失败: {e}")
 
     async def unicast_by_request_id(
         self, msg_type: int, data: dict, request_id: str
@@ -132,6 +237,21 @@ class MessageHandler:
         self, device_id: str, reason: str = "disconnect"
     ) -> None:
         return await self.register_handler.notify_device_disconnect(device_id, reason)
+
+    async def handle_file_download_request(self, device_id: str, data: dict) -> None:
+        return await self.file_handler.handle_file_download_request(device_id, data)
+
+    async def handle_pty_data(self, device_id: str, data: dict) -> None:
+        return await self.pty_handler.handle_pty_data(device_id, data)
+
+    async def handle_pty_create(self, device_id: str, data: dict) -> None:
+        return await self.pty_handler.handle_pty_create(device_id, data)
+
+    async def handle_pty_resize(self, device_id: str, data: dict) -> None:
+        return await self.pty_handler.handle_pty_resize(device_id, data)
+
+    async def handle_pty_close(self, device_id: str, data: dict) -> None:
+        return await self.pty_handler.handle_pty_close(device_id, data)
 
     async def handle_message(
         self, websocket, device_id: str, data: bytes, is_socket: bool = False
@@ -158,6 +278,28 @@ class MessageHandler:
                     json_data = {}
 
         json_data = json_data or {}
+
+        handlers = {
+            MessageType.HEARTBEAT: self.handle_heartbeat,
+            MessageType.SYSTEM_STATUS: self.handle_system_status,
+            MessageType.LOG_UPLOAD: self.handle_log_upload,
+            MessageType.SCRIPT_RESULT: self.handle_script_result,
+            MessageType.UPDATE_CHECK: self.handle_update_check,
+            MessageType.UPDATE_DOWNLOAD: self.handle_update_download,
+            MessageType.UPDATE_PROGRESS: self.handle_update_progress,
+            MessageType.UPDATE_COMPLETE: self.handle_update_complete,
+            MessageType.UPDATE_ERROR: self.handle_update_error,
+            MessageType.UPDATE_ROLLBACK: self.handle_update_rollback,
+            MessageType.UPDATE_REQUEST_APPROVAL: self.handle_update_request_approval,
+            MessageType.UPDATE_DOWNLOAD_READY: self.handle_update_download_ready,
+            MessageType.UPDATE_APPROVE_INSTALL: self.handle_update_approve_install,
+            MessageType.UPDATE_DENY: self.handle_update_deny,
+            MessageType.UPDATE_APPROVE_DOWNLOAD: self.handle_update_approve_download,
+        }
+
+        if msg_type in handlers:
+            await handlers[msg_type](device_id, json_data)
+            return
 
         if msg_type == MessageType.FILE_LIST_REQUEST:
             if device_id and self.conn_mgr.is_device_connected(device_id):
@@ -189,24 +331,21 @@ class MessageHandler:
             else:
                 if device_id and self.conn_mgr.is_device_connected(device_id):
                     await self.send_to_device(device_id, msg_type, json_data)
+                return
+
+        if msg_type == MessageType.FILE_LIST_REQUEST:
+            if device_id and self.conn_mgr.is_device_connected(device_id):
+                await self.send_to_device(device_id, msg_type, json_data)
+            return
+        elif msg_type == MessageType.FILE_REQUEST:
+            if device_id and self.conn_mgr.is_device_connected(device_id):
+                await self.send_to_device(device_id, msg_type, json_data)
+            return
+        elif msg_type == MessageType.FILE_DOWNLOAD_REQUEST:
+            await self.handle_file_download_request(device_id, json_data)
             return
 
-        handlers = {
-            MessageType.HEARTBEAT: self.handle_heartbeat,
-            MessageType.SYSTEM_STATUS: self.handle_system_status,
-            MessageType.LOG_UPLOAD: self.handle_log_upload,
-            MessageType.SCRIPT_RESULT: self.handle_script_result,
-            MessageType.UPDATE_CHECK: self.handle_update_check,
-            MessageType.UPDATE_DOWNLOAD: self.handle_update_download,
-            MessageType.UPDATE_PROGRESS: self.handle_update_progress,
-            MessageType.UPDATE_COMPLETE: self.handle_update_complete,
-            MessageType.UPDATE_ERROR: self.handle_update_error,
-            MessageType.UPDATE_ROLLBACK: self.handle_update_rollback,
-        }
-
-        if msg_type in handlers:
-            await handlers[msg_type](device_id, json_data)
-        elif msg_type == MessageType.FILE_DATA:
+        if msg_type == MessageType.FILE_DATA:
             request_id = json_data.get("request_id")
             if request_id:
                 await self.unicast_by_request_id(
@@ -290,7 +429,7 @@ class MessageHandler:
                     f"search_keyword='{search_keyword}', 可能原因: 无设备连接或搜索无匹配"
                 )
 
-            response = await self.create_message(
+            response = MessageCodec.encode(
                 MessageType.DEVICE_LIST,
                 {
                     "devices": paged_devices,
@@ -363,7 +502,7 @@ class CloudServer:
     def __init__(self):
         self.file_transfer = FileTransferManager()
         self.conn_mgr = ConnectionManager(self.file_transfer)
-        self.msg_handler = MessageHandler(self.conn_mgr)
+        self.msg_handler = MessageRouter(self.conn_mgr)
         self.socket_handler = SocketHandler(self.conn_mgr, self.msg_handler)
         self.ws_handler = WebSocketHandler(self.conn_mgr, self.msg_handler)
         self.console = InteractiveConsole(self)

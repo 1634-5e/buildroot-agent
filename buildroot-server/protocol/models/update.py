@@ -30,18 +30,6 @@ class UpdateDownload(BaseModel):
     request_id: str = ""
 
 
-class UpdateApprove(BaseModel):
-    status: str = ""
-    download_url: str = ""
-    file_size: int = 0
-    md5_checksum: str = ""
-    sha256_checksum: str = ""
-    request_id: str = ""
-    version: str = ""
-    mandatory: bool = False
-    approval_time: str = ""
-
-
 class UpdateProgress(BaseModel):
     progress: int = 0
     message: str = ""
@@ -66,3 +54,41 @@ class UpdateRollback(BaseModel):
     backup_version: str = ""
     reason: str = ""
     success: bool = True
+
+
+class UpdateRequestApproval(BaseModel):
+    version: str = ""
+    current_version: str = ""
+    file_size: int = 0
+    file_name: str = ""
+    release_notes: str = ""
+    release_date: str = ""
+    changes: List[str] = []
+    request_id: str = ""
+
+
+class UpdateDownloadReady(BaseModel):
+    status: str = ""
+    version: str = ""
+    file_path: str = ""
+    file_size: int = 0
+    md5_checksum: str = ""
+    verified: bool = True
+    request_id: str = ""
+
+
+class UpdateApproveInstall(BaseModel):
+    version: str = ""
+    action: str = ""  # "install_and_restart" or "install_only"
+
+
+class UpdateDeny(BaseModel):
+    action: str = ""  # "download" or "install"
+    reason: str = ""
+
+
+class UpdateApproveDownload(BaseModel):
+    version: str = ""
+    action: str = "download"  # "download" or "download_and_install"
+    approval_time: str = ""
+    request_id: str = ""

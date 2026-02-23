@@ -40,7 +40,6 @@ typedef enum {
 typedef struct {
     const char *server_addr;
     const char *device_id;
-    const char *auth_token;
     const char *log_path;
     const char *script_path;
     int log_level;
@@ -55,7 +54,7 @@ typedef struct {
 #define MAX_MESSAGE_SIZE 65535     /* 最大消息大小 */
 
 /* 更新相关默认配置 */
-#define DEFAULT_UPDATE_CHECK_INTERVAL   86400      /* 24小时 */
+#define DEFAULT_UPDATE_CHECK_INTERVAL   1800       /* 30分钟 */
 #define DEFAULT_UPDATE_CHANNEL          "stable"
 #define DEFAULT_UPDATE_TEMP_PATH       "./tmp"
 #define DEFAULT_UPDATE_BACKUP_PATH     "./backup"
@@ -91,12 +90,16 @@ typedef enum {
     /* 更新管理消息 */
     MSG_TYPE_UPDATE_CHECK         = 0x60,   /* 检查更新请求 */
     MSG_TYPE_UPDATE_INFO          = 0x61,   /* 更新信息响应 */
-    MSG_TYPE_UPDATE_DOWNLOAD      = 0x62,   /* 请求下载更新包 */
+    MSG_TYPE_UPDATE_DOWNLOAD      = 0x62,   /* 请求下载更新包（已废弃） */
     MSG_TYPE_UPDATE_PROGRESS      = 0x63,   /* 上报下载进度 */
-    MSG_TYPE_UPDATE_APPROVE       = 0x64,   /* 服务器批准下载（提供URL）*/
-    MSG_TYPE_UPDATE_COMPLETE       = 0x65,   /* 更新完成通知 */
-    MSG_TYPE_UPDATE_ERROR         = 0x66,   /* 更新错误通知 */
-    MSG_TYPE_UPDATE_ROLLBACK      = 0x67,   /* 回滚通知 */
+    MSG_TYPE_UPDATE_COMPLETE      = 0x65,   /* 更新完成 */
+    MSG_TYPE_UPDATE_ERROR         = 0x66,   /* 更新错误 */
+    MSG_TYPE_UPDATE_ROLLBACK      = 0x67,   /* 更新回滚 */
+    MSG_TYPE_UPDATE_REQUEST_APPROVAL = 0x68,   /* 请求Web批准下载 */
+    MSG_TYPE_UPDATE_DOWNLOAD_READY = 0x69,   /* 下载完成，请求批准安装 */
+    MSG_TYPE_UPDATE_APPROVE_INSTALL = 0x6A,   /* Web批准安装 */
+    MSG_TYPE_UPDATE_DENY          = 0x6B,   /* Web拒绝请求 */
+    MSG_TYPE_UPDATE_APPROVE_DOWNLOAD = 0x6C,   /* Web批准下载（服务器转发）*/
 } msg_type_t;
 
 /* 系统状态结构 */
@@ -124,17 +127,25 @@ typedef struct {
 
 /* 更新状态枚举 */
 typedef enum {
-    UPDATE_STATUS_IDLE             = 0,
-    UPDATE_STATUS_CHECKING         = 1,
-    UPDATE_STATUS_DOWNLOADING       = 2,
-    UPDATE_STATUS_VERIFYING         = 3,
-    UPDATE_STATUS_BACKING_UP        = 4,
-    UPDATE_STATUS_INSTALLING        = 5,
-    UPDATE_STATUS_RESTARTING        = 6,
-    UPDATE_STATUS_COMPLETE         = 7,
-    UPDATE_STATUS_FAILED           = 8,
-    UPDATE_STATUS_ROLLING_BACK      = 9,
+    UPDATE_STATUS_IDLE = 0,
+    UPDATE_STATUS_CHECKING = 1,
+    UPDATE_STATUS_DOWNLOADING = 2,
+    UPDATE_STATUS_VERIFYING = 3,
+    UPDATE_STATUS_BACKING_UP = 4,
+    UPDATE_STATUS_INSTALLING = 5,
+    UPDATE_STATUS_RESTARTING = 6,
+    UPDATE_STATUS_COMPLETE = 7,
+    UPDATE_STATUS_FAILED = 8,
+    UPDATE_STATUS_ROLLING_BACK = 9,
     UPDATE_STATUS_ROLLBACK_COMPLETE = 10,
+    
+    /* 新增状态（用于双批准流程） */
+    UPDATE_STATUS_CHECKED = 100,        /* 已检查到新版本，等待批准 */
+    UPDATE_STATUS_APPROVAL_SENT = 101,  /* 已发送批准请求，等待响应 */
+    UPDATE_STATUS_APPROVED_DOWNLOAD = 102, /* 已批准下载，准备下载 */
+    UPDATE_STATUS_DOWNLOADED = 103,     /* 下载完成，等待安装批准 */
+    UPDATE_STATUS_INSTALL_SENT = 104,    /* 已发送安装批准请求，等待响应 */
+    UPDATE_STATUS_APPROVED_INSTALL = 105,  /* 已批准安装，准备安装 */
 } update_status_t;
 
 /* 更新信息结构 */
@@ -171,6 +182,16 @@ typedef void (*progress_callback_t)(
     void *user_data
 );
 
+/* 下载完成回调函数类型 */
+typedef void (*completion_callback_t)(
+    const char *url,
+    const char *output_path,
+    int64_t file_size,
+    bool success,
+    const char *error_msg,
+    void *user_data
+);
+
 /* HTTP 下载配置 */
 typedef struct {
     char url[512];
@@ -196,14 +217,13 @@ typedef struct {
     int max_retries;                  /* 最大重试次数 */
     progress_callback_t callback;     /* 进度回调函数 */
     void *user_data;                  /* 用户数据指针 */
+    completion_callback_t completion; /* 完成回调函数 */
 } tcp_download_config_t;
 
 /* Agent配置结构 */
 typedef struct {
     char server_addr[256];      /* Socket服务器地址 (host:port) */
     char device_id[64];         /* 设备ID */
-    char version[32];           /* Agent版本 */
-    char auth_token[128];       /* Token（已废弃，保留用于向后兼容） */
     int heartbeat_interval;     /* 心跳间隔 (秒) */
     int reconnect_interval;     /* 重连间隔 (秒) */
     int status_interval;        /* 状态上报间隔 (秒) */
@@ -214,18 +234,15 @@ typedef struct {
     int log_level;              /* 日志级别 */
     bool use_ssl;              /* 是否使用SSL */
     char ca_path[256];         /* CA证书路径 */
-    
-    /* 更新配置 */
     bool enable_auto_update;            /* 是否启用自动更新 */
     int update_check_interval;          /* 检查更新间隔（秒）*/
     char update_channel[32];            /* 更新渠道：stable/beta/dev */
-    bool update_require_confirm;         /* 更新前是否需要确认 */
-    char update_temp_path[256];          /* 临时文件路径 */
+    bool update_require_confirm;        /* 更新前是否需要确认 */
+    char update_temp_path[256];         /* 临时文件路径 */
     char update_backup_path[256];       /* 备份路径 */
     bool update_rollback_on_fail;       /* 失败是否自动回滚 */
-    int update_rollback_timeout;         /* 回滚超时（秒）*/
-    bool update_verify_checksum;         /* 是否校验文件校验和 */
-    char update_ca_cert_path[256];       /* 更新CA证书路径 */
+    int update_rollback_timeout;        /* 回滚超时（秒）*/
+    bool update_verify_checksum;        /* 是否校验文件校验和 */
 } agent_config_t;
 
 /* PTY会话结构 */
@@ -255,6 +272,21 @@ typedef struct {
 
 /* 全局Agent上下文 */
 extern agent_context_t *g_agent_ctx;
+
+/* 批准请求超时（3分钟） */
+#define UPDATE_APPROVAL_TIMEOUT 180
+
+/* 更新相关全局变量 */
+extern update_status_t g_update_status;
+extern pthread_mutex_t g_update_lock;
+extern update_info_t g_update_info;
+/* 更新模式标志，防止信号处理导致提前退出 */
+extern bool g_in_update;
+
+/* 批准请求相关 */
+extern bool g_approval_sent;
+extern char g_current_request_id[64];
+extern char g_downloaded_file_path[512];
 
 /* 平台兼容性定义 */
 #ifndef PRIu64
@@ -357,6 +389,18 @@ void update_restart_agent(void);
 int update_rollback_to_backup(const char *backup_path);
 int update_report_status(agent_context_t *ctx, update_status_t status, const char *message, int progress);
 void download_progress_callback(const char *url, int progress, int64_t downloaded, int64_t total_size, void *user_data);
+
+/* 新增：批准请求相关 */
+int update_send_approval_request(agent_context_t *ctx, update_info_t *info);
+int update_send_download_ready(agent_context_t *ctx, const char *version, 
+                               const char *file_path, int64_t file_size,
+                               const char *md5_checksum);
+int update_handle_approve_install(agent_context_t *ctx, const char *data);
+int update_handle_deny(agent_context_t *ctx, const char *data);
+
+/* 新增：超时检测相关 */
+void start_timeout_checker(agent_context_t *ctx);
+void stop_timeout_checker(void);
 
 /* JSON 解析函数 */
 char *json_get_string(const char *json, const char *key);

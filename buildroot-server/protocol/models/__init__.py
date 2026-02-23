@@ -17,10 +17,14 @@ from .update import (
     UpdateInfo,
     UpdateDownload,
     UpdateProgress,
-    UpdateApprove,
     UpdateComplete,
     UpdateError,
     UpdateRollback,
+    UpdateRequestApproval,
+    UpdateDownloadReady,
+    UpdateApproveInstall,
+    UpdateDeny,
+    UpdateApproveDownload,
 )
 
 __all__ = [
@@ -50,8 +54,12 @@ __all__ = [
     "UpdateInfo",
     "UpdateDownload",
     "UpdateProgress",
-    "UpdateApprove",
     "UpdateComplete",
     "UpdateError",
     "UpdateRollback",
+    "UpdateRequestApproval",
+    "UpdateDownloadReady",
+    "UpdateApproveInstall",
+    "UpdateDeny",
+    "UpdateApproveDownload",
 ]

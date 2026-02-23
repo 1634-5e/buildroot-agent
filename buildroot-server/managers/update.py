@@ -72,7 +72,10 @@ class UpdateManager:
     def _get_release_date(self) -> str:
         """从 YAML 获取发布日期"""
         if self.latest_version_data:
-            return self.latest_version_data.get("releaseDate", "")
+            release_date = self.latest_version_data.get("releaseDate", "")
+            if isinstance(release_date, datetime):
+                return release_date.isoformat()
+            return str(release_date)
         return ""
 
     def _get_package_file_path(self) -> Optional[Path]:
