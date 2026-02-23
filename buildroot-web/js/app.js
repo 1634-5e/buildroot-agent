@@ -994,17 +994,20 @@ function downloadFile(filename, content) {
 
 function initAceEditor() {
     try {
+        // Check if ace is available (window.ace must be defined by ace.js)
+        if (typeof window.ace === 'undefined') {
+            console.error('[Ace Editor] window.ace is undefined. Check if ace.js loaded correctly.');
+            return;
+        }
         const container = document.getElementById('aceEditor');
         if (!container) {
             console.error('[Ace Editor] 找不到容器 #aceEditor');
             return;
         }
 
-        aceEditor = ace.edit("aceEditor");
+        aceEditor = window.ace.edit("aceEditor");
         aceSession = aceEditor.getSession();
-
         aceSession.setUseWorker(false);
-
         aceEditor.setOptions({
             enableBasicAutocompletion: true,
             enableSnippets: true,
@@ -1020,17 +1023,14 @@ function initAceEditor() {
         aceEditor.setTheme("ace/theme/monokai");
 
         aceSession.on("change", handleEditorChange);
-
         aceEditor.selection.on("changeCursor", function() {
             updateAceCursorInfo();
         });
-
         aceEditor.selection.on("changeSelection", function() {
             updateAceCursorInfo();
         });
 
         aceEditor.resize();
-
         aceEditorReady = true;
         console.log('[Ace Editor] 初始化完成');
     } catch (e) {
@@ -1288,7 +1288,7 @@ function cancelEdit() {
 }
 
 function isEditorDirty() {
-    if (!aceEditor || !aceSession) return false;
+    if (!window.ace || !aceEditor || !aceSession) return false;
     const undoManager = aceSession.getUndoManager();
     return !undoManager.isClean();
 }
@@ -2079,9 +2079,26 @@ function handleMessage(type, data) {
 
 document.addEventListener('DOMContentLoaded', () => {
     applySettings();
-    initAceEditor();
+    // Wait for Ace to be available (it uses AMD async loading)
+    if (typeof window.ace === 'undefined') {
+        console.log('[Ace Editor] Waiting for Ace to load...');
+        let aceCheckCount = 0;
+        const aceCheckInterval = setInterval(() => {
+            aceCheckCount++;
+            if (typeof window.ace !== 'undefined') {
+                clearInterval(aceCheckInterval);
+                console.log('[Ace Editor] Ace loaded after', aceCheckCount * 100, 'ms');
+                initAceEditor();
+            } else if (aceCheckCount >= 50) {
+                clearInterval(aceCheckInterval);
+                console.error('[Ace Editor] Timeout waiting for Ace to load');
+            }
+        }, 100);
+    } else {
+        initAceEditor();
+    }
+    
     connectWebSocket();
-
     const filesTab = document.getElementById('tab-files');
     if (filesTab) {
         filesTab.addEventListener('dragover', (e) => {
@@ -2090,14 +2107,12 @@ document.addEventListener('DOMContentLoaded', () => {
             filesTab.style.outline = '2px dashed var(--accent-primary)';
             filesTab.style.outlineOffset = '-4px';
         });
-
         filesTab.addEventListener('dragleave', (e) => {
             e.preventDefault();
             e.stopPropagation();
             filesTab.style.outline = 'none';
         });
     }
-
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
             e.preventDefault();
