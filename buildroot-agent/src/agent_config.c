@@ -44,6 +44,13 @@ void config_set_defaults(agent_config_t *config)
     config->update_rollback_on_fail = true;
     config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
     config->update_verify_checksum = true;
+    
+    /* Ping监控配置 */
+    config->enable_ping = false;
+    config->ping_interval = 60;
+    config->ping_target_count = 0;
+    config->ping_timeout = 5;
+    config->ping_count = 4;
 }
 
 void config_apply_overrides(agent_config_t *config, const config_override_t *overrides)

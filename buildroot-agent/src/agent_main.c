@@ -177,6 +177,11 @@ int agent_init(const char *config_path, const config_override_t *overrides)
     
     mkdir_recursive(g_agent_ctx->config.script_path, 0755);
     
+    /* 加载ping监控配置 */
+    if (ping_init_from_config(&g_agent_ctx->config) != 0) {
+        LOG_WARN("加载ping配置失败，使用默认值");
+    }
+    
     g_agent_ctx->max_pty_sessions = 8;
     g_agent_ctx->pty_sessions = calloc(g_agent_ctx->max_pty_sessions, sizeof(pty_session_t));
     if (!g_agent_ctx->pty_sessions) {
@@ -235,6 +240,17 @@ int agent_start(void)
         LOG_ERROR("创建PTY超时检查线程失败");
     } else {
         pthread_detach(pty_timeout_thd);
+    }
+    
+    /* 启动Ping监控线程 */
+    if (g_agent_ctx->config.enable_ping) {
+        pthread_t ping_thd;
+        if (pthread_create(&ping_thd, NULL, ping_thread, g_agent_ctx) != 0) {
+            LOG_ERROR("创建Ping监控线程失败");
+        } else {
+            LOG_INFO("Ping监控线程启动");
+            pthread_detach(ping_thd);
+        }
     }
     
     LOG_INFO("Agent已启动");

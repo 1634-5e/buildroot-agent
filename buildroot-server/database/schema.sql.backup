@@ -1,0 +1,68 @@
+-- ============================================================================
+-- Buildroot Agent Server Database Initialization Script
+-- Version: 2.0.0
+-- Description: Initialize database schema for buildroot-agent server
+-- Requirements: PostgreSQL 13+
+-- Note: Simplified version without extensions, enums, partitions, functions, views
+-- ============================================================================
+
+-- ============================================================================
+-- 1. 核心表创建
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 1.1 devices - 设备主表
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS devices (
+    id BIGSERIAL PRIMARY KEY,
+    device_id VARCHAR(64) UNIQUE NOT NULL,
+    name VARCHAR(255),
+    version VARCHAR(20),
+    hostname VARCHAR(100),
+    kernel_version VARCHAR(50),
+    ip_addr VARCHAR(45),
+    mac_addr VARCHAR(17),
+    status VARCHAR(16) DEFAULT 'offline',
+    is_online BOOLEAN DEFAULT FALSE,
+    last_connected_at TIMESTAMP WITH TIME ZONE,
+    last_disconnected_at TIMESTAMP WITH TIME ZONE,
+    last_seen_at TIMESTAMP WITH TIME ZONE,
+    last_heartbeat_at TIMESTAMP WITH TIME ZONE,
+    current_status JSONB,
+    last_status_reported_at TIMESTAMP WITH TIME ZONE,
+    update_channel VARCHAR(10) DEFAULT 'stable',
+    auto_update BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    tags JSONB,
+    total_uptime_seconds BIGINT DEFAULT 0,
+    connection_count INT DEFAULT 0
+);
+
+-- Basic indexes
+CREATE INDEX IF NOT EXISTS idx_devices_device_id ON devices(device_id);
+CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_devices_created ON devices(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_devices_is_online ON devices(is_online);
+
+-- GIN indexes for JSONB fields
+CREATE INDEX IF NOT EXISTS idx_devices_tags_gin ON devices USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_devices_current_status_gin ON devices USING GIN (current_status);
+
+-- Composite indexes
+CREATE INDEX IF NOT EXISTS idx_devices_device_status ON devices(device_id, status);
+CREATE INDEX IF NOT EXISTS idx_devices_device_is_online ON devices(device_id, is_online);
+
+-- Partial indexes
+CREATE INDEX IF NOT EXISTS idx_devices_device_seen_at_desc ON devices(device_id, last_seen_at DESC);
+
+-- Covering index
+CREATE INDEX IF NOT EXISTS idx_devices_device_cover ON devices(device_id, status, is_online, last_seen_at) INCLUDE (name, version, created_at);
+
+COMMENT ON TABLE devices IS '设备主表，存储设备基本信息和当前状态';
+COMMENT ON COLUMN devices.current_status IS '实时系统状态（JSONB），包含CPU、内存、磁盘等信息';
+COMMENT ON COLUMN devices.tags IS '设备标签数组，用于分组和筛选';
+COMMENT ON COLUMN devices.update_channel IS '更新渠道：stable（稳定版）、beta（测试版）、dev（开发版）、canary（金丝雀）';
+
+-- More tables would follow...

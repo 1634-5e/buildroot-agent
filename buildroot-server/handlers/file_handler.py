@@ -1,7 +1,9 @@
 import base64
 import logging
 import os
+from datetime import datetime
 
+from database.repositories import FileTransferRepository, AuditLogRepository
 from handlers.base import BaseHandler
 from protocol.constants import MessageType
 from config.settings import settings
@@ -11,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class FileHandler(BaseHandler):
     async def handle_file_download_request(self, device_id: str, data: dict) -> None:
+        """处理文件下载请求"""
         action = data.get("action")
         file_path = data.get("file_path")
         offset = data.get("offset", 0)
@@ -32,6 +35,7 @@ class FileHandler(BaseHandler):
         chunk_size: int,
         request_id: str,
     ) -> None:
+        """处理文件下载"""
         try:
             full_path = os.path.join(settings.updates_dir, os.path.basename(file_path))
 

@@ -12,10 +12,10 @@ from handlers.system_handler import SystemHandler
 from handlers.pty_handler import PtyHandler
 from handlers.file_handler import FileHandler
 from handlers.update_handler import UpdateHandler
+from handlers.ping_handler import PingHandler
 from handlers.command_handler import CommandHandler
 from server.websocket_handler import WebSocketHandler
 from handlers.socket_handler import SocketHandler
-from console.interactive import InteractiveConsole
 from protocol.constants import MessageType
 from protocol.codec import MessageCodec
 from typing import Optional
@@ -34,6 +34,7 @@ class MessageRouter:
         self.pty_handler = PtyHandler(conn_mgr)
         self.file_handler = FileHandler(conn_mgr)
         self.update_handler = UpdateHandler(conn_mgr)
+        self.ping_handler = PingHandler(conn_mgr)
         self.command_handler = CommandHandler(conn_mgr)
 
         self.download_chunks = {}
@@ -293,6 +294,7 @@ class MessageRouter:
             MessageType.UPDATE_REQUEST_APPROVAL: self.handle_update_request_approval,
             MessageType.UPDATE_DOWNLOAD_READY: self.handle_update_download_ready,
             MessageType.UPDATE_APPROVE_INSTALL: self.handle_update_approve_install,
+            MessageType.PING_STATUS: self.ping_handler.handle_ping_status,
             MessageType.UPDATE_DENY: self.handle_update_deny,
             MessageType.UPDATE_APPROVE_DOWNLOAD: self.handle_update_approve_download,
         }
@@ -328,6 +330,7 @@ class MessageRouter:
                     await self.handle_pty_resize(device_id, json_data)
                 elif msg_type == MessageType.PTY_CLOSE:
                     await self.handle_pty_close(device_id, json_data)
+                return
             else:
                 if device_id and self.conn_mgr.is_device_connected(device_id):
                     await self.send_to_device(device_id, msg_type, json_data)
@@ -505,7 +508,6 @@ class CloudServer:
         self.msg_handler = MessageRouter(self.conn_mgr)
         self.socket_handler = SocketHandler(self.conn_mgr, self.msg_handler)
         self.ws_handler = WebSocketHandler(self.conn_mgr, self.msg_handler)
-        self.console = InteractiveConsole(self)
 
     async def run(self) -> None:
         host = settings.host
@@ -527,8 +529,6 @@ class CloudServer:
         socket_server = await asyncio.start_server(
             self.socket_handler.handle_connection, host, socket_port
         )
-
-        asyncio.create_task(self.console.interactive_console())
 
         logger.info("服务器运行中，按 Ctrl+C 停止")
 

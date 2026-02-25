@@ -45,6 +45,11 @@ let processMemTotal = 1;
 let monitorRefreshInterval = null;
 let isMonitorAutoRefreshEnabled = false;
 let downloadChunks = {};
+    // Ping Monitor State
+    let pingTargets = [];
+    let pingResults = {};
+    let isPingAutoRefreshEnabled = true;
+    let pingRefreshInterval = null;
 
 // Clean up expired chunk data periodically
 setInterval(() => {
@@ -1529,6 +1534,49 @@ function confirmFileSave(force) {
 
 function updateSystemStatus(data) {
     console.log('Updating system status:', data);
+    
+    // Update status timestamp display
+    if (data.status_timestamp) {
+        const timeEl = safeGetElement('metricStatusTime');
+        if (timeEl) {
+            const timestamp = new Date(data.status_timestamp);
+            const now = new Date();
+            const diffMs = now - timestamp;
+            const diffSecs = Math.floor(diffMs / 1000);
+            
+            // Format relative time
+            let relativeTime;
+            if (diffSecs < 60) {
+                relativeTime = `刚刚 (${diffSecs}秒前)`;
+            } else if (diffSecs < 3600) {
+                relativeTime = `${Math.floor(diffSecs / 60)}分钟前`;
+            } else if (diffSecs < 86400) {
+                relativeTime = `${Math.floor(diffSecs / 3600)}小时前`;
+            } else {
+                relativeTime = `${Math.floor(diffSecs / 86400)}天前`;
+            }
+            
+            // Format absolute time
+            const absoluteTime = timestamp.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            timeEl.textContent = `${absoluteTime} | ${relativeTime}`;
+            timeEl.title = `数据更新时间: ${new Date(data.status_timestamp).toLocaleString('zh-CN')}`;
+            
+            // Add visual indicator for stale data
+            if (diffSecs > 300) { // 5 minutes
+                timeEl.style.color = 'var(--accent-warning)';
+            } else {
+                timeEl.style.color = 'var(--text-muted)';
+            }
+        }
+    }
+    
 
     if (currentDevice && data.device_id === currentDevice.device_id) {
         renderDeviceList();
@@ -1792,9 +1840,20 @@ function refreshSystemStatus() {
     });
 }
 
+function refreshPingStatus() {
+    if (!currentDevice) return;
+    sendMessage(MSG_TYPES.CMD_REQUEST, {
+        cmd: 'ping',
+        request_id: 'ping-' + Date.now()
+    });
+}
+
 function handleCommandResponse(data) {
     if (data.request_id?.startsWith('status')) {
         updateSystemStatus(data);
+    } else if (data.request_id?.startsWith('ping')) {
+        handlePingStatus(data);
+    } else if (data.output) {
     } else if (data.output) {
         appendTerminalOutput(data.output + '\n');
     }
@@ -1989,6 +2048,9 @@ function handleMessage(type, data) {
         case MSG_TYPES.SYSTEM_STATUS:
             updateSystemStatus(data);
             break;
+        case MSG_TYPES.PING_STATUS:
+            handlePingStatus(data);
+            break;
         case MSG_TYPES.PTY_DATA:
             handleTerminalData(data);
             break;
@@ -2155,4 +2217,163 @@ function closeKeyboardShortcuts() {
     if (modal) {
         modal.style.display = 'none';
     }
+}
+
+// ============================================
+// Ping Monitor Functions
+// ============================================
+
+function handlePingStatus(data) {
+    const timestamp = data.timestamp || Date.now();
+    const results = data.results || [];
+
+    pingResults = {};
+    results.forEach(result => {
+        pingResults[result.ip] = result;
+    });
+
+    renderPingResults();
+    updatePingStatusTime(timestamp);
+}
+
+function updatePingStatusTime(timestamp) {
+    const timeEl = document.getElementById('pingStatusTime');
+    if (timeEl) {
+        const date = new Date(timestamp);
+        timeEl.textContent = date.toLocaleTimeString();
+    }
+}
+
+function renderPingResults() {
+    const grid = document.getElementById('pingResultsGrid');
+    if (!grid) return;
+
+    const ips = Object.keys(pingResults);
+
+    if (ips.length === 0) {
+        grid.innerHTML = `
+            <div class="ping-empty">
+                <div class="ping-empty-icon">📡</div>
+                <div class="ping-empty-text">等待Ping数据</div>
+                <div class="ping-empty-hint">Ping监控将显示各目标IP的网络连通性</div>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    ips.forEach(ip => {
+        const result = pingResults[ip];
+        const statusIcon = getStatusIcon(result.status);
+        const statusClass = getStatusClass(result.status);
+        const statusText = getStatusText(result.status);
+
+        html += `
+            <div class="ping-result-card">
+                <div class="ping-result-header">
+                    <span class="ping-result-ip">${ip}</span>
+                    <span class="ping-result-status ${statusClass}">${statusIcon} ${statusText}</span>
+                </div>
+                <div class="ping-result-details">
+                    <div class="ping-result-detail">
+                        <span class="ping-detail-label">平均延迟</span>
+                        <span class="ping-detail-value">${result.avg_time.toFixed(2)} ms</span>
+                    </div>
+                    <div class="ping-result-detail">
+                        <span class="ping-detail-label">最小/最大</span>
+                        <span class="ping-detail-value">${result.min_time.toFixed(2)} / ${result.max_time.toFixed(2)} ms</span>
+                    </div>
+                    <div class="ping-result-detail">
+                        <span class="ping-detail-label">丢包率</span>
+                        <span class="ping-detail-value">${result.packet_loss.toFixed(1)}%</span>
+                    </div>
+                    <div class="ping-result-detail">
+                        <span class="ping-detail-label">收发</span>
+                        <span class="ping-detail-value">${result.packets_received} / ${result.packets_sent}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    grid.innerHTML = html;
+}
+
+function getStatusIcon(status) {
+    switch(status) {
+        case 1: return '✅';
+        case 2: return '❌';
+        case 3: return '⏱️';
+        default: return '❓';
+    }
+}
+
+function getStatusClass(status) {
+    switch(status) {
+        case 1: return 'status-reachable';
+        case 2: return 'status-unreachable';
+        case 3: return 'status-timeout';
+        default: return 'status-unknown';
+    }
+}
+
+function getStatusText(status) {
+    switch(status) {
+        case 1: return '可达';
+        case 2: return '不可达';
+        case 3: return '超时';
+        default: return '未知';
+    }
+}
+
+function showPingConfig() {
+    const modal = document.getElementById('pingConfigModal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function closePingConfig() {
+    const modal = document.getElementById('pingConfigModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function savePingConfig() {
+    const enable = document.getElementById('pingConfigEnable').checked;
+    const interval = parseInt(document.getElementById('pingConfigInterval').value);
+    const timeout = parseInt(document.getElementById('pingConfigTimeout').value);
+    const count = parseInt(document.getElementById('pingConfigCount').value);
+    const targetsText = document.getElementById('pingConfigTargets').value;
+
+    const targets = targetsText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+
+    const config = {
+        enable_ping: enable,
+        ping_interval: interval,
+        ping_timeout: timeout,
+        ping_count: count,
+        ping_targets: targets
+    };
+
+    const settings = loadSettings();
+    settings.pingConfig = config;
+    saveSettings(settings);
+
+    closePingConfig();
+    showToast('Ping配置已保存', 'success');
+}
+
+function togglePingAutoRefresh() {
+    isPingAutoRefreshEnabled = !isPingAutoRefreshEnabled;
+    
+    const btn = document.getElementById('pingAutoRefreshBtn');
+    if (btn) {
+        btn.textContent = isPingAutoRefreshEnabled ? '⏸️ 暂停刷新' : '▶️ 自动刷新';
+    }
+    
+    showToast(isPingAutoRefreshEnabled ? 'Ping自动刷新已开启' : 'Ping自动刷新已暂停', 'info');
 }

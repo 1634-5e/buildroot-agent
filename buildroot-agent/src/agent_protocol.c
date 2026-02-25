@@ -1063,6 +1063,15 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
             }
             free(json);
             LOG_INFO("系统状态已上报");
+    } else if (strcmp(cmd, "ping") == 0) {
+        /* 查询ping状态 */
+        LOG_INFO("收到ping查询命令");
+        if (ctx->config.enable_ping && ctx->config.ping_target_count > 0) {
+            ping_execute_all(ctx);
+        } else {
+            LOG_INFO("Ping监控未启用");
+        }
+    } else if (strcmp(cmd, "system_status") == 0) {
         }
     } else if (strcmp(cmd, "system_status") == 0) {
         /* 前端发送的 system_status 命令，同 status */

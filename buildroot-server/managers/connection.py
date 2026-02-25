@@ -8,6 +8,8 @@ from websockets.server import WebSocketServerProtocol
 
 from models.file_transfer import FileTransferSession
 
+from database.repositories import WebConsoleSessionRepository, AuditLogRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,6 +67,14 @@ class ConnectionManager:
         }
         logger.info(f"Web控制台连接: console_id={console_id}")
 
+        # 数据库操作：记录 Web 控制台连接（异步）
+        asyncio.create_task(WebConsoleSessionRepository.insert(
+            console_id=console_id,
+            device_id=None,
+            remote_addr=self._get_remote_address(websocket, "websocket"),
+        ))
+        logger.debug(f"[DB] Web控制台会话已记录: console_id={console_id}")
+
     def remove_console(
         self, websocket: WebSocketServerProtocol
     ) -> tuple[Optional[str], Set[int]]:
@@ -81,6 +91,15 @@ class ConnectionManager:
         logger.info(
             f"Web控制台断开: console_id={console_id}, device_id={device_id}, sessions={session_ids}"
         )
+
+        # 数据库操作：更新 Web 控制台断开（异步）
+        asyncio.create_task(WebConsoleSessionRepository.update_closed(
+            console_id=console_id,
+            disconnected_at=datetime.now(),
+            is_active=False,
+        ))
+        logger.debug(f"[DB] Web控制台会话已关闭: console_id={console_id}")
+
         return device_id, session_ids
 
     def set_console_device(

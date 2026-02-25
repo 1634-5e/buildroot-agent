@@ -100,6 +100,8 @@ typedef enum {
     MSG_TYPE_UPDATE_APPROVE_INSTALL = 0x6A,   /* Web批准安装 */
     MSG_TYPE_UPDATE_DENY          = 0x6B,   /* Web拒绝请求 */
     MSG_TYPE_UPDATE_APPROVE_DOWNLOAD = 0x6C,   /* Web批准下载（服务器转发）*/
+    /* Ping监控消息 */
+    MSG_TYPE_PING_STATUS = 0x70,       /* Ping状态上报 */
 } msg_type_t;
 
 /* 系统状态结构 */
@@ -220,6 +222,45 @@ typedef struct {
     completion_callback_t completion; /* 完成回调函数 */
 } tcp_download_config_t;
 
+/* Ping结果状态 */
+typedef enum {
+    PING_STATUS_UNKNOWN = 0,      /* 未知状态 */
+    PING_STATUS_REACHABLE = 1,     /* 可达 */
+    PING_STATUS_UNREACHABLE = 2,   /* 不可达 */
+    PING_STATUS_TIMEOUT = 3         /* 超时 */
+} ping_result_status_t;
+
+/* Ping目标配置 */
+typedef struct {
+    char ip[64];                /* 目标IP地址 */
+    char name[64];               /* 目标名称（可选） */
+    int interval;                /* Ping间隔（秒） */
+    int timeout;                /* Ping超时（秒） */
+    int count;                  /* 每次ping的包数量 */
+} ping_target_t;
+
+/* Ping结果数据 */
+typedef struct {
+    char ip[64];                /* 目标IP地址 */
+    int status;                 /* 状态：0=未知, 1=可达, 2=不可达, 3=超时 */
+    float avg_time;              /* 平均延迟（毫秒） */
+    float min_time;              /* 最小延迟（毫秒） */
+    float max_time;              /* 最大延迟（毫秒） */
+    float packet_loss;            /* 丢包率（百分比） */
+    int packets_sent;            /* 发送包数 */
+    int packets_received;        /* 接收包数 */
+    uint64_t timestamp;          /* 时间戳（毫秒） */
+} ping_result_t;
+
+/* Ping状态消息 */
+typedef struct {
+    ping_result_t results[16];    /* Ping结果数组（最多16个目标） */
+    int result_count;             /* 结果数量 */
+    uint64_t timestamp;          /* 上报时间戳（毫秒） */
+} ping_status_t;
+
+
+
 /* Agent配置结构 */
 typedef struct {
     char server_addr[256];      /* Socket服务器地址 (host:port) */
@@ -243,6 +284,13 @@ typedef struct {
     bool update_rollback_on_fail;       /* 失败是否自动回滚 */
     int update_rollback_timeout;        /* 回滚超时（秒）*/
     bool update_verify_checksum;        /* 是否校验文件校验和 */
+    /* Ping监控配置 */
+    bool enable_ping;                    /* 是否启用ping监控 */
+    int ping_interval;                  /* Ping上报间隔（秒）*/
+    ping_target_t ping_targets[16];       /* Ping目标列表（最多16个） */
+    int ping_target_count;               /* Ping目标数量 */
+    int ping_timeout;                   /* Ping超时（秒，默认5）*/
+    int ping_count;                    /* 每次ping的包数量（默认4）*/
 } agent_config_t;
 
 /* PTY会话结构 */
@@ -341,6 +389,14 @@ int script_save(const char *script_id, const char *content, const char *path);
 int script_execute(agent_context_t *ctx, const char *script_id, const char *script_path);
 int script_execute_inline(agent_context_t *ctx, const char *script_id, const char *content);
 int script_list(agent_context_t *ctx);
+
+/* agent_ping.c */
+int ping_execute(const char *ip, int timeout, int count, ping_result_t *result);
+int ping_execute_all(agent_context_t *ctx);
+char *ping_status_to_json(ping_status_t *status);
+void *ping_thread(void *arg);
+int ping_init_from_config(agent_config_t *config);
+int ping_save_config(agent_config_t *config, const char *path);
 
 /* agent_pty.c */
 int pty_list_sessions(agent_context_t *ctx);

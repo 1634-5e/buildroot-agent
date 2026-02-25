@@ -24,6 +24,7 @@ const MSG_TYPES = {
     // Update messages
     UPDATE_CHECK: 0x60,
     UPDATE_INFO: 0x61,
+    UPDATE_DOWNLOAD: 0x62,
     UPDATE_PROGRESS: 0x63,
     UPDATE_COMPLETE: 0x65,
     UPDATE_ERROR: 0x66,
@@ -32,7 +33,9 @@ const MSG_TYPES = {
     UPDATE_DOWNLOAD_READY: 0x69,
     UPDATE_APPROVE_INSTALL: 0x6A,
     UPDATE_DENY: 0x6B,
-    UPDATE_APPROVE_DOWNLOAD: 0x6C
+    UPDATE_APPROVE_DOWNLOAD: 0x6C,
+    // Ping messages
+    PING_STATUS: 0x70
 };
 
 const MONITOR_REFRESH_INTERVAL = 5000; // 5 seconds - balance between performance and real-time

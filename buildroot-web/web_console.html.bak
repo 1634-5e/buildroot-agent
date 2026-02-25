@@ -1880,7 +1880,12 @@
                     <!-- Monitor Tab -->
                     <div class="tab-pane" id="tab-monitor">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 12px 16px; background: var(--bg-secondary); border-radius: var(--radius-lg); border: 1px solid var(--border-color);">
-                            <div style="font-size: 14px; font-weight: 600;">📊 系统监控</div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="font-size: 14px; font-weight: 600;">📊 系统监控</div>
+                                <div id="metricStatusTime" style="font-size: 12px; color: var(--text-muted); background: var(--bg-tertiary); padding: 4px 10px; border-radius: var(--radius-sm);" title="数据更新时间">
+                                    --
+                                </div>
+                            </div>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-sm" id="autoRefreshBtn" onclick="toggleMonitorAutoRefresh()">⏸️ 暂停刷新</button>
                                 <button class="btn btn-sm" onclick="refreshSystemStatus()">🔄 立即刷新</button>
@@ -4846,12 +4851,52 @@
             });
             showToast('开始下载...', 'info');
         }
-
         // ============================================
         // System Status - Enhanced
         // ============================================
         function updateSystemStatus(data) {
             console.log('Updating system status:', data);
+            
+            // Update status timestamp display
+            if (data.status_timestamp) {
+                const timeEl = safeGetElement('metricStatusTime');
+                if (timeEl) {
+                    const timestamp = new Date(data.status_timestamp);
+                    const now = new Date();
+                    const diffMs = now - timestamp;
+                    const diffSecs = Math.floor(diffMs / 1000);
+                    
+                    // Format relative time
+                    let relativeTime;
+                    if (diffSecs < 60) {
+                        relativeTime = `刚刚 (${diffSecs}秒前)`;
+                    } else if (diffSecs < 3600) {
+                        relativeTime = `${Math.floor(diffSecs / 60)}分钟前`;
+                    } else if (diffSecs < 86400) {
+                        relativeTime = `${Math.floor(diffSecs / 3600)}小时前`;
+                    } else {
+                        relativeTime = `${Math.floor(diffSecs / 86400)}天前`;
+                    }
+                    
+                    // Format absolute time
+                    const absoluteTime = timestamp.toLocaleString('zh-CN', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    
+                    timeEl.textContent = `${absoluteTime} | ${relativeTime}`;
+                    timeEl.title = `数据更新时间: ${new Date(data.status_timestamp).toLocaleString('zh-CN')}`;
+                    
+                    // Add visual indicator for stale data
+                    if (diffSecs > 300) { // 5 minutes
+                        timeEl.style.color = 'var(--accent-warning)';
+                    } else {
+                        timeEl.style.color = 'var(--text-muted)';
+                    }
+                }
             
             // Update device card
             if (currentDevice && data.device_id === currentDevice.device_id) {
