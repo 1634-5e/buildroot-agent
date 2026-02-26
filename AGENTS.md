@@ -26,14 +26,16 @@ Guidelines for agentic coding assistants working on this buildroot-agent reposit
 
 ### C/CMake (buildroot-agent)
 ```bash
-cd buildroot-agent && cmake -B build -DCMAKE_BUILD_TYPE=Release -DSTATIC_LINK=ON
-cmake --build build                                    # Output: build/bin/buildroot-agent
+cd buildroot-agent && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DSTATIC_LINK=ON
+make                                                    # Output: bin/buildroot-agent
 
 ./scripts/build.sh                                    # 本地编译 (x86_64)
 ./scripts/build.sh --cross                            # 交叉编译 (arm)
 ./scripts/release.sh                                  # 发布构建+打包
 rm -rf build                                          # 清理
 ```
+
+**Note:** cmake 2.8.12 不支持 `-B` 参数，需使用 `mkdir -p build && cd build && cmake ..` 方式
 
 **Options:** `-DCMAKE_BUILD_TYPE=Debug`, `-DSTATIC_LINK=ON`, `-DCMAKE_TOOLCHAIN_FILE=cmake/arm-buildroot.cmake`
 

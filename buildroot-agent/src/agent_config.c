@@ -397,6 +397,7 @@ int config_save_example(agent_config_t *config, const char *path)
 {
     FILE *fp;
     int i;
+    const char *level_str;
     
     if (!config || !path) return -1;
     
@@ -415,79 +416,98 @@ int config_save_example(agent_config_t *config, const char *path)
         return -1;
     }
     
-    fprintf(fp, "# Buildroot Agent Configuration (YAML)\n");
+    fprintf(fp, "# Buildroot Agent Configuration (libconfig)\n");
     fprintf(fp, "# \n");
     fprintf(fp, "# 使用说明：\n");
-    fprintf(fp, "# 1. 复制此文件为 agent.yaml: cp agent.yaml.example agent.yaml\n");
-    fprintf(fp, "# 2. 根据实际情况修改配置项\n");
-    fprintf(fp, "# 3. 运行 agent: ./buildroot-agent -c ./agent.yaml\n");
+    fprintf(fp, "# 1. 根据实际情况修改配置项\n");
+    fprintf(fp, "# 2. 运行 agent: ./buildroot-agent -c ./agent.cfg\n");
     fprintf(fp, "# \n");
     fprintf(fp, "# 此文件由程序自动生成，请勿手动编辑默认值\n");
     fprintf(fp, "# 修改默认值请编辑 include/agent.h 中的 DEFAULT_* 宏定义\n");
     
     fprintf(fp, "server:\n");
-    fprintf(fp, "  addr: \"%s\"\n", config->server_addr);
-    fprintf(fp, "  use_ssl: %s\n", config->use_ssl ? "true" : "false");
-    fprintf(fp, "  ca_path: \"%s\"\n", config->ca_path);
+    fprintf(fp, "{\n");
+    fprintf(fp, "    addr = \"%s\"\n", config->server_addr);
+    fprintf(fp, "    use_ssl = %s\n", config->use_ssl ? "true" : "false");
+    fprintf(fp, "    ca_path = \"%s\"\n", config->ca_path);
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\ndevice:\n");
-    fprintf(fp, "  id: \"%s\"\n", config->device_id);
+    fprintf(fp, "{\n");
+    fprintf(fp, "    id = \"%s\"\n", config->device_id);
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\nconnection:\n");
-    fprintf(fp, "  heartbeat_interval: %d\n", config->heartbeat_interval);
-    fprintf(fp, "  reconnect_interval: %d\n", config->reconnect_interval);
-    fprintf(fp, "  status_interval: %d\n", config->status_interval);
+    fprintf(fp, "{\n");
+    fprintf(fp, "    heartbeat_interval = %d\n", config->heartbeat_interval);
+    fprintf(fp, "    reconnect_interval = %d\n", config->reconnect_interval);
+    fprintf(fp, "    status_interval = %d\n", config->status_interval);
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\npaths:\n");
-    fprintf(fp, "  log: \"%s\"\n", config->log_path);
-    fprintf(fp, "  script: \"%s\"\n", config->script_path);
-    fprintf(fp, "  update_temp: \"%s\"\n", config->update_temp_path);
-    fprintf(fp, "  update_backup: \"%s\"\n", config->update_backup_path);
+    fprintf(fp, "{\n");
+    fprintf(fp, "    log = \"%s\"\n", config->log_path);
+    fprintf(fp, "    script = \"%s\"\n", config->script_path);
+    fprintf(fp, "    update_temp = \"%s\"\n", config->update_temp_path);
+    fprintf(fp, "    update_backup = \"%s\"\n", config->update_backup_path);
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\nfeatures:\n");
-    fprintf(fp, "  pty: %s\n", config->enable_pty ? "true" : "false");
-    fprintf(fp, "  script: %s\n", config->enable_script ? "true" : "false");
-    fprintf(fp, "  auto_update: %s\n", config->enable_auto_update ? "true" : "false");
+    fprintf(fp, "{\n");
+    fprintf(fp, "    pty = %s\n", config->enable_pty ? "true" : "false");
+    fprintf(fp, "    script = %s\n", config->enable_script ? "true" : "false");
+    fprintf(fp, "    auto_update = %s\n", config->enable_auto_update ? "true" : "false");
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\nupdate:\n");
-    fprintf(fp, "  check_interval: %d\n", config->update_check_interval);
-    fprintf(fp, "  channel: \"%s\"\n", config->update_channel);
-    fprintf(fp, "  require_confirm: %s\n", config->update_require_confirm ? "true" : "false");
-    fprintf(fp, "  rollback_on_fail: %s\n", config->update_rollback_on_fail ? "true" : "false");
-    fprintf(fp, "  rollback_timeout: %d\n", config->update_rollback_timeout);
-    fprintf(fp, "  verify_checksum: %s\n", config->update_verify_checksum ? "true" : "false");
+    fprintf(fp, "{\n");
+    fprintf(fp, "    check_interval = %d\n", config->update_check_interval);
+    fprintf(fp, "    channel = \"%s\"\n", config->update_channel);
+    fprintf(fp, "    require_confirm = %s\n", config->update_require_confirm ? "true" : "false");
+    fprintf(fp, "    rollback_on_fail = %s\n", config->update_rollback_on_fail ? "true" : "false");
+    fprintf(fp, "    rollback_timeout = %d\n", config->update_rollback_timeout);
+    fprintf(fp, "    verify_checksum = %s\n", config->update_verify_checksum ? "true" : "false");
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\nping:\n");
-    fprintf(fp, "  enable: %s\n", config->enable_ping ? "true" : "false");
-    fprintf(fp, "  interval: %d\n", config->ping_interval);
-    fprintf(fp, "  timeout: %d\n", config->ping_timeout);
-    fprintf(fp, "  count: %d\n", config->ping_count);
+    fprintf(fp, "{\n");
+    fprintf(fp, "    enable = %s\n", config->enable_ping ? "true" : "false");
+    fprintf(fp, "    interval = %d\n", config->ping_interval);
+    fprintf(fp, "    timeout = %d\n", config->ping_timeout);
+    fprintf(fp, "    count = %d\n", config->ping_count);
     
     if (config->ping_target_count > 0) {
-        fprintf(fp, "  targets:\n");
+        fprintf(fp, "    targets = (\n");
         for (i = 0; i < config->ping_target_count; i++) {
-            fprintf(fp, "    - ip: \"%s\"\n", config->ping_targets[i].ip);
+            fprintf(fp, "        {\n");
+            fprintf(fp, "            ip = \"%s\"\n", config->ping_targets[i].ip);
             if (config->ping_targets[i].name[0] != '\0') {
-                fprintf(fp, "      name: \"%s\"\n", config->ping_targets[i].name);
+                fprintf(fp, "            name = \"%s\"\n", config->ping_targets[i].name);
             }
+            fprintf(fp, "        }\n");
         }
+        fprintf(fp, "    )\n");
     }
+    fprintf(fp, "}\n");
     
     fprintf(fp, "\nlogging:\n");
-    const char *level_str = "info";
+    fprintf(fp, "{\n");
+    level_str = "info";
     switch (config->log_level) {
         case LOG_LEVEL_DEBUG: level_str = "debug"; break;
         case LOG_LEVEL_INFO: level_str = "info"; break;
         case LOG_LEVEL_WARN: level_str = "warn"; break;
         case LOG_LEVEL_ERROR: level_str = "error"; break;
     }
-    fprintf(fp, "  level: \"%s\"\n", level_str);
+    fprintf(fp, "    level = \"%s\"\n", level_str);
+    fprintf(fp, "}\n");
     
     fclose(fp);
     
     LOG_INFO("配置示例文件已保存: %s", path);
     return 0;
 }
+
 
 void config_print(agent_config_t *config)
 {

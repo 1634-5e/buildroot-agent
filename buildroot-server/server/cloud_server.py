@@ -105,59 +105,10 @@ class MessageRouter:
         target_console_id: Optional[str] = None,
         target_device_id: Optional[str] = None,
     ) -> None:
-        """广播消息到Web控制台"""
-        if not self.conn_mgr.web_consoles:
-            return
-
-        try:
-            message = MessageCodec.encode(msg_type, data)
-            to_remove = []
-
-            for console in list(self.conn_mgr.web_consoles):
-                try:
-                    if hasattr(console, "state") and console.state.name != "OPEN":
-                        logger.debug("Web控制台连接未开启，移除连接")
-                        to_remove.append(console)
-                        continue
-
-                    console_info = self.conn_mgr.get_console_info(console)
-                    if not console_info:
-                        to_remove.append(console)
-                        continue
-
-                    if (
-                        target_console_id
-                        and console_info.get("console_id") != target_console_id
-                    ):
-                        continue
-
-                    if (
-                        target_device_id
-                        and console_info.get("device_id") is not None
-                        and console_info.get("device_id") != target_device_id
-                    ):
-                        continue
-
-                    if hasattr(console, "send") and callable(
-                        getattr(console, "send", None)
-                    ):
-                        await console.send(message)
-                    else:
-                        logger.warning("Web控制台没有send方法")
-                        to_remove.append(console)
-                except websockets.exceptions.ConnectionClosed as e:
-                    logger.warning(
-                        f"Web控制台连接已关闭: code={e.code}, reason={e.reason}"
-                    )
-                    to_remove.append(console)
-                except Exception as e:
-                    logger.warning(f"向web控制台发送失败: {e}")
-                    to_remove.append(console)
-
-            for console in to_remove:
-                self.conn_mgr.remove_console(console)
-        except Exception as e:
-            logger.error(f"发送消息失败: {e}")
+        """广播消息到Web控制台 - 复用 BaseHandler 实现"""
+        return await self.register_handler.broadcast_to_web_consoles(
+            msg_type, data, target_console_id, target_device_id
+        )
 
     async def handle_auth(self, websocket, data: dict) -> bool:
         return await self.register_handler.handle_auth(websocket, data)

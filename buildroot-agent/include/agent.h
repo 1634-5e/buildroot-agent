@@ -27,7 +27,7 @@
 #define DEFAULT_RECONNECT_SEC   5
 #define DEFAULT_LOG_PATH        "./log"
 #define DEFAULT_SCRIPT_PATH     "./scripts"
-#define DEFAULT_CONFIG_PATH     "./agent.yaml"
+#define DEFAULT_CONFIG_PATH     "./agent.cfg"
 
 /* 配置加载结果 */
 typedef enum {

@@ -207,7 +207,13 @@ class WebSocketHandler:
                             else:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
                         continue  # Skip the normal forwarding logic
-                    if device_id:
+                    # 服务端本地处理的消息类型，不转发给 Agent
+                    SERVER_HANDLED_TYPES = (
+                        MessageType.DEVICE_LIST,
+                        MessageType.DEVICE_DISCONNECT,
+                    )
+
+                    if device_id and msg_type not in SERVER_HANDLED_TYPES:
                         logger.info(
                             f"Web控制台消息 [0x{msg_type:02X}] 转发到设备: {device_id}"
                         )
@@ -219,50 +225,52 @@ class WebSocketHandler:
                             logger.info(f"消息已转发到设备 {device_id}")
                         else:
                             logger.warning(f"转发消息到设备失败: {device_id}")
-                    else:
-                        if msg_type == MessageType.DEVICE_LIST:
-                            page = json_data.get("page", 0)
-                            page_size = json_data.get("page_size", 20)
-                            search_keyword = json_data.get("search_keyword", "").lower()
-                            sort_by = json_data.get("sort_by", "device_id")
-                            sort_order = json_data.get("sort_order", "asc")
+                        return
 
-                            all_devices = self.conn_mgr.get_all_devices()
+                    # 服务端本地处理的消息
+                    if msg_type == MessageType.DEVICE_LIST:
+                        page = json_data.get("page", 0)
+                        page_size = json_data.get("page_size", 20)
+                        search_keyword = json_data.get("search_keyword", "").lower()
+                        sort_by = json_data.get("sort_by", "device_id")
+                        sort_order = json_data.get("sort_order", "asc")
 
-                            filtered_devices = all_devices
-                            if search_keyword:
-                                filtered_devices = [
-                                    d
-                                    for d in all_devices
-                                    if search_keyword in d.get("device_id", "").lower()
-                                ]
+                        all_devices = self.conn_mgr.get_all_devices()
 
-                            if sort_by:
-                                reverse = sort_order.lower() == "desc"
-                                filtered_devices.sort(
-                                    key=lambda x: x.get(sort_by, ""),
-                                    reverse=reverse,
-                                )
+                        filtered_devices = all_devices
+                        if search_keyword:
+                            filtered_devices = [
+                                d
+                                for d in all_devices
+                                if search_keyword in d.get("device_id", "").lower()
+                            ]
 
-                            total_count = len(filtered_devices)
-                            start_index = page * page_size
-                            end_index = start_index + page_size
-                            paged_devices = filtered_devices[start_index:end_index]
-
-                            response = MessageCodec.encode(
-                                MessageType.DEVICE_LIST,
-                                {
-                                    "devices": paged_devices,
-                                    "total_count": total_count,
-                                    "page": page,
-                                    "page_size": page_size,
-                                },
+                        if sort_by:
+                            reverse = sort_order.lower() == "desc"
+                            filtered_devices.sort(
+                                key=lambda x: x.get(sort_by, ""),
+                                reverse=reverse,
                             )
-                            if hasattr(websocket, "send") and callable(
-                                getattr(websocket, "send", None)
-                            ):
-                                await websocket.send(response)
-                                logger.info("设备列表已发送到web控制台")
+
+                        total_count = len(filtered_devices)
+                        start_index = page * page_size
+                        end_index = start_index + page_size
+                        paged_devices = filtered_devices[start_index:end_index]
+
+                        response = MessageCodec.encode(
+                            MessageType.DEVICE_LIST,
+                            {
+                                "devices": paged_devices,
+                                "total_count": total_count,
+                                "page": page,
+                                "page_size": page_size,
+                            },
+                        )
+                        if hasattr(websocket, "send") and callable(
+                            getattr(websocket, "send", None)
+                        ):
+                            await websocket.send(response)
+                            logger.info("设备列表已发送到web控制台")
                 except Exception as e:
                     logger.error(f"Web控制台消息处理失败: {e}")
 

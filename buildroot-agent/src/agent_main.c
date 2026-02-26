@@ -141,12 +141,11 @@ int agent_init(const char *config_path, const config_override_t *overrides)
     if (!conf_path) {
         char *exe_dir = get_exe_dir();
         if (exe_dir) {
-            snprintf(default_conf_path, sizeof(default_conf_path), 
-                     "%s/agent.yaml", exe_dir);
-            free(exe_dir);
+            snprintf(default_conf_path, sizeof(default_conf_path),
+                     "%s/agent.cfg", exe_dir);
             conf_path = default_conf_path;
         } else {
-            conf_path = "agent.yaml";
+            conf_path = "agent.cfg";
         }
     }
     
@@ -331,8 +330,7 @@ static void print_help(const char *prog)
     printf("Buildroot Agent v%s\n\n", AGENT_VERSION);
     printf("用法: %s [选项]\n\n", prog);
     printf("选项:\n");
-    printf("  -c, --config <path>   指定配置文件路径 (默认: <exe_dir>/agent.yaml)\n");
-    printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
+    printf("  -c, --config <path>   指定配置文件路径 (默认: <exe_dir>/agent.cfg)\n");
 
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
@@ -342,10 +340,8 @@ static void print_help(const char *prog)
     printf("  -V, --version         显示版本信息\n");
     printf("\n");
     printf("示例:\n");
-    printf("  %s -c /etc/agent.yaml -d\n", prog);
-    printf("  %s -s 192.168.1.100:8766\n", prog);
-    printf("  %s -g -e -c agent.yaml.example\n", prog);
-    printf("\n");
+    printf("  %s -c /etc/agent.cfg -d\n", prog);
+    printf("  %s -g -e -c agent.cfg.example\n", prog);
 }
 
 /* 打印版本 */

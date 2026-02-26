@@ -5,41 +5,53 @@ MODE="${1:-local}"
 # 构建和安装
 ./scripts/build.sh "$MODE"
 cmake --build build --target release
-    
-    # 获取版本号
-    VERSION=$(cat VERSION)
 
-    # 从 CHANGELOG.md 提取指定版本的发布说明
-    extract_release_notes() {
-        local version=$1
-        local changelog_file="CHANGELOG.md"
-        
-        # 检查 CHANGELOG.md 是否存在
-        if [ ! -f "$changelog_file" ]; then
-            echo " - No changelog available for version ${version}"
-            return
-        fi
-        
-        # 提取版本章节内容，并添加缩进
-        awk -v ver="$version" '
-            BEGIN { in_section = 0; found = 0; next }
-            /^## \['"$version"'\]/ { in_section = 1; found = 0; next }
-            /^## \[/ { if (in_section) exit }
-            {
-                # 保留缩进，过滤空行
-                if (length($0) > 0) {
-                    # 为每一行添加 2 个空格缩进，YAML 格式要求
-                    print "  " $0
-                }
+# 获取版本号
+VERSION=$(cat VERSION)
+
+# 从 CHANGELOG.md 提取指定版本的发布说明
+extract_release_notes() {
+    local version=$1
+    local changelog_file="CHANGELOG.md"
+
+    # 检查 CHANGELOG.md 是否存在
+    if [ ! -f "$changelog_file" ]; then
+        echo " - No changelog available for version ${version}"
+        return
+    fi
+
+    # 提取版本章节内容，并添加缩进
+    awk -v ver="$version" '
+        BEGIN { in_section = 0; found = 0; next }
+        /^## \['"$version"'\]/ { in_section = 1; found = 0; next }
+        /^## \[/ { if (in_section) exit }
+        {
+            # 保留缩进，过滤空行
+            if (length($0) > 0) {
+                # 为每一行添加 2 个空格缩进，YAML 格式要求
+                print "  " $0
             }
-        ' "$changelog_file"
+        }
+    ' "$changelog_file"
 }
 
 # 安装到临时目录（第一阶段）
 TEMP_INSTALL=$(pwd)/build/temp-install
 rm -rf "$TEMP_INSTALL"
-cmake --install build --prefix "$TEMP_INSTALL"
 
+# cmake 2.8.x 不支持 --install，使用 make install DESTDIR 方式
+CMAKE_VERSION=$(cmake --version | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+CMAKE_MAJOR=$(echo "$CMAKE_VERSION" | cut -d. -f1)
+
+if [ "$CMAKE_MAJOR" -lt 3 ]; then
+    # cmake < 3.15: 使用 make install DESTDIR
+    cd build
+    make install DESTDIR="$TEMP_INSTALL"
+    cd ..
+else
+    # cmake >= 3.15: 使用 cmake --install
+    cmake --install build --prefix "$TEMP_INSTALL"
+fi
 # 创建最终的打包目录结构（不带版本号）
 INSTALL_DIR=$(pwd)/build/install-package
 rm -rf "$INSTALL_DIR"
@@ -72,23 +84,20 @@ if [ -z "$RELEASE_NOTES" ]; then
 fi
 
 # 生成 latest.yml
-    LATEST_YAML=$(pwd)/build/latest.yml
-    RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-    
-  cat > "$LATEST_YAML" <<EOF
+LATEST_YAML=$(pwd)/build/latest.yml
+RELEASE_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+
+cat > "$LATEST_YAML" <<EOF
 version: $VERSION
-build_time: $BUILD_TIME
+build_time: $RELEASE_DATE
 files:
   - url: $PACKAGE_NAME
     sha512: $SHA512
     size: $SIZE
-    path: $PACKAGE_NAME
-    sha512: $SHA512
-    size: $SIZE
     releaseDate: $RELEASE_DATE
     releaseNotes: |-
-  $RELEASE_NOTES
-  EOF
+$RELEASE_NOTES
+EOF
 
 # 输出信息
 echo "========================================"

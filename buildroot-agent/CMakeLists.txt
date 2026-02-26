@@ -24,12 +24,12 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_GNU_SOURCE -std=gnu99")
 add_definitions(-DAGENT_VERSION="${PROJECT_VERSION}")
 
-include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/third_party/libyaml/include)
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/third_party/libconfig/lib)
 
-add_subdirectory(third_party/libyaml)
-# Exclude agent_http.c since we've replaced it with TCP download
+add_subdirectory(third_party/libconfig)
+# Exclude agent_http.c and agent_yaml.c (replaced by agent_config_file.c)
 file(GLOB SOURCES "${PROJECT_SOURCE_DIR}/src/*.c")
-list(REMOVE_ITEM SOURCES "${PROJECT_SOURCE_DIR}/src/agent_http.c")
+list(REMOVE_ITEM SOURCES "${PROJECT_SOURCE_DIR}/src/agent_http.c" "${PROJECT_SOURCE_DIR}/src/agent_yaml.c")
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -38,14 +38,14 @@ endif()
 
 if(STATIC_LINK)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc")
-    target_link_libraries(${PROJECT_NAME} pthread util dl yaml)
+    target_link_libraries(${PROJECT_NAME} pthread util dl config)
     message(STATUS "Using static linking")
 else()
     target_link_libraries(${PROJECT_NAME} 
         pthread 
         util 
         dl
-        yaml
+        config
     )
     message(STATUS "Using dynamic linking")
 endif()
@@ -56,8 +56,7 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 # 安装配置文件示例
-install(FILES agent.yaml
-    DESTINATION .
+install(FILES agent.cfg
     DESTINATION .
 )
 
@@ -85,17 +84,20 @@ add_custom_target(release
 )
 
 # Generate config example (auto-regenerate when agent.h changes)
-add_custom_command(
-    OUTPUT ${CMAKE_SOURCE_DIR}/agent.yaml
-    COMMAND $<TARGET_FILE:${PROJECT_NAME}> -g -e -c ${CMAKE_SOURCE_DIR}/agent.yaml
-    DEPENDS ${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/include/agent.h
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Generating agent.yaml"
-)
+# Skip for cross-compiling since ARM binary cannot run on host
+if(NOT CMAKE_CROSSCOMPILING)
+    add_custom_command(
+        OUTPUT ${CMAKE_SOURCE_DIR}/agent.cfg
+        COMMAND $<TARGET_FILE:${PROJECT_NAME}> -g -e -c ${CMAKE_SOURCE_DIR}/agent.cfg
+        DEPENDS ${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/include/agent.h
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating agent.cfg"
+    )
 
-add_custom_target(config-example ALL
-    DEPENDS ${CMAKE_SOURCE_DIR}/agent.yaml
-)
+    add_custom_target(config-example ALL
+        DEPENDS ${CMAKE_SOURCE_DIR}/agent.cfg
+    )
+endif()
 
 # 打包规则 - 使用 TAR（不压缩）
 set(CPACK_PACKAGE_NAME "buildroot-agent")

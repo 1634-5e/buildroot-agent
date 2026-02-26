@@ -1,6 +1,0 @@
-ping:
-  enable: true
-  interval: 60
-  targets:
-    - ip: "192.168.0.249"
-      name: "test"

@@ -1,8 +1,10 @@
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_CROSSCOMPILING TRUE)
+set(CMAKE_SYSTEM_PROCESSOR arm)
 
-set(TOOLCHAIN_PATH "/path/to/buildroot/host/usr")
-set(SYSROOT_PATH "/path/to/buildroot/output/host/usr/arm-buildroot-linux-uclibcgnueabi/sysroot")
+set(TOOLCHAIN_PATH "/buildroot/os-files/output/host/usr")
+set(SYSROOT_PATH "${TOOLCHAIN_PATH}/arm-buildroot-linux-uclibcgnueabi/sysroot")
 
 set(CMAKE_C_COMPILER "${TOOLCHAIN_PATH}/bin/arm-buildroot-linux-uclibcgnueabi-gcc")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PATH}/bin/arm-buildroot-linux-uclibcgnueabi-g++")
