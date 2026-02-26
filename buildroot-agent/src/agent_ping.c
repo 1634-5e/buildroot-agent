@@ -212,6 +212,7 @@ int ping_execute_all(agent_context_t *ctx)
 
     for (i = 0; i < ctx->config.ping_target_count && i < 16; i++) {
         const ping_target_t *target = &ctx->config.ping_targets[i];
+        LOG_INFO("[DEBUG] target[%d]: ip='%s', name='%s'", i, target->ip, target->name);
         int timeout = target->timeout > 0 ? target->timeout : ctx->config.ping_timeout;
         int count = target->count > 0 ? target->count : ctx->config.ping_count;
 
@@ -315,12 +316,13 @@ int ping_init_from_config(agent_config_t *config)
     if (!config) {
         return -1;
     }
-
-    config->enable_ping = false;
-    config->ping_interval = 60;
-    config->ping_target_count = 0;
-    config->ping_timeout = 5;
-    config->ping_count = 4;
+    // 不再重置配置，使用YAML已解析的值
+    // 不再重置配置，使用YAML已解析的值
+    // 不再重置配置，使用YAML已解析的值
+    // 不再重置配置，使用YAML已解析的值
+    // 不再重置配置，使用YAML已解析的值
+    // config->ping_timeout = 5;
+    // config->ping_count = 4;
 
     snprintf(path, sizeof(path), "%s/ping.conf", config->script_path);
     fp = fopen(path, "r");

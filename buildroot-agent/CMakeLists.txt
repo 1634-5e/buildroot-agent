@@ -24,8 +24,9 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_GNU_SOURCE -std=gnu99")
 add_definitions(-DAGENT_VERSION="${PROJECT_VERSION}")
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/third_party/libyaml/include)
 
+add_subdirectory(third_party/libyaml)
 # Exclude agent_http.c since we've replaced it with TCP download
 file(GLOB SOURCES "${PROJECT_SOURCE_DIR}/src/*.c")
 list(REMOVE_ITEM SOURCES "${PROJECT_SOURCE_DIR}/src/agent_http.c")
@@ -37,13 +38,14 @@ endif()
 
 if(STATIC_LINK)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc")
-    target_link_libraries(${PROJECT_NAME} pthread util dl)
+    target_link_libraries(${PROJECT_NAME} pthread util dl yaml)
     message(STATUS "Using static linking")
 else()
     target_link_libraries(${PROJECT_NAME} 
         pthread 
         util 
         dl
+        yaml
     )
     message(STATUS "Using dynamic linking")
 endif()
@@ -54,7 +56,8 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 # 安装配置文件示例
-install(FILES agent.conf.example
+install(FILES agent.yaml
+    DESTINATION .
     DESTINATION .
 )
 
@@ -83,15 +86,15 @@ add_custom_target(release
 
 # Generate config example (auto-regenerate when agent.h changes)
 add_custom_command(
-    OUTPUT ${CMAKE_SOURCE_DIR}/agent.conf.example
-    COMMAND $<TARGET_FILE:${PROJECT_NAME}> -g -e -c ${CMAKE_SOURCE_DIR}/agent.conf.example
+    OUTPUT ${CMAKE_SOURCE_DIR}/agent.yaml
+    COMMAND $<TARGET_FILE:${PROJECT_NAME}> -g -e -c ${CMAKE_SOURCE_DIR}/agent.yaml
     DEPENDS ${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/include/agent.h
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Generating agent.conf.example"
+    COMMENT "Generating agent.yaml"
 )
 
 add_custom_target(config-example ALL
-    DEPENDS ${CMAKE_SOURCE_DIR}/agent.conf.example
+    DEPENDS ${CMAKE_SOURCE_DIR}/agent.yaml
 )
 
 # 打包规则 - 使用 TAR（不压缩）

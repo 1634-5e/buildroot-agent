@@ -2326,47 +2326,6 @@ function getStatusText(status) {
     }
 }
 
-function showPingConfig() {
-    const modal = document.getElementById('pingConfigModal');
-    if (modal) {
-        modal.style.display = 'flex';
-    }
-}
-
-function closePingConfig() {
-    const modal = document.getElementById('pingConfigModal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
-}
-
-function savePingConfig() {
-    const enable = document.getElementById('pingConfigEnable').checked;
-    const interval = parseInt(document.getElementById('pingConfigInterval').value);
-    const timeout = parseInt(document.getElementById('pingConfigTimeout').value);
-    const count = parseInt(document.getElementById('pingConfigCount').value);
-    const targetsText = document.getElementById('pingConfigTargets').value;
-
-    const targets = targetsText.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-    const config = {
-        enable_ping: enable,
-        ping_interval: interval,
-        ping_timeout: timeout,
-        ping_count: count,
-        ping_targets: targets
-    };
-
-    const settings = loadSettings();
-    settings.pingConfig = config;
-    saveSettings(settings);
-
-    closePingConfig();
-    showToast('Ping配置已保存', 'success');
-}
-
 function togglePingAutoRefresh() {
     isPingAutoRefreshEnabled = !isPingAutoRefreshEnabled;
     
@@ -2377,3 +2336,5 @@ function togglePingAutoRefresh() {
     
     showToast(isPingAutoRefreshEnabled ? 'Ping自动刷新已开启' : 'Ping自动刷新已暂停', 'info');
 }
+
+

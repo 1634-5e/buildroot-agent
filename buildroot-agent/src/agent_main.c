@@ -150,7 +150,7 @@ int agent_init(const char *config_path, const config_override_t *overrides)
         }
     }
     
-    config_load_result_t result = config_load(&g_agent_ctx->config, conf_path);
+    config_load_result_t result = config_load_yaml(&g_agent_ctx->config, conf_path);
     if (result == CONFIG_LOAD_NOT_FOUND) {
         LOG_WARN("配置文件不存在，使用默认配置: %s", conf_path);
     } else if (result == CONFIG_LOAD_PARSE_ERROR) {

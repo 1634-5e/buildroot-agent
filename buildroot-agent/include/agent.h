@@ -27,7 +27,7 @@
 #define DEFAULT_RECONNECT_SEC   5
 #define DEFAULT_LOG_PATH        "./log"
 #define DEFAULT_SCRIPT_PATH     "./scripts"
-#define DEFAULT_CONFIG_PATH     "./agent.conf"
+#define DEFAULT_CONFIG_PATH     "./agent.yaml"
 
 /* 配置加载结果 */
 typedef enum {
@@ -352,7 +352,6 @@ void agent_cleanup(void);
 /* agent_config.c */
 config_load_result_t config_load(agent_config_t *config, const char *path);
 int config_save(agent_config_t *config, const char *path);
-int config_save_example(agent_config_t *config, const char *path);
 void config_set_defaults(agent_config_t *config);
 void config_apply_overrides(agent_config_t *config, const config_override_t *overrides);
 void config_load_from_env(agent_config_t *config);

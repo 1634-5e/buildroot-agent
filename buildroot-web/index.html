@@ -7,7 +7,8 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Buildroot Agent 控制台 v2.1</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Local Fonts -->
+    <link rel="stylesheet" href="./public/jetbrains-mono.css">
     <!-- xterm.js -->
     <link rel="stylesheet" href="./public/xterm.min.css">
     <script src="./public/xterm.min.js"></script>
@@ -373,7 +374,6 @@
                                 </div>
                                 <div style="display: flex; gap: 8px;">
                                     <button class="btn btn-sm" id="pingAutoRefreshBtn" onclick="togglePingAutoRefresh()">⏸️ 暂停刷新</button>
-                                    <button class="btn btn-sm" onclick="showPingConfig()">⚙️ 配置目标</button>
                                 </div>
                             </div>
                             <div class="ping-results-grid" id="pingResultsGrid">
@@ -512,46 +512,6 @@
             </div>
         </div>
     </div>
-
-    
-    <!-- Ping Config Modal -->
-    <div class="modal-overlay" id="pingConfigModal" style="display:none;">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-title">📡 Ping监控配置</div>
-                <button class="modal-close" onclick="closePingConfig()">×</button>
-            </div>
-            <div class="modal-body">
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">启用Ping监控</label>
-                    <input type="checkbox" id="pingConfigEnable" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">Ping上报间隔 (秒)</label>
-                    <input type="number" id="pingConfigInterval" min="10" max="300" value="60"
-                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
-                </div>
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">默认Ping超时 (秒)</label>
-                    <input type="number" id="pingConfigTimeout" min="1" max="30" value="5"
-                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">每次Ping包数</label>
-                    <input type="number" id="pingConfigCount" min="1" max="10" value="4"
-                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
-                </div>
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">Ping目标列表 (每行一个IP地址)</label>
-                    <textarea id="pingConfigTargets" rows="6" placeholder="例如：\n192.168.1.1\n192.168.1.2\n192.168.1.254"
-                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none; font-family: 'JetBrains Mono', monospace; resize: vertical;"></textarea>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closePingConfig()">取消</button>
-                <button class="btn btn-primary" onclick="savePingConfig()">💾 保存配置</button>
-            </div>
-        </div>
 
     <!-- Keyboard Shortcuts Modal -->
     <div class="modal-overlay" id="keyboardShortcutsModal" style="display:none;" onclick="if(event.target===this)closeKeyboardShortcuts()">

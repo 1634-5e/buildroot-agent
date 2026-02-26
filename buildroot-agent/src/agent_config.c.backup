@@ -1,0 +1,227 @@
+/*
+ * 配置管理模块
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include "agent.h"
+
+static void set_string_field(char *dest, size_t dest_size, const char *value)
+{
+    if (value && dest && dest_size > 0) {
+        strncpy(dest, value, dest_size - 1);
+        dest[dest_size - 1] = '\0';
+    }
+}
+
+void config_set_defaults(agent_config_t *config)
+{
+    if (!config) return;
+    
+    memset(config, 0, sizeof(agent_config_t));
+    
+    set_string_field(config->server_addr, sizeof(config->server_addr), DEFAULT_SERVER_ADDR);
+    set_string_field(config->log_path, sizeof(config->log_path), DEFAULT_LOG_PATH);
+    set_string_field(config->script_path, sizeof(config->script_path), DEFAULT_SCRIPT_PATH);
+    
+    config->heartbeat_interval = DEFAULT_HEARTBEAT_SEC;
+    config->reconnect_interval = DEFAULT_RECONNECT_SEC;
+    config->status_interval = 60;
+    config->enable_pty = true;
+    config->enable_script = true;
+    config->log_level = LOG_LEVEL_INFO;
+    
+    config->enable_auto_update = false;
+    config->update_check_interval = DEFAULT_UPDATE_CHECK_INTERVAL;
+    set_string_field(config->update_channel, sizeof(config->update_channel), DEFAULT_UPDATE_CHANNEL);
+    config->update_require_confirm = true;
+    set_string_field(config->update_temp_path, sizeof(config->update_temp_path), DEFAULT_UPDATE_TEMP_PATH);
+    set_string_field(config->update_backup_path, sizeof(config->update_backup_path), DEFAULT_UPDATE_BACKUP_PATH);
+    config->update_rollback_on_fail = true;
+    config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
+    config->update_verify_checksum = true;
+    
+    config->enable_ping = true;
+    config->ping_interval = 60;
+    config->ping_target_count = 2;
+    config->ping_timeout = 5;
+    config->ping_count = 4;
+    
+    /* 设置默认ping targets */
+    strncpy(config->ping_targets[0].ip, "192.168.0.249", sizeof(config->ping_targets[0].ip));
+    strncpy(config->ping_targets[0].name, "服务器1", sizeof(config->ping_targets[0].name));
+    strncpy(config->ping_targets[1].ip, "192.168.195.200", sizeof(config->ping_targets[1].ip));
+    strncpy(config->ping_targets[1].name, "服务器2", sizeof(config->ping_targets[1].name));
+}
+
+void config_apply_overrides(agent_config_t *config, const config_override_t *overrides)
+{
+    if (!config || !overrides) return;
+    
+    if (overrides->server_addr) {
+        set_string_field(config->server_addr, sizeof(config->server_addr), overrides->server_addr);
+    }
+    if (overrides->device_id) {
+        set_string_field(config->device_id, sizeof(config->device_id), overrides->device_id);
+    }
+    if (overrides->log_path) {
+        set_string_field(config->log_path, sizeof(config->log_path), overrides->log_path);
+    }
+    if (overrides->script_path) {
+        set_string_field(config->script_path, sizeof(config->script_path), overrides->script_path);
+    }
+    if (overrides->log_level_set) {
+        config->log_level = overrides->log_level;
+    }
+    if (overrides->use_ssl_set) {
+        config->use_ssl = overrides->use_ssl;
+    }
+    if (overrides->ca_path) {
+        set_string_field(config->ca_path, sizeof(config->ca_path), overrides->ca_path);
+    }
+}
+
+void config_load_from_env(agent_config_t *config)
+{
+    if (!config) return;
+    
+    const char *val;
+    
+    val = getenv("BUILDROOT_SERVER_ADDR");
+    if (val) {
+        set_string_field(config->server_addr, sizeof(config->server_addr), val);
+    }
+    
+    val = getenv("BUILDROOT_DEVICE_ID");
+    if (val) {
+        set_string_field(config->log_path, sizeof(config->log_path), val);
+    }
+    
+    val = getenv("BUILDROOT_SCRIPT_PATH");
+    if (val) {
+        set_string_field(config->script_path, sizeof(config->script_path), val);
+    }
+    
+    val = getenv("BUILDROOT_LOG_LEVEL");
+    if (val) {
+        if (strcmp(val, "debug") == 0) config->log_level = LOG_LEVEL_DEBUG;
+        else if (strcmp(val, "info") == 0) config->log_level = LOG_LEVEL_INFO;
+        else if (strcmp(val, "warn") == 0) config->log_level = LOG_LEVEL_WARN;
+        else if (strcmp(val, "error") == 0) config->log_level = LOG_LEVEL_ERROR;
+        else config->log_level = atoi(val);
+    }
+    
+    val = getenv("BUILDROOT_USE_SSL");
+    if (val) {
+        config->use_ssl = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0);
+    }
+    
+    val = getenv("BUILDROOT_CA_PATH");
+    if (val) {
+        set_string_field(config->ca_path, sizeof(config->ca_path), val);
+    }
+    
+    val = getenv("BUILDROOT_HEARTBEAT_INTERVAL");
+    if (val) {
+        int interval = atoi(val);
+        if (interval > 0) config->heartbeat_interval = interval;
+    }
+    
+    val = getenv("BUILDROOT_RECONNECT_INTERVAL");
+    if (val) {
+        int interval = atoi(val);
+        if (interval > 0) config->reconnect_interval = interval;
+    }
+    
+    val = getenv("BUILDROOT_STATUS_INTERVAL");
+    if (val) {
+        int interval = atoi(val);
+        if (interval > 0) config->status_interval = interval;
+    }
+    
+    val = getenv("BUILDROOT_ENABLE_AUTO_UPDATE");
+    if (val) {
+        config->enable_auto_update = (strcmp(val, "true") == 0 || strcmp(val, "1") == 0);
+    }
+    
+    val = getenv("BUILDROOT_UPDATE_CHANNEL");
+    if (val) {
+        set_string_field(config->update_channel, sizeof(config->update_channel), val);
+    }
+}
+
+int config_validate(agent_config_t *config)
+{
+    if (!config) return -1;
+    
+    if (config->heartbeat_interval <= 0) {
+        config->heartbeat_interval = DEFAULT_HEARTBEAT_SEC;
+    }
+    if (config->reconnect_interval <= 0) {
+        config->reconnect_interval = DEFAULT_RECONNECT_SEC;
+    }
+    if (config->status_interval <= 0) {
+        config->status_interval = 60;
+    }
+    if (config->update_check_interval <= 0) {
+        config->update_check_interval = DEFAULT_UPDATE_CHECK_INTERVAL;
+    }
+    if (config->update_rollback_timeout <= 0) {
+        config->update_rollback_timeout = DEFAULT_UPDATE_ROLLBACK_TIMEOUT;
+    }
+    
+    if (config->log_level < LOG_LEVEL_DEBUG || config->log_level > LOG_LEVEL_ERROR) {
+        config->log_level = LOG_LEVEL_INFO;
+    }
+    
+    if (config->server_addr[0] == '\0') {
+        set_string_field(config->server_addr, sizeof(config->server_addr), DEFAULT_SERVER_ADDR);
+    }
+    
+    if (config->device_id[0] == '\0') {
+        char *device_id = get_device_id();
+        if (device_id) {
+            set_string_field(config->device_id, sizeof(config->device_id), device_id);
+        }
+    }
+    
+    return 0;
+}
+
+int config_save(agent_config_t *config, const char *path)
+{
+    if (!config || !path) return -1;
+    
+    return config_save_yaml(config, path);
+}
+
+void config_print(agent_config_t *config)
+{
+    if (!config) return;
+    
+    LOG_INFO("========== 当前配置 ==========");
+    LOG_INFO("服务器地址: %s", config->server_addr);
+    LOG_INFO("设备ID: %s", config->device_id);
+    LOG_INFO("心跳间隔: %d秒", config->heartbeat_interval);
+    LOG_INFO("重连间隔: %d秒", config->reconnect_interval);
+    LOG_INFO("状态上报间隔: %d秒", config->status_interval);
+    LOG_INFO("日志目录: %s", config->log_path);
+    LOG_INFO("脚本目录: %s", config->script_path);
+    LOG_INFO("PTY功能: %s", config->enable_pty ? "启用" : "禁用");
+    LOG_INFO("脚本执行: %s", config->enable_script ? "启用" : "禁用");
+    LOG_INFO("SSL加密: %s", config->use_ssl ? "启用" : "禁用");
+    if (config->use_ssl && config->ca_path[0] != '\0') {
+        LOG_INFO("CA证书: %s", config->ca_path);
+    }
+    printf("[CONFIG] enable_ping=%d, ping_target_count=%d\n", config->enable_ping, config->ping_target_count);
+    LOG_INFO("自动更新: %s", config->enable_auto_update ? "启用" : "禁用");
+    LOG_INFO("Ping监控: %s", config->enable_ping ? "启用" : "禁用");
+    if (config->enable_ping && config->ping_target_count > 0) {
+        LOG_INFO("Ping目标数: %d", config->ping_target_count);
+    }
+    LOG_INFO("==============================");
+}

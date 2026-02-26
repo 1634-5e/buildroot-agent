@@ -1,0 +1,51 @@
+# Buildroot Agent Configuration (YAML)
+# 
+# 使用说明：
+# 1. 根据实际情况修改配置项
+# 2. 运行 agent: ./buildroot-agent -c ./agent.yaml
+# 
+server:
+  addr: "127.0.0.1:8766"
+  use_ssl: false
+  ca_path: ""
+
+device:
+  id: ""
+
+connection:
+  heartbeat_interval: 30
+  reconnect_interval: 5
+  status_interval: 60
+
+paths:
+  log: "./log"
+  script: "./scripts"
+  update_temp: "./tmp"
+  update_backup: "./backup"
+
+features:
+  pty: true
+  script: true
+  auto_update: false
+
+update:
+  check_interval: 1800
+  channel: "stable"
+  require_confirm: true
+  rollback_on_fail: true
+  rollback_timeout: 300
+  verify_checksum: true
+
+ping:
+  enable: true
+  interval: 60
+  timeout: 5
+  count: 4
+  targets:
+    - ip: "192.168.0.249"
+      name: "服务器1"
+    - ip: "192.168.195.200"
+      name: "服务器2"
+
+logging:
+  level: "info"
