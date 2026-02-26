@@ -357,6 +357,7 @@ void config_apply_overrides(agent_config_t *config, const config_override_t *ove
 void config_load_from_env(agent_config_t *config);
 int config_validate(agent_config_t *config);
 void config_print(agent_config_t *config);
+int config_save_example(agent_config_t *config, const char *path);
 
 /* agent_socket.c */
 int socket_connect(agent_context_t *ctx);

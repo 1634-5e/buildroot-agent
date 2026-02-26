@@ -309,88 +309,10 @@ void *ping_thread(void *arg)
 
 int ping_init_from_config(agent_config_t *config)
 {
-    FILE *fp;
-    char path[512];
-    char line[512];
-
+    /* Ping配置已由YAML解析完成，此函数保留为兼容接口 */
     if (!config) {
         return -1;
     }
-    // 不再重置配置，使用YAML已解析的值
-    // 不再重置配置，使用YAML已解析的值
-    // 不再重置配置，使用YAML已解析的值
-    // 不再重置配置，使用YAML已解析的值
-    // 不再重置配置，使用YAML已解析的值
-    // config->ping_timeout = 5;
-    // config->ping_count = 4;
-
-    snprintf(path, sizeof(path), "%s/ping.conf", config->script_path);
-    fp = fopen(path, "r");
-    if (!fp) {
-        LOG_INFO("未找到ping配置文件，使用默认值");
-        return 0;
-    }
-
-    while (fgets(line, sizeof(line), fp)) {
-        char *p = str_trim(line);
-
-        if (p[0] == '#' || p[0] == '\0') {
-            continue;
-        }
-
-        if (strncmp(p, "enable=", 7) == 0) {
-            config->enable_ping = (strcmp(p + 7, "true") == 0 ||
-                              strcmp(p + 7, "1") == 0 ||
-                              strcmp(p + 7, "yes") == 0);
-        } else if (strncmp(p, "interval=", 9) == 0) {
-            config->ping_interval = atoi(p + 9);
-        } else if (strncmp(p, "timeout=", 8) == 0) {
-            config->ping_timeout = atoi(p + 8);
-        } else if (strncmp(p, "count=", 6) == 0) {
-            config->ping_count = atoi(p + 6);
-        } else if (strncmp(p, "target=", 7) == 0) {
-            char *ip = p + 7;
-            char *name = strchr(ip, ',');
-            char *interval = NULL;
-
-            if (config->ping_target_count >= 16) {
-                LOG_WARN("Ping目标数量已达上限(16)");
-                break;
-            }
-
-            ping_target_t *target = &config->ping_targets[config->ping_target_count];
-            memset(target, 0, sizeof(ping_target_t));
-
-            if (name) {
-                *name = '\0';
-                name++;
-
-                interval = strchr(name, ',');
-                if (interval) {
-                    *interval = '\0';
-                    interval++;
-                    target->interval = atoi(interval);
-                } else {
-                    target->interval = 0;
-                }
-
-                strncpy(target->name, name, sizeof(target->name) - 1);
-            } else {
-                target->name[0] = '\0';
-                target->interval = 0;
-            }
-
-            strncpy(target->ip, ip, sizeof(target->ip) - 1);
-            target->timeout = 0;
-            target->count = 0;
-
-            config->ping_target_count++;
-            LOG_INFO("添加ping目标: %s", target->ip);
-        }
-    }
-
-    fclose(fp);
-    LOG_INFO("已加载%d个ping目标", config->ping_target_count);
     return 0;
 }
 

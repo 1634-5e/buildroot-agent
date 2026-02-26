@@ -564,10 +564,10 @@ void update_restart_agent(void)
     char config_file[512] = {0};
     char *exe_dir = get_exe_dir();
     if (exe_dir) {
-        snprintf(config_file, sizeof(config_file), "%s/agent.conf", exe_dir);
+        snprintf(config_file, sizeof(config_file), "%s/agent.yaml", exe_dir);
         free(exe_dir);
     } else {
-        strcpy(config_file, "agent.conf");
+        strcpy(config_file, "agent.yaml");
     }
     
     /* 获取二进制路径 */

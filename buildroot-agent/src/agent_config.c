@@ -395,6 +395,9 @@ int config_save(agent_config_t *config, const char *path)
 
 int config_save_example(agent_config_t *config, const char *path)
 {
+    FILE *fp;
+    int i;
+    
     if (!config || !path) return -1;
     
     char dir[256];
@@ -406,66 +409,71 @@ int config_save_example(agent_config_t *config, const char *path)
         mkdir_recursive(dir, 0755);
     }
     
-    FILE *fp = fopen(path, "w");
+    fp = fopen(path, "w");
     if (!fp) {
         LOG_ERROR("无法创建配置文件: %s (%s)", path, strerror(errno));
         return -1;
     }
     
-    fprintf(fp, "# Buildroot Agent Configuration\n");
+    fprintf(fp, "# Buildroot Agent Configuration (YAML)\n");
     fprintf(fp, "# \n");
     fprintf(fp, "# 使用说明：\n");
-    fprintf(fp, "# 1. 复制此文件为 agent.conf: cp agent.conf.example agent.conf\n");
+    fprintf(fp, "# 1. 复制此文件为 agent.yaml: cp agent.yaml.example agent.yaml\n");
     fprintf(fp, "# 2. 根据实际情况修改配置项\n");
-    fprintf(fp, "# 3. 运行 agent: ./buildroot-agent -c ./agent.conf\n");
+    fprintf(fp, "# 3. 运行 agent: ./buildroot-agent -c ./agent.yaml\n");
     fprintf(fp, "# \n");
     fprintf(fp, "# 此文件由程序自动生成，请勿手动编辑默认值\n");
-    fprintf(fp, "# 修改默认值请编辑 include/agent.h 中的 DEFAULT_* 宏定义\n\n");
+    fprintf(fp, "# 修改默认值请编辑 include/agent.h 中的 DEFAULT_* 宏定义\n");
     
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# 基础配置\n");
-    fprintf(fp, "# ========================================\n\n");
+    fprintf(fp, "server:\n");
+    fprintf(fp, "  addr: \"%s\"\n", config->server_addr);
+    fprintf(fp, "  use_ssl: %s\n", config->use_ssl ? "true" : "false");
+    fprintf(fp, "  ca_path: \"%s\"\n", config->ca_path);
     
-    fprintf(fp, "# 服务器地址 (host:port)\n");
-    fprintf(fp, "server_addr = \"%s\"\n\n", config->server_addr);
+    fprintf(fp, "\ndevice:\n");
+    fprintf(fp, "  id: \"%s\"\n", config->device_id);
     
-    fprintf(fp, "# 设备ID (唯一标识，留空则自动生成)\n");
-    fprintf(fp, "device_id = \"%s\"\n\n", config->device_id);
+    fprintf(fp, "\nconnection:\n");
+    fprintf(fp, "  heartbeat_interval: %d\n", config->heartbeat_interval);
+    fprintf(fp, "  reconnect_interval: %d\n", config->reconnect_interval);
+    fprintf(fp, "  status_interval: %d\n", config->status_interval);
     
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# 连接配置\n");
-    fprintf(fp, "# ========================================\n\n");
+    fprintf(fp, "\npaths:\n");
+    fprintf(fp, "  log: \"%s\"\n", config->log_path);
+    fprintf(fp, "  script: \"%s\"\n", config->script_path);
+    fprintf(fp, "  update_temp: \"%s\"\n", config->update_temp_path);
+    fprintf(fp, "  update_backup: \"%s\"\n", config->update_backup_path);
     
-    fprintf(fp, "# 心跳间隔 (秒)\n");
-    fprintf(fp, "heartbeat_interval = %d\n\n", config->heartbeat_interval);
+    fprintf(fp, "\nfeatures:\n");
+    fprintf(fp, "  pty: %s\n", config->enable_pty ? "true" : "false");
+    fprintf(fp, "  script: %s\n", config->enable_script ? "true" : "false");
+    fprintf(fp, "  auto_update: %s\n", config->enable_auto_update ? "true" : "false");
     
-    fprintf(fp, "# 重连间隔 (秒)\n");
-    fprintf(fp, "reconnect_interval = %d\n\n", config->reconnect_interval);
+    fprintf(fp, "\nupdate:\n");
+    fprintf(fp, "  check_interval: %d\n", config->update_check_interval);
+    fprintf(fp, "  channel: \"%s\"\n", config->update_channel);
+    fprintf(fp, "  require_confirm: %s\n", config->update_require_confirm ? "true" : "false");
+    fprintf(fp, "  rollback_on_fail: %s\n", config->update_rollback_on_fail ? "true" : "false");
+    fprintf(fp, "  rollback_timeout: %d\n", config->update_rollback_timeout);
+    fprintf(fp, "  verify_checksum: %s\n", config->update_verify_checksum ? "true" : "false");
     
-    fprintf(fp, "# 状态上报间隔 (秒)\n");
-    fprintf(fp, "status_interval = %d\n\n", config->status_interval);
+    fprintf(fp, "\nping:\n");
+    fprintf(fp, "  enable: %s\n", config->enable_ping ? "true" : "false");
+    fprintf(fp, "  interval: %d\n", config->ping_interval);
+    fprintf(fp, "  timeout: %d\n", config->ping_timeout);
+    fprintf(fp, "  count: %d\n", config->ping_count);
     
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# 路径配置\n");
-    fprintf(fp, "# ========================================\n\n");
+    if (config->ping_target_count > 0) {
+        fprintf(fp, "  targets:\n");
+        for (i = 0; i < config->ping_target_count; i++) {
+            fprintf(fp, "    - ip: \"%s\"\n", config->ping_targets[i].ip);
+            if (config->ping_targets[i].name[0] != '\0') {
+                fprintf(fp, "      name: \"%s\"\n", config->ping_targets[i].name);
+            }
+        }
+    }
     
-    fprintf(fp, "# 日志目录\n");
-    fprintf(fp, "log_path = \"%s\"\n\n", config->log_path);
-    
-    fprintf(fp, "# 脚本存放目录\n");
-    fprintf(fp, "script_path = \"%s\"\n\n", config->script_path);
-    
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# 功能开关\n");
-    fprintf(fp, "# ========================================\n\n");
-    
-    fprintf(fp, "# 是否启用PTY (远程Shell)\n");
-    fprintf(fp, "enable_pty = %s\n\n", config->enable_pty ? "true" : "false");
-    
-    fprintf(fp, "# 是否启用脚本执行\n");
-    fprintf(fp, "enable_script = %s\n\n", config->enable_script ? "true" : "false");
-    
-    fprintf(fp, "# 日志级别 (debug, info, warn, error)\n");
+    fprintf(fp, "\nlogging:\n");
     const char *level_str = "info";
     switch (config->log_level) {
         case LOG_LEVEL_DEBUG: level_str = "debug"; break;
@@ -473,48 +481,7 @@ int config_save_example(agent_config_t *config, const char *path)
         case LOG_LEVEL_WARN: level_str = "warn"; break;
         case LOG_LEVEL_ERROR: level_str = "error"; break;
     }
-    fprintf(fp, "log_level = %s\n\n", level_str);
-    
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# SSL配置\n");
-    fprintf(fp, "# ========================================\n\n");
-    
-    fprintf(fp, "# 是否启用SSL加密\n");
-    fprintf(fp, "use_ssl = %s\n\n", config->use_ssl ? "true" : "false");
-    
-    fprintf(fp, "# CA证书路径 (可选，留空使用系统证书)\n");
-    fprintf(fp, "ca_path = \"%s\"\n\n", config->ca_path);
-    
-    fprintf(fp, "# ========================================\n");
-    fprintf(fp, "# 自动更新配置\n");
-    fprintf(fp, "# ========================================\n\n");
-    
-    fprintf(fp, "# 是否启用自动更新\n");
-    fprintf(fp, "enable_auto_update = %s\n\n", config->enable_auto_update ? "true" : "false");
-    
-    fprintf(fp, "# 更新检查间隔 (秒)\n");
-    fprintf(fp, "update_check_interval = %d\n\n", config->update_check_interval);
-    
-    fprintf(fp, "# 更新渠道 (stable/beta/dev)\n");
-    fprintf(fp, "update_channel = \"%s\"\n\n", config->update_channel);
-    
-    fprintf(fp, "# 更新前是否需要确认\n");
-    fprintf(fp, "update_require_confirm = %s\n\n", config->update_require_confirm ? "true" : "false");
-    
-    fprintf(fp, "# 临时文件路径\n");
-    fprintf(fp, "update_temp_path = \"%s\"\n\n", config->update_temp_path);
-    
-    fprintf(fp, "# 备份路径\n");
-    fprintf(fp, "update_backup_path = \"%s\"\n\n", config->update_backup_path);
-    
-    fprintf(fp, "# 失败是否自动回滚\n");
-    fprintf(fp, "update_rollback_on_fail = %s\n\n", config->update_rollback_on_fail ? "true" : "false");
-    
-    fprintf(fp, "# 回滚超时 (秒)\n");
-    fprintf(fp, "update_rollback_timeout = %d\n\n", config->update_rollback_timeout);
-    
-    fprintf(fp, "# 是否校验文件校验和\n");
-    fprintf(fp, "update_verify_checksum = %s\n\n", config->update_verify_checksum ? "true" : "false");
+    fprintf(fp, "  level: \"%s\"\n", level_str);
     
     fclose(fp);
     

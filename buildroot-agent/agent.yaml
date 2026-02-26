@@ -1,97 +1,49 @@
-# Buildroot Agent Configuration
+# Buildroot Agent Configuration (YAML)
 # 
 # 使用说明：
-# 1. 复制此文件为 agent.conf: cp agent.conf.example agent.conf
+# 1. 复制此文件为 agent.yaml: cp agent.yaml.example agent.yaml
 # 2. 根据实际情况修改配置项
-# 3. 运行 agent: ./buildroot-agent -c ./agent.conf
+# 3. 运行 agent: ./buildroot-agent -c ./agent.yaml
 # 
 # 此文件由程序自动生成，请勿手动编辑默认值
 # 修改默认值请编辑 include/agent.h 中的 DEFAULT_* 宏定义
+server:
+  addr: "127.0.0.1:8766"
+  use_ssl: false
+  ca_path: ""
 
-# ========================================
-# 基础配置
-# ========================================
+device:
+  id: ""
 
-# 服务器地址 (host:port)
-server_addr = "127.0.0.1:8766"
+connection:
+  heartbeat_interval: 30
+  reconnect_interval: 5
+  status_interval: 60
 
-# 设备ID (唯一标识，留空则自动生成)
-device_id = ""
+paths:
+  log: "./log"
+  script: "./scripts"
+  update_temp: "./tmp"
+  update_backup: "./backup"
 
-# ========================================
-# 连接配置
-# ========================================
+features:
+  pty: true
+  script: true
+  auto_update: false
 
-# 心跳间隔 (秒)
-heartbeat_interval = 30
+update:
+  check_interval: 1800
+  channel: "stable"
+  require_confirm: true
+  rollback_on_fail: true
+  rollback_timeout: 300
+  verify_checksum: true
 
-# 重连间隔 (秒)
-reconnect_interval = 5
+ping:
+  enable: false
+  interval: 60
+  timeout: 5
+  count: 4
 
-# 状态上报间隔 (秒)
-status_interval = 60
-
-# ========================================
-# 路径配置
-# ========================================
-
-# 日志目录
-log_path = "./log"
-
-# 脚本存放目录
-script_path = "./scripts"
-
-# ========================================
-# 功能开关
-# ========================================
-
-# 是否启用PTY (远程Shell)
-enable_pty = true
-
-# 是否启用脚本执行
-enable_script = true
-
-# 日志级别 (debug, info, warn, error)
-log_level = info
-
-# ========================================
-# SSL配置
-# ========================================
-
-# 是否启用SSL加密
-use_ssl = false
-
-# CA证书路径 (可选，留空使用系统证书)
-ca_path = ""
-
-# ========================================
-# 自动更新配置
-# ========================================
-
-# 是否启用自动更新
-enable_auto_update = false
-
-# 更新检查间隔 (秒)
-update_check_interval = 1800
-
-# 更新渠道 (stable/beta/dev)
-update_channel = "stable"
-
-# 更新前是否需要确认
-update_require_confirm = true
-
-# 临时文件路径
-update_temp_path = "./tmp"
-
-# 备份路径
-update_backup_path = "./backup"
-
-# 失败是否自动回滚
-update_rollback_on_fail = true
-
-# 回滚超时 (秒)
-update_rollback_timeout = 300
-
-# 是否校验文件校验和
-update_verify_checksum = true
-
+logging:
+  level: "info"

@@ -18,6 +18,7 @@ typedef struct {
     char current_section[64];
     char current_key[128];
     int in_targets;
+    int expect_target_value;  /* 在targets模式下，等待处理value */
     int target_index;
     int target_field_count;
     int mapping_depth;
@@ -62,10 +63,6 @@ static int get_bool_value(yaml_event_t *event, int default_val)
 static void handle_config_key(yaml_parse_ctx_t *ctx, const char *key, yaml_event_t *event)
 {
     agent_config_t *cfg = ctx->config;
-    printf("[YAML DEBUG] section='%s', key='%s'\n", ctx->current_section, key);
-    if (strcmp(key, "enable") == 0 && strcmp(ctx->current_section, "ping") == 0) {
-        printf("[YAML DEBUG] Before: enable_ping=%d\n", cfg->enable_ping);
-    }
     LOG_DEBUG("[YAML] handle_config_key: section='%s', key='%s'", ctx->current_section, key);
     
     /* server.* */
@@ -135,10 +132,7 @@ static void handle_config_key(yaml_parse_ctx_t *ctx, const char *key, yaml_event
     /* ping.* */
     else if (strcmp(ctx->current_section, "ping") == 0) {
         if (strcmp(key, "enable") == 0) {
-            int val = get_bool_value(event, 0);
-            printf("[YAML DEBUG] get_bool_value returned %d\n", val);
-            cfg->enable_ping = val;
-            printf("[YAML DEBUG] After: enable_ping=%d\n", cfg->enable_ping);
+            cfg->enable_ping = get_bool_value(event, 0);
         } else if (strcmp(key, "interval") == 0) {
             cfg->ping_interval = get_int_value(event, 60);
         } else if (strcmp(key, "timeout") == 0) {
@@ -201,8 +195,10 @@ static int parse_yaml_document(yaml_parser_t *parser, yaml_parse_ctx_t *ctx)
             case YAML_MAPPING_START_EVENT:
                 ctx->mapping_depth++;
                 if (ctx->in_targets) {
-                    /* Ping target mapping开始 */
+                    /* Ping target mapping开始 - 重置key状态 */
                     ctx->target_field_count = 0;
+                    ctx->expect_target_value = 0;
+                    current_key[0] = '\0';
                 }
                 break;
             case YAML_MAPPING_END_EVENT:
@@ -211,33 +207,37 @@ static int parse_yaml_document(yaml_parser_t *parser, yaml_parse_ctx_t *ctx)
                     ctx->target_index++;
                     ctx->target_field_count = 0;
                 }
+                if (ctx->in_targets) {
+                    /* 重置key状态，为下一个target准备 */
+                    ctx->expect_target_value = 0;
+                    current_key[0] = '\0';
+                }
                 ctx->mapping_depth--;
                 /* 注意：不在这里清空current_section或in_targets */
                 break;
                 
             case YAML_SEQUENCE_START_EVENT:
-                printf("[YAML] SEQUENCE_START: section='%s', current_key='%s'\n", ctx->current_section, current_key);
                 if (strcmp(ctx->current_section, "ping") == 0 && 
                     strcmp(current_key, "targets") == 0) {
-                    printf("[YAML] Entering in_targets mode\n");
                     ctx->in_targets = 1;
                     ctx->target_index = 0;
                     ctx->target_field_count = 0;
                 }
                 break;
             case YAML_SEQUENCE_END_EVENT:
-                printf("[YAML] SEQUENCE_END: in_targets=%d, target_index=%d, target_field_count=%d\n", ctx->in_targets, ctx->target_index, ctx->target_field_count);
                 if (ctx->in_targets) {
                     /* Ping targets序列结束，设置target数量 */
                     ctx->config->ping_target_count = ctx->target_index;
-                    printf("[YAML] Set ping_target_count=%d\n", ctx->config->ping_target_count);
                 }
                 ctx->in_targets = 0;
+                ctx->expect_target_value = 0;
                 ctx->target_index = 0;
+                /* 清除section，回到顶层等待新的section */
+                ctx->current_section[0] = '\0';
+                current_key[0] = '\0';
                 break;
                 
             case YAML_SCALAR_EVENT:
-                printf("[YAML] SCALAR: mapping_depth=%d, in_targets=%d, current_key='%s'\n", ctx->mapping_depth, ctx->in_targets, current_key);
                 if (ctx->mapping_depth > 0 && !ctx->in_targets) {
                     /* 这是一个key */
                     if (current_key[0] != '\0') {
@@ -249,41 +249,40 @@ static int parse_yaml_document(yaml_parser_t *parser, yaml_parse_ctx_t *ctx)
                         if (event.data.scalar.value) {
                             strncpy(current_key, (const char *)event.data.scalar.value, sizeof(current_key) - 1);
                             
-                            /* 检查是否是section */
-                            printf("[YAML CHECK] current_key='%s'\n", current_key);
-                            if (strcmp(current_key, "server") == 0 ||
-                                strcmp(current_key, "device") == 0 ||
-                                strcmp(current_key, "connection") == 0 ||
-                                strcmp(current_key, "paths") == 0 ||
-                                strcmp(current_key, "features") == 0 ||
-                                strcmp(current_key, "update") == 0 ||
-                                strcmp(current_key, "ping") == 0 ||
-                                strcmp(current_key, "logging") == 0) {
-                                printf("[YAML] Setting section='%s'\n", current_key);
-                                strncpy(ctx->current_section, current_key, sizeof(ctx->current_section) - 1);
-                                current_key[0] = '\0';
-                            }
-                            if (strcmp(current_key, "server") == 0 ||
-                                strcmp(current_key, "device") == 0 ||
-                                strcmp(current_key, "connection") == 0 ||
-                                strcmp(current_key, "paths") == 0 ||
-                                strcmp(current_key, "features") == 0 ||
-                                strcmp(current_key, "update") == 0 ||
-                                strcmp(current_key, "ping") == 0 ||
-                                strcmp(current_key, "logging") == 0) {
-                                strncpy(ctx->current_section, current_key, sizeof(ctx->current_section) - 1);
-                                current_key[0] = '\0';
+                            /* 检查是否是section - 只在mapping_depth=1时检查（顶层key） */
+                            if (ctx->mapping_depth == 1) {
+                                if (strcmp(current_key, "server") == 0 ||
+                                    strcmp(current_key, "device") == 0 ||
+                                    strcmp(current_key, "connection") == 0 ||
+                                    strcmp(current_key, "paths") == 0 ||
+                                    strcmp(current_key, "features") == 0 ||
+                                    strcmp(current_key, "update") == 0 ||
+                                    strcmp(current_key, "ping") == 0 ||
+                                    strcmp(current_key, "logging") == 0) {
+                                    strncpy(ctx->current_section, current_key, sizeof(ctx->current_section) - 1);
+                                    current_key[0] = '\0';
+                                }
                             }
                         }
                     }
                 } else if (ctx->in_targets) {
                     /* Ping目标内的key-value */
-                    if (current_key[0] != '\0') {
+                    if (ctx->expect_target_value) {
+                        /* 前一个scalar是key，现在这个是value */
                         handle_ping_target(ctx, current_key, &event);
                         current_key[0] = '\0';
+                        ctx->expect_target_value = 0;
                         ctx->target_field_count++;
+                    } else if (current_key[0] != '\0') {
+                        /* 已经有key但没有设置expect，说明可能跳过了某些内容 */
+                        ctx->expect_target_value = 1;
                     } else if (event.data.scalar.value) {
-                        strncpy(current_key, (const char *)event.data.scalar.value, sizeof(current_key) - 1);
+                        /* 跳过列表项标记 '-' 和空值 */
+                        const char *val = (const char *)event.data.scalar.value;
+                        if (val[0] != '-' && val[0] != '\0') {
+                            strncpy(current_key, val, sizeof(current_key) - 1);
+                            ctx->expect_target_value = 1;
+                        }
                     }
                 }
                 break;
