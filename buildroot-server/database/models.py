@@ -138,6 +138,35 @@ class DeviceStatusHistory(Base):
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
+class PingHistory(Base):
+    """Ping 历史表"""
+
+    __tablename__ = "ping_history"
+
+    __table_args__ = (
+        Index("ix_ping_history_device_time", "device_id", "reported_at"),
+        Index("ix_ping_history_device_target", "device_id", "target_ip"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now()
+    )
+
+    target_ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    status: Mapped[int] = mapped_column(Integer, default=0)
+
+    avg_time: Mapped[Optional[float]] = mapped_column(Numeric(8, 3))
+    min_time: Mapped[Optional[float]] = mapped_column(Numeric(8, 3))
+    max_time: Mapped[Optional[float]] = mapped_column(Numeric(8, 3))
+    packet_loss: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    packets_sent: Mapped[int] = mapped_column(Integer, default=0)
+    packets_received: Mapped[int] = mapped_column(Integer, default=0)
+
+    raw_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+
 class CommandHistory(Base):
     """命令执行历史表"""
 

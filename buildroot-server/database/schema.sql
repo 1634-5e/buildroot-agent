@@ -223,6 +223,24 @@ CREATE TABLE IF NOT EXISTS update_approvals (
     metadata JSONB
 );
 
+-- ping_history table
+CREATE TABLE IF NOT EXISTS ping_history (
+    id BIGSERIAL PRIMARY KEY,
+    device_id VARCHAR(64) NOT NULL,
+    reported_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    target_ip VARCHAR(45) NOT NULL,
+    status INT DEFAULT 0,
+    avg_time NUMERIC(8,3),
+    min_time NUMERIC(8,3),
+    max_time NUMERIC(8,3),
+    packet_loss NUMERIC(5,2),
+    packets_sent INT DEFAULT 0,
+    packets_received INT DEFAULT 0,
+    raw_data JSONB
+);
+
+
+
 -- Audit logs table
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGSERIAL PRIMARY KEY,
@@ -266,6 +284,7 @@ CREATE INDEX IF NOT EXISTS idx_update_history_metadata_gin ON update_history USI
 CREATE INDEX IF NOT EXISTS idx_update_history_changes_gin ON update_history USING GIN (changes);
 CREATE INDEX IF NOT EXISTS idx_update_approvals_metadata_gin ON update_approvals USING GIN (metadata);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_details_gin ON audit_logs USING GIN (details);
+CREATE INDEX IF NOT EXISTS idx_ping_history_raw_data_gin ON ping_history USING GIN (raw_data);
 
 -- Composite indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_devices_device_status ON devices(device_id, status);
@@ -328,6 +347,16 @@ CREATE INDEX IF NOT EXISTS idx_update_history_new_version ON update_history(new_
 CREATE INDEX IF NOT EXISTS idx_update_history_completed_at ON update_history(completed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_update_history_request_id ON update_history(request_id);
 CREATE INDEX IF NOT EXISTS idx_update_approvals_device_id ON update_approvals(device_id);
+CREATE INDEX IF NOT EXISTS idx_update_approvals_update_history_id ON update_approvals(update_history_id);
+CREATE INDEX IF NOT EXISTS idx_update_approvals_action ON update_approvals(action);
+CREATE INDEX IF NOT EXISTS idx_update_approvals_approval_time ON update_approvals(approval_time DESC);
+-- ping_history indexes
+CREATE INDEX IF NOT EXISTS idx_ping_history_device_id ON ping_history(device_id);
+CREATE INDEX IF NOT EXISTS idx_ping_history_target_ip ON ping_history(target_ip);
+CREATE INDEX IF NOT EXISTS idx_ping_history_reported_at ON ping_history(reported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ping_history_device_reported ON ping_history(device_id, reported_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ping_history_device_target ON ping_history(device_id, target_ip);
+CREATE INDEX IF NOT EXISTS idx_ping_history_status ON ping_history(status);
 CREATE INDEX IF NOT EXISTS idx_update_approvals_update_history_id ON update_approvals(update_history_id);
 CREATE INDEX IF NOT EXISTS idx_update_approvals_action ON update_approvals(action);
 CREATE INDEX IF NOT EXISTS idx_update_approvals_approval_time ON update_approvals(approval_time DESC);

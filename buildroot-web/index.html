@@ -239,7 +239,7 @@
                             </div>
                             <div style="display: flex; gap: 8px;">
                                 <button class="btn btn-sm" id="autoRefreshBtn" onclick="toggleMonitorAutoRefresh()">⏸️ 暂停刷新</button>
-                                <button class="btn btn-sm" onclick="refreshSystemStatus()">🔄 立即刷新</button>
+                                <button class="btn btn-sm" id="systemRefreshBtn" onclick="refreshSystemStatusThrottled()">🔄 立即刷新</button>
                             </div>
                         </div>
 
@@ -374,6 +374,7 @@
                                 </div>
                                 <div style="display: flex; gap: 8px;">
                                     <button class="btn btn-sm" id="pingAutoRefreshBtn" onclick="togglePingAutoRefresh()">⏸️ 暂停刷新</button>
+                                    <button class="btn btn-sm" id="pingRefreshBtn" onclick="refreshPingStatusThrottled()">🔄 立即刷新</button>
                                 </div>
                             </div>
                             <div class="ping-results-grid" id="pingResultsGrid">

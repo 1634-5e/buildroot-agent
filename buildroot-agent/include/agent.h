@@ -90,7 +90,7 @@ typedef enum {
     /* 更新管理消息 */
     MSG_TYPE_UPDATE_CHECK         = 0x60,   /* 检查更新请求 */
     MSG_TYPE_UPDATE_INFO          = 0x61,   /* 更新信息响应 */
-    MSG_TYPE_UPDATE_DOWNLOAD      = 0x62,   /* 请求下载更新包（已废弃） */
+    MSG_TYPE_UPDATE_DOWNLOAD      = 0x62,   /* 请求批准下载更新包 */
     MSG_TYPE_UPDATE_PROGRESS      = 0x63,   /* 上报下载进度 */
     MSG_TYPE_UPDATE_COMPLETE      = 0x65,   /* 更新完成 */
     MSG_TYPE_UPDATE_ERROR         = 0x66,   /* 更新错误 */

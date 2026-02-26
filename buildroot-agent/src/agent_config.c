@@ -93,7 +93,7 @@ void config_load_from_env(agent_config_t *config)
     
     val = getenv("BUILDROOT_DEVICE_ID");
     if (val) {
-        set_string_field(config->log_path, sizeof(config->log_path), val);
+        set_string_field(config->device_id, sizeof(config->device_id), val);
     }
     
     val = getenv("BUILDROOT_SCRIPT_PATH");

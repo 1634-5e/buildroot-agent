@@ -33,10 +33,9 @@ class PtyHandler(BaseHandler):
             except Exception:
                 pass
         else:
-            logger.warning(
-                f"未找到PTY session对应的console: device={device_id}, session={session_id}"
+            logger.debug(
+                f"PTY session 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
-
     async def handle_pty_create(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))
         status = data.get("status", "unknown")
@@ -66,10 +65,9 @@ class PtyHandler(BaseHandler):
                 target_console_id=target_console_id,
             )
         else:
-            logger.warning(
-                f"未找到PTY会话对应的web控制台 [{device_id}]: session={session_id}"
+            logger.debug(
+                f"PTY create 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
-
         # 数据库操作：记录 PTY 会话创建
         try:
             console_id = target_console_id or None
@@ -122,10 +120,9 @@ class PtyHandler(BaseHandler):
                 target_console_id=target_console_id,
             )
         else:
-            logger.warning(
-                f"未找到PTY resize对应的web控制台 [{device_id}]: session={session_id}"
+            logger.debug(
+                f"PTY resize 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
-
     async def handle_pty_close(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))
         reason = data.get("reason", "unknown")
@@ -143,10 +140,9 @@ class PtyHandler(BaseHandler):
                 target_console_id=target_console_id,
             )
         else:
-            logger.warning(
-                f"未找到PTY close对应的web控制台 [{device_id}]: session={session_id}"
+            logger.debug(
+                f"PTY close 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
-
         # 数据库操作：更新 PTY 会话关闭状态
         if (
             device_id in self.conn_mgr.pty_sessions

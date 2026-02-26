@@ -4,7 +4,11 @@ from typing import Dict, Any
 from datetime import datetime
 
 from database.repositories import DeviceRepository
-from database.batch_buffer import get_status_history_buffer, get_audit_log_buffer
+from database.batch_buffer import (
+    get_status_history_buffer,
+    get_audit_log_buffer,
+    get_ping_history_buffer,
+)
 from handlers.base import BaseHandler
 from protocol.constants import MessageType
 from protocol.models import PingStatus
@@ -38,28 +42,23 @@ class PingHandler(BaseHandler):
         except Exception as e:
             logger.error(f"[DB] 更新Ping状态失败: {e}")
 
-        buffer = get_status_history_buffer()
-        asyncio.create_task(
-            buffer.add_status(
-                device_id=device_id,
-                cpu_usage=0,
-                cpu_cores=1,
-                cpu_user=0,
-                cpu_system=0,
-                mem_total=0,
-                mem_used=0,
-                mem_free=0,
-                disk_total=0,
-                disk_used=0,
-                load_1min=0,
-                load_5min=0,
-                load_15min=0,
-                uptime=0,
-                net_rx_bytes=0,
-                net_tx_bytes=0,
-                raw_data=data,
+        # 存储 ping 历史记录到专门的 ping_history 表
+        ping_buffer = get_ping_history_buffer()
+        for result in results:
+            asyncio.create_task(
+                ping_buffer.add_ping(
+                    device_id=device_id,
+                    target_ip=result.get("ip", ""),
+                    status=result.get("status", 0),
+                    avg_time=result.get("avg_time"),
+                    min_time=result.get("min_time"),
+                    max_time=result.get("max_time"),
+                    packet_loss=result.get("packet_loss"),
+                    packets_sent=result.get("packets_sent", 0),
+                    packets_received=result.get("packets_received", 0),
+                    raw_data=result,
+                )
             )
-        )
 
         buffer = get_audit_log_buffer()
         asyncio.create_task(

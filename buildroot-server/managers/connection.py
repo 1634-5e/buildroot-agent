@@ -88,6 +88,23 @@ class ConnectionManager:
             self.web_consoles.discard(websocket)
             self.console_info.pop(websocket, None)
 
+            # 清理 pty_sessions 中对应的 session
+            if device_id and session_ids:
+                for session_id in session_ids:
+                    if (
+                        device_id in self.pty_sessions
+                        and session_id in self.pty_sessions[device_id]
+                    ):
+                        del self.pty_sessions[device_id][session_id]
+                        logger.debug(
+                            f"[REMOVE_CONSOLE] 清理 pty_sessions: "
+                            f"device_id={device_id}, session_id={session_id}"
+                        )
+                # 如果设备没有任何 pty session 了，清理设备条目
+                if device_id in self.pty_sessions and not self.pty_sessions[device_id]:
+                    del self.pty_sessions[device_id]
+                    logger.debug(f"[REMOVE_CONSOLE] 清理空 pty_sessions 设备条目: {device_id}")
+
         logger.info(
             f"Web控制台断开: console_id={console_id}, device_id={device_id}, sessions={session_ids}"
         )
@@ -102,21 +119,18 @@ class ConnectionManager:
 
         return device_id, session_ids
 
-    def set_console_device(
-        self, websocket: WebSocketServerProtocol, device_id: str
-    ) -> None:
-        if websocket in self.console_info:
-            old_device = self.console_info[websocket].get("device_id")
-            self.console_info[websocket]["device_id"] = device_id
-            logger.info(
-                f"控制台 {self.console_info[websocket]['console_id']} 切换设备: {old_device} -> {device_id}"
-            )
-
     def add_console_session(
         self, websocket: WebSocketServerProtocol, session_id: int
     ) -> None:
         if websocket in self.console_info:
             self.console_info[websocket]["session_ids"].add(session_id)
+
+    def set_console_device(
+        self, websocket: WebSocketServerProtocol, device_id: str
+    ) -> None:
+        if websocket in self.console_info:
+            self.console_info[websocket]["device_id"] = device_id
+            logger.debug(f"设置控制台设备: device_id={device_id}")
 
     def get_console_by_session(
         self, device_id: str, session_id: int
@@ -126,9 +140,10 @@ class ConnectionManager:
                 "session_ids", set()
             ):
                 return websocket
-        logger.warning(
-            f"get_console_by_session未找到: device_id={device_id}, session_id={session_id}, "
-            f"已注册sessions: {[(info.get('device_id'), info.get('session_ids')) for info in self.console_info.values()]}"
+        # 这是正常情况：console 断开后收到的消息，不打印警告
+        logger.debug(
+            f"get_console_by_session 未找到: device_id={device_id}, session_id={session_id}, "
+            f"已注册 sessions 数量: {len(self.console_info)}"
         )
         return None
 
@@ -144,7 +159,6 @@ class ConnectionManager:
         logger.debug(
             f"注册request_session: request_id={request_id}, console_id={console_id}, device_id={device_id}"
         )
-
     def get_console_by_request(
         self, request_id: str
     ) -> Optional[WebSocketServerProtocol]:

@@ -99,6 +99,37 @@ def create_tables(metadata: MetaData) -> None:
         Index("idx_device_status_history_device_reported", "device_id", "reported_at"),
     )
 
+    # ping_history - Ping历史表
+    ping_history = Table(
+        "ping_history",
+        metadata,
+        Column("id", BigInteger, primary_key=True, autoincrement=True),
+        Column("device_id", String(64), nullable=False),
+        Column(
+            "reported_at",
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=func.now(),
+        ),
+        Column("target_ip", String(45), nullable=False),
+        Column("status", Integer, default=0),
+        Column("avg_time", Numeric(8, 3)),
+        Column("min_time", Numeric(8, 3)),
+        Column("max_time", Numeric(8, 3)),
+        Column("packet_loss", Numeric(5, 2)),
+        Column("packets_sent", Integer, default=0),
+        Column("packets_received", Integer, default=0),
+        Column("raw_data", JSONB, nullable=True),
+        Index("idx_ping_history_device_id", "device_id"),
+        Index("idx_ping_history_target_ip", "target_ip"),
+        Index("idx_ping_history_reported_at", "reported_at"),
+        Index("idx_ping_history_device_reported", "device_id", "reported_at"),
+        Index("idx_ping_history_device_target", "device_id", "target_ip"),
+        Index("idx_ping_history_status", "status"),
+    )
+
+    # web_console_sessions - Web控制台会话表
+
     # web_console_sessions - Web控制台会话表
     web_console_sessions = Table(
         "web_console_sessions",

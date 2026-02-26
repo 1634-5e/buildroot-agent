@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from database.models import (
     Device,
     DeviceStatusHistory,
+    PingHistory,
     CommandHistory,
     ScriptHistory,
     FileTransfer,
@@ -33,12 +34,20 @@ class DeviceRepository:
     """设备数据仓储"""
 
     @staticmethod
-    async def get_by_device_id(device_id: str) -> Optional[dict]:
-        """通过设备ID获取设备（带缓存）"""
+    async def get_by_device_id(device_id: str, use_cache: bool = True) -> Optional[dict]:
+        """通过设备ID获取设备（带缓存）
+        
+        Args:
+            device_id: 设备ID
+            use_cache: 是否使用缓存，查询实时状态时应设为 False
+        """
         cache_key = f"device_{device_id}"
-        cached_value = await device_detail_cache.get(cache_key)
-        if cached_value is not None:
-            return cached_value
+        
+        # 只有使用缓存时才检查缓存
+        if use_cache:
+            cached_value = await device_detail_cache.get(cache_key)
+            if cached_value is not None:
+                return cached_value
 
         async with db_manager.get_session() as session:
             result = await session.execute(
@@ -61,14 +70,15 @@ class DeviceRepository:
                     "last_disconnected_at": device.last_disconnected_at,
                     "last_seen_at": device.last_seen_at,
                     "current_status": device.current_status,
-                    "current_status": device.current_status,
                     "last_status_reported_at": device.last_status_reported_at,
                     "auto_update": device.auto_update,
                     "tags": device.tags,
                     "created_at": device.created_at,
                     "updated_at": device.updated_at,
                 }
-                await device_detail_cache.set(cache_key, device_data, ttl=60.0)
+                # 只有使用缓存时才设置缓存
+                if use_cache:
+                    await device_detail_cache.set(cache_key, device_data, ttl=60.0)
                 return device_data
             return None
 
@@ -185,7 +195,10 @@ class DeviceRepository:
             device = result.scalar_one_or_none()
 
             if device:
-                device.current_status = current_status
+                # 合并新旧状态，而不是完全替换
+                existing_status = device.current_status or {}
+                merged_status = {**existing_status, **current_status}
+                device.current_status = merged_status
                 device.last_status_reported_at = datetime.now()
 
                 await session.commit()
@@ -193,7 +206,6 @@ class DeviceRepository:
                 await device_detail_cache.delete(f"device_{device_id}")
 
                 return True
-            return False
 
     @staticmethod
     async def list_devices(
@@ -368,6 +380,121 @@ class DeviceStatusHistoryRepository:
                 }
                 for r in records
             ]
+
+
+class PingHistoryRepository:
+    """Ping 历史数据仓储"""
+
+    @staticmethod
+    async def insert(
+        device_id: str,
+        target_ip: str,
+        status: int = 0,
+        avg_time: float = None,
+        min_time: float = None,
+        max_time: float = None,
+        packet_loss: float = None,
+        packets_sent: int = 0,
+        packets_received: int = 0,
+        raw_data: dict = None,
+    ) -> bool:
+        """插入 ping 历史记录"""
+        try:
+            async with db_manager.get_session() as session:
+                history = PingHistory(
+                    device_id=device_id,
+                    target_ip=target_ip,
+                    status=status,
+                    avg_time=avg_time,
+                    min_time=min_time,
+                    max_time=max_time,
+                    packet_loss=packet_loss,
+                    packets_sent=packets_sent,
+                    packets_received=packets_received,
+                    raw_data=raw_data,
+                )
+                session.add(history)
+                await session.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to save ping history: {e}")
+            return False
+
+    @staticmethod
+    async def get_history(
+        device_id: str,
+        target_ip: str = None,
+        start_time: datetime = None,
+        end_time: datetime = None,
+        limit: int = 100,
+    ) -> List[dict]:
+        """获取 ping 历史记录"""
+        async with db_manager.get_session() as session:
+            query = select(PingHistory).where(PingHistory.device_id == device_id)
+
+            if target_ip:
+                query = query.where(PingHistory.target_ip == target_ip)
+            if start_time:
+                query = query.where(PingHistory.reported_at >= start_time)
+            if end_time:
+                query = query.where(PingHistory.reported_at <= end_time)
+
+            query = query.order_by(PingHistory.reported_at.desc()).limit(limit)
+
+            result = await session.execute(query)
+            records = result.scalars().all()
+
+            return [
+                {
+                    "id": r.id,
+                    "device_id": r.device_id,
+                    "reported_at": r.reported_at,
+                    "target_ip": r.target_ip,
+                    "status": r.status,
+                    "avg_time": float(r.avg_time) if r.avg_time else None,
+                    "min_time": float(r.min_time) if r.min_time else None,
+                    "max_time": float(r.max_time) if r.max_time else None,
+                    "packet_loss": float(r.packet_loss) if r.packet_loss else None,
+                    "packets_sent": r.packets_sent,
+                    "packets_received": r.packets_received,
+                    "raw_data": r.raw_data,
+                }
+                for r in records
+            ]
+
+    @staticmethod
+    async def get_latest(
+        device_id: str,
+        target_ip: str = None,
+    ) -> Optional[dict]:
+        """获取最新的 ping 记录"""
+        async with db_manager.get_session() as session:
+            query = select(PingHistory).where(PingHistory.device_id == device_id)
+
+            if target_ip:
+                query = query.where(PingHistory.target_ip == target_ip)
+
+            query = query.order_by(PingHistory.reported_at.desc()).limit(1)
+
+            result = await session.execute(query)
+            record = result.scalar_one_or_none()
+
+            if record:
+                return {
+                    "id": record.id,
+                    "device_id": record.device_id,
+                    "reported_at": record.reported_at,
+                    "target_ip": record.target_ip,
+                    "status": record.status,
+                    "avg_time": float(record.avg_time) if record.avg_time else None,
+                    "min_time": float(record.min_time) if record.min_time else None,
+                    "max_time": float(record.max_time) if record.max_time else None,
+                    "packet_loss": float(record.packet_loss) if record.packet_loss else None,
+                    "packets_sent": record.packets_sent,
+                    "packets_received": record.packets_received,
+                    "raw_data": record.raw_data,
+                }
+            return None
 
 
 class CommandHistoryRepository:

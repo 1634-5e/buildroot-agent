@@ -87,12 +87,20 @@ class WebSocketHandler:
                     )
 
                     # Special handling for status command: query from database instead of forwarding to agent
-                    if msg_type == MessageType.CMD_REQUEST and json_data.get("cmd") == "status":
+                    if (
+                        msg_type == MessageType.CMD_REQUEST
+                        and json_data.get("cmd") == "status"
+                    ):
                         request_id = json_data.get("request_id")
-                        logger.info(f"Web控制台请求设备状态 [{device_id}], 从数据库查询, request_id={request_id}")
-                        
+                        logger.info(
+                            f"Web控制台请求设备状态 [{device_id}], 从数据库查询(跳过缓存), request_id={request_id}"
+                        )
+
                         try:
-                            device = await DeviceRepository.get_by_device_id(device_id)
+                            # 跳过缓存，直接从数据库获取最新状态
+                            device = await DeviceRepository.get_by_device_id(
+                                device_id, use_cache=False
+                            )
                             if device and device.get("current_status"):
                                 # Return cached status from database
                                 response = MessageCodec.encode(
@@ -103,7 +111,11 @@ class WebSocketHandler:
                                         "status": "completed",
                                         "exit_code": 0,
                                         "success": True,
-                                        "status_timestamp": device.get("last_status_reported_at").isoformat() if device.get("last_status_reported_at") else None,
+                                        "status_timestamp": device.get(
+                                            "last_status_reported_at"
+                                        ).isoformat()
+                                        if device.get("last_status_reported_at")
+                                        else None,
                                         **device["current_status"],
                                     },
                                 )
@@ -111,10 +123,14 @@ class WebSocketHandler:
                                     getattr(websocket, "send", None)
                                 ):
                                     await websocket.send(response)
-                                    logger.info(f"设备状态已从数据库发送到web控制台: {device_id}")
+                                    logger.info(
+                                        f"设备状态已从数据库发送到web控制台: {device_id}"
+                                    )
                             else:
                                 # No cached status, forward to agent
-                                logger.warning(f"设备[{device_id}]没有缓存的status数据，转发到agent")
+                                logger.warning(
+                                    f"设备[{device_id}]没有缓存的status数据，转发到agent"
+                                )
                                 success = await self.msg_handler.send_to_device(
                                     device_id, msg_type, json_data
                                 )
@@ -125,6 +141,64 @@ class WebSocketHandler:
                         except Exception as e:
                             logger.error(f"查询设备状态失败: {e}, 转发到agent")
                             # Fallback: forward to agent on error
+                            success = await self.msg_handler.send_to_device(
+                                device_id, msg_type, json_data
+                            )
+                            if success:
+                                logger.info(f"消息已转发到设备 {device_id}")
+                            else:
+                                logger.warning(f"转发消息到设备失败: {device_id}")
+                        continue  # Skip the normal forwarding logic
+
+                    # Special handling for ping command: query from database instead of forwarding to agent
+                    if (
+                        msg_type == MessageType.CMD_REQUEST
+                        and json_data.get("cmd") == "ping"
+                    ):
+                        request_id = json_data.get("request_id")
+                        logger.info(
+                            f"Web控制台请求Ping状态 [{device_id}], 从数据库查询, request_id={request_id}"
+                        )
+
+                        try:
+                            device = await DeviceRepository.get_by_device_id(
+                                device_id, use_cache=False
+                            )
+                            if device and device.get("current_status") and device["current_status"].get("ping_status"):
+                                ping_status = device["current_status"]["ping_status"]
+                                # Return ping status from database as CMD_RESPONSE
+                                response = MessageCodec.encode(
+                                    MessageType.CMD_RESPONSE,
+                                    {
+                                        "device_id": device_id,
+                                        "request_id": request_id,
+                                        "status": "completed",
+                                        "exit_code": 0,
+                                        "success": True,
+                                        **ping_status,
+                                    },
+                                )
+                                if hasattr(websocket, "send") and callable(
+                                    getattr(websocket, "send", None)
+                                ):
+                                    await websocket.send(response)
+                                    logger.info(
+                                        f"Ping状态已从数据库发送到web控制台: {device_id}"
+                                    )
+                            else:
+                                # No cached ping status, forward to agent
+                                logger.warning(
+                                    f"设备[{device_id}]没有缓存的ping数据，转发到agent"
+                                )
+                                success = await self.msg_handler.send_to_device(
+                                    device_id, msg_type, json_data
+                                )
+                                if success:
+                                    logger.info(f"消息已转发到设备 {device_id}")
+                                else:
+                                    logger.warning(f"转发消息到设备失败: {device_id}")
+                        except Exception as e:
+                            logger.error(f"查询Ping状态失败: {e}, 转发到agent")
                             success = await self.msg_handler.send_to_device(
                                 device_id, msg_type, json_data
                             )

@@ -40,16 +40,31 @@ let activeEditorTabPath = null;
 // Monitor State
 let cachedProcesses = [];
 let processSortKey = 'cpu';
+let statusUpdateThrottle = null;  // 优化: 状态更新节流
 let processSortAsc = false;
 let processMemTotal = 1;
 let monitorRefreshInterval = null;
-let isMonitorAutoRefreshEnabled = false;
+let isMonitorAutoRefreshEnabled = true;  // 优化: 默认启用自动刷新
 let downloadChunks = {};
-    // Ping Monitor State
-    let pingTargets = [];
-    let pingResults = {};
-    let isPingAutoRefreshEnabled = true;
-    let pingRefreshInterval = null;
+
+// Ping Monitor State
+let pingTargets = [];
+let pingResults = {};
+let isPingAutoRefreshEnabled = true;
+let pingRefreshInterval = null;
+
+// Refresh throttle state
+let lastSystemRefreshTime = 0;
+let lastPingRefreshTime = 0;
+const REFRESH_COOLDOWN_MS = 2000; // 2秒刷新冷却时间
+
+// Flag to track manual refresh (for change detection toast)
+let isManualSystemRefresh = false;
+let isManualPingRefresh = false;
+
+// Previous data for change detection
+let previousSystemStatus = null;
+let previousPingResults = null;
 
 // Clean up expired chunk data periodically
 setInterval(() => {
@@ -1533,50 +1548,56 @@ function confirmFileSave(force) {
 // ============================================
 
 function updateSystemStatus(data) {
+    // 优化: 渲染节流 - 避免频繁DOM更新
+    if (statusUpdateThrottle) {
+        clearTimeout(statusUpdateThrottle);
+    }
+    statusUpdateThrottle = setTimeout(() => {
+        _renderSystemStatus(data);
+        statusUpdateThrottle = null;
+    }, 500);
+}
+
+function _renderSystemStatus(data) {
     console.log('Updating system status:', data);
     
     // Update status timestamp display
-    if (data.status_timestamp) {
-        const timeEl = safeGetElement('metricStatusTime');
-        if (timeEl) {
-            const timestamp = new Date(data.status_timestamp);
-            const now = new Date();
-            const diffMs = now - timestamp;
-            const diffSecs = Math.floor(diffMs / 1000);
-            
-            // Format relative time
-            let relativeTime;
-            if (diffSecs < 60) {
-                relativeTime = `刚刚 (${diffSecs}秒前)`;
-            } else if (diffSecs < 3600) {
-                relativeTime = `${Math.floor(diffSecs / 60)}分钟前`;
-            } else if (diffSecs < 86400) {
-                relativeTime = `${Math.floor(diffSecs / 3600)}小时前`;
-            } else {
-                relativeTime = `${Math.floor(diffSecs / 86400)}天前`;
-            }
-            
-            // Format absolute time
-            const absoluteTime = timestamp.toLocaleString('zh-CN', {
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            
-            timeEl.textContent = `${absoluteTime} | ${relativeTime}`;
-            timeEl.title = `数据更新时间: ${new Date(data.status_timestamp).toLocaleString('zh-CN')}`;
-            
-            // Add visual indicator for stale data
-            if (diffSecs > 300) { // 5 minutes
-                timeEl.style.color = 'var(--accent-warning)';
-            } else {
-                timeEl.style.color = 'var(--text-muted)';
-            }
+    const timestamp = data.status_timestamp ? new Date(data.status_timestamp) : new Date();
+    const timeEl = safeGetElement('metricStatusTime');
+    if (timeEl) {
+        const now = new Date();
+        const diffMs = now - timestamp;
+        const diffSecs = Math.floor(diffMs / 1000);
+        
+        // Format relative time
+        let relativeTime;
+        if (diffSecs < 60) {
+            relativeTime = `刚刚`;
+        } else if (diffSecs < 3600) {
+            relativeTime = `${Math.floor(diffSecs / 60)}分钟前`;
+        } else if (diffSecs < 86400) {
+            relativeTime = `${Math.floor(diffSecs / 3600)}小时前`;
+        } else {
+            relativeTime = `${Math.floor(diffSecs / 86400)}天前`;
+        }
+        
+        // Format absolute time
+        const absoluteTime = timestamp.toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        
+        timeEl.textContent = `${absoluteTime} (${relativeTime})`;
+        timeEl.title = `数据更新时间: ${timestamp.toLocaleString('zh-CN')}`;
+        
+        // Add visual indicator for stale data
+        if (diffSecs > 300) { // 5 minutes
+            timeEl.style.color = 'var(--accent-warning)';
+        } else {
+            timeEl.style.color = 'var(--text-muted)';
         }
     }
-    
 
     if (currentDevice && data.device_id === currentDevice.device_id) {
         renderDeviceList();
@@ -1680,12 +1701,33 @@ function updateSystemStatus(data) {
     if (data.processes && Array.isArray(data.processes)) {
         updateProcessList(data.processes, data.proc_total || data.processes.length);
     }
+    
+    // Check if data has changed (only for manual refresh)
+    if (isManualSystemRefresh) {
+        const hasChanged = !previousSystemStatus || 
+            previousSystemStatus.cpu_usage !== data.cpu_usage ||
+            previousSystemStatus.mem_used !== data.mem_used ||
+            previousSystemStatus.disk_used !== data.disk_used ||
+            previousSystemStatus.load_1min !== data.load_1min;
+        
+        if (!hasChanged) {
+            showToast('系统状态数据无变化', 'info');
+        }
+        isManualSystemRefresh = false;  // Reset flag
+    }
+    
+    // Update previous data
+    previousSystemStatus = {
+        cpu_usage: data.cpu_usage,
+        mem_used: data.mem_used,
+        disk_used: data.disk_used,
+        load_1min: data.load_1min
+    };
 }
 
 // ============================================
 // Process List
 // ============================================
-
 function updateProcessList(processes, totalCount) {
     cachedProcesses = processes || [];
 
@@ -1802,11 +1844,13 @@ function startMonitorAutoRefresh() {
 
     if (currentTab === 'monitor') {
         refreshSystemStatus();
+        refreshPingStatus();  // 同时刷新 Ping 状态
     }
 
     monitorRefreshInterval = setInterval(() => {
         if (currentTab === 'monitor' && currentDevice && isMonitorAutoRefreshEnabled) {
             refreshSystemStatus();
+            refreshPingStatus();  // 同时刷新 Ping 状态
         }
     }, MONITOR_REFRESH_INTERVAL);
 
@@ -1840,12 +1884,58 @@ function refreshSystemStatus() {
     });
 }
 
+function refreshSystemStatusThrottled() {
+    const now = Date.now();
+    if (now - lastSystemRefreshTime < REFRESH_COOLDOWN_MS) {
+        const remaining = Math.ceil((REFRESH_COOLDOWN_MS - (now - lastSystemRefreshTime)) / 1000);
+        showToast(`请等待 ${remaining} 秒后再次刷新`, 'warning');
+        return;
+    }
+    lastSystemRefreshTime = now;
+    isManualSystemRefresh = true;  // Mark as manual refresh
+    const btn = document.getElementById('systemRefreshBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 刷新中...';
+    }
+    refreshSystemStatus();
+    setTimeout(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔄 立即刷新';
+        }
+    }, 1000);
+}
+
 function refreshPingStatus() {
     if (!currentDevice) return;
     sendMessage(MSG_TYPES.CMD_REQUEST, {
         cmd: 'ping',
         request_id: 'ping-' + Date.now()
     });
+}
+
+function refreshPingStatusThrottled() {
+    const now = Date.now();
+    if (now - lastPingRefreshTime < REFRESH_COOLDOWN_MS) {
+        const remaining = Math.ceil((REFRESH_COOLDOWN_MS - (now - lastPingRefreshTime)) / 1000);
+        showToast(`请等待 ${remaining} 秒后再次刷新`, 'warning');
+        return;
+    }
+    lastPingRefreshTime = now;
+    isManualPingRefresh = true;  // Mark as manual refresh
+    const btn = document.getElementById('pingRefreshBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 刷新中...';
+    }
+    refreshPingStatus();
+    setTimeout(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔄 立即刷新';
+        }
+    }, 1000);
 }
 
 function handleCommandResponse(data) {
@@ -2226,6 +2316,24 @@ function closeKeyboardShortcuts() {
 function handlePingStatus(data) {
     const timestamp = data.timestamp || Date.now();
     const results = data.results || [];
+    
+    // Check if ping data has changed (only for manual refresh)
+    if (isManualPingRefresh) {
+        const newResultsJson = JSON.stringify(results.map(r => ({
+            ip: r.ip,
+            status: r.status,
+            avg_time: r.avg_time,
+            packet_loss: r.packet_loss
+        })).sort((a, b) => a.ip.localeCompare(b.ip)));
+        
+        const hasChanged = !previousPingResults || previousPingResults !== newResultsJson;
+        
+        if (!hasChanged) {
+            showToast('Ping数据无变化', 'info');
+        }
+        isManualPingRefresh = false;  // Reset flag
+        previousPingResults = newResultsJson;
+    }
 
     pingResults = {};
     results.forEach(result => {
@@ -2240,7 +2348,38 @@ function updatePingStatusTime(timestamp) {
     const timeEl = document.getElementById('pingStatusTime');
     if (timeEl) {
         const date = new Date(timestamp);
-        timeEl.textContent = date.toLocaleTimeString();
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSecs = Math.floor(diffMs / 1000);
+        
+        // Format relative time
+        let relativeTime;
+        if (diffSecs < 60) {
+            relativeTime = `刚刚`;
+        } else if (diffSecs < 3600) {
+            relativeTime = `${Math.floor(diffSecs / 60)}分钟前`;
+        } else if (diffSecs < 86400) {
+            relativeTime = `${Math.floor(diffSecs / 3600)}小时前`;
+        } else {
+            relativeTime = `${Math.floor(diffSecs / 86400)}天前`;
+        }
+        
+        // Format absolute time
+        const absoluteTime = date.toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        
+        timeEl.textContent = `${absoluteTime} (${relativeTime})`;
+        timeEl.title = `数据更新时间: ${date.toLocaleString('zh-CN')}`;
+        
+        // Add visual indicator for stale data
+        if (diffSecs > 300) { // 5 minutes
+            timeEl.style.color = 'var(--accent-warning)';
+        } else {
+            timeEl.style.color = 'var(--text-muted)';
+        }
     }
 }
 

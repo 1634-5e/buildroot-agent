@@ -333,7 +333,7 @@ static void print_help(const char *prog)
     printf("选项:\n");
     printf("  -c, --config <path>   指定配置文件路径 (默认: <exe_dir>/agent.yaml)\n");
     printf("  -s, --server <addr>   指定服务器地址 (host:port)\n");
-    printf("  -t, --token <token>   指定Token（已废弃）\n");
+
     printf("  -d, --daemon          以守护进程方式运行\n");
     printf("  -v, --verbose         详细输出 (debug级别)\n");
     printf("  -g, --generate        生成默认配置文件\n");
@@ -343,7 +343,7 @@ static void print_help(const char *prog)
     printf("\n");
     printf("示例:\n");
     printf("  %s -c /etc/agent.yaml -d\n", prog);
-    printf("  %s -s 192.168.1.100:8766 -t mytoken\n", prog);
+    printf("  %s -s 192.168.1.100:8766\n", prog);
     printf("  %s -g -e -c agent.yaml.example\n", prog);
     printf("\n");
 }
@@ -369,7 +369,6 @@ int main(int argc, char *argv[])
     static struct option long_options[] = {
         {"config",   required_argument, 0, 'c'},
         {"server",   required_argument, 0, 's'},
-        {"token",    required_argument, 0, 't'},
         {"daemon",   no_argument,       0, 'd'},
         {"verbose",  no_argument,       0, 'v'},
         {"generate", no_argument,       0, 'g'},
@@ -380,7 +379,7 @@ int main(int argc, char *argv[])
     };
     
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:s:t:dvgehV", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:s:dvgehV", long_options, NULL)) != -1) {
         switch (opt) {
         case 'c':
             config_path = optarg;

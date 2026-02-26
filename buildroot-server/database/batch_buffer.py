@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
-from database.models import DeviceStatusHistory, AuditLog
+from database.models import DeviceStatusHistory, AuditLog, PingHistory
 from database.db_manager import db_manager
 
 logger = logging.getLogger(__name__)
@@ -208,10 +208,42 @@ class AuditLogBuffer(BatchBuffer):
         await self.add(log)
 
 
+class PingHistoryBuffer(BatchBuffer):
+    """Ping 历史缓冲器"""
+
+    async def add_ping(
+        self,
+        device_id: str,
+        target_ip: str,
+        status: int = 0,
+        avg_time: float = None,
+        min_time: float = None,
+        max_time: float = None,
+        packet_loss: float = None,
+        packets_sent: int = 0,
+        packets_received: int = 0,
+        raw_data: dict = None,
+    ) -> None:
+        """添加 ping 历史记录"""
+        history = PingHistory(
+            device_id=device_id,
+            target_ip=target_ip,
+            status=status,
+            avg_time=avg_time,
+            min_time=min_time,
+            max_time=max_time,
+            packet_loss=packet_loss,
+            packets_sent=packets_sent,
+            packets_received=packets_received,
+            raw_data=raw_data,
+        )
+        await self.add(history)
+
+
 # 全局缓冲器实例
 _status_history_buffer: Optional[StatusHistoryBuffer] = None
 _audit_log_buffer: Optional[AuditLogBuffer] = None
-
+_ping_history_buffer: Optional[PingHistoryBuffer] = None
 
 def get_status_history_buffer() -> StatusHistoryBuffer:
     """获取设备状态历史缓冲器（单例）"""
@@ -235,16 +267,28 @@ def get_audit_log_buffer() -> AuditLogBuffer:
     return _audit_log_buffer
 
 
+def get_ping_history_buffer() -> PingHistoryBuffer:
+    """获取 ping 历史缓冲器（单例）"""
+    global _ping_history_buffer
+    if _ping_history_buffer is None:
+        _ping_history_buffer = PingHistoryBuffer(
+            config=BufferConfig(max_size=200, flush_interval=5.0)
+        )
+        _ping_history_buffer.start()
+    return _ping_history_buffer
+
+
 async def start_batch_buffers():
     """启动所有批量缓冲器"""
     get_status_history_buffer()
     get_audit_log_buffer()
+    get_ping_history_buffer()
     logger.info("Batch buffers started")
 
 
 async def stop_batch_buffers():
     """停止所有批量缓冲器"""
-    global _status_history_buffer, _audit_log_buffer
+    global _status_history_buffer, _audit_log_buffer, _ping_history_buffer
 
     if _status_history_buffer:
         await _status_history_buffer.stop()
@@ -253,5 +297,10 @@ async def stop_batch_buffers():
     if _audit_log_buffer:
         await _audit_log_buffer.stop()
         _audit_log_buffer = None
+
+    if _ping_history_buffer:
+        await _ping_history_buffer.stop()
+        _ping_history_buffer = None
+
 
     logger.info("Batch buffers stopped")
