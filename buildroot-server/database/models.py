@@ -429,7 +429,7 @@ class PtySession(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(Integer, nullable=False)
     device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    console_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    console_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), index=True

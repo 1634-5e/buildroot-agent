@@ -2042,6 +2042,7 @@ function switchTab(tab) {
         // 切换回文件页时不自动刷新，保留文件树的展开状态
     } else if (tab === 'monitor') {
         refreshSystemStatus();
+        refreshPingStatus();  // 切换到监控页时立即刷新ping数据
         if (!monitorRefreshInterval && currentDevice) {
             startMonitorAutoRefresh();
         }

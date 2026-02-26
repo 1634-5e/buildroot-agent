@@ -46,11 +46,18 @@ void config_set_defaults(agent_config_t *config)
     config->update_verify_checksum = true;
     
     /* Ping监控配置 */
-    config->enable_ping = false;
+    config->enable_ping = true;
     config->ping_interval = 60;
-    config->ping_target_count = 0;
+    config->ping_target_count = 2;
     config->ping_timeout = 5;
     config->ping_count = 4;
+    
+    /* 默认ping目标 */
+    strncpy(config->ping_targets[0].ip, "192.168.0.249", sizeof(config->ping_targets[0].ip) - 1);
+    strncpy(config->ping_targets[0].name, "路由器", sizeof(config->ping_targets[0].name) - 1);
+    
+    strncpy(config->ping_targets[1].ip, "192.168.195.200", sizeof(config->ping_targets[1].ip) - 1);
+    strncpy(config->ping_targets[1].name, "交换机", sizeof(config->ping_targets[1].name) - 1);
 }
 
 void config_apply_overrides(agent_config_t *config, const config_override_t *overrides)
@@ -484,7 +491,7 @@ int config_save_example(agent_config_t *config, const char *path)
             if (config->ping_targets[i].name[0] != '\0') {
                 fprintf(fp, "            name = \"%s\"\n", config->ping_targets[i].name);
             }
-            fprintf(fp, "        }\n");
+            fprintf(fp, "        }%s\n", (i < config->ping_target_count - 1) ? "," : "");
         }
         fprintf(fp, "    )\n");
     }

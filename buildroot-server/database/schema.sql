@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS pty_sessions (
     id BIGSERIAL PRIMARY KEY,
     session_id INT NOT NULL,
     device_id VARCHAR(64) NOT NULL,
-    console_id VARCHAR(50) NOT NULL,
+    console_id VARCHAR(50),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     closed_at TIMESTAMP WITH TIME ZONE,
     closed_reason VARCHAR(50),

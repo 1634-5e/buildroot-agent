@@ -55,6 +55,7 @@ class PtyHandler(BaseHandler):
 
             self.conn_mgr.pty_sessions[device_id][session_id] = asyncio.Queue()
 
+        target_console_id = None
         target_console = self.conn_mgr.get_console_by_session(device_id, session_id)
         if target_console:
             console_info = self.conn_mgr.get_console_info(target_console)
@@ -69,37 +70,40 @@ class PtyHandler(BaseHandler):
                 f"PTY create 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
         # 数据库操作：记录 PTY 会话创建
-        try:
-            console_id = target_console_id or None
-            pty_session_id = await PtySessionRepository.insert(
-                session_id=session_id,
-                device_id=device_id,
-                console_id=console_id,
-                rows=rows,
-                cols=cols,
-                status='active' if status == 'created' else status,
-            )
-            logger.info(
-                f"[DB] PTY会话已记录: session_id={session_id}, pty_id={pty_session_id}"
-            )
+        # 仅当 console_id 有效时记录
+        if target_console_id:
+            try:
+                pty_session_id = await PtySessionRepository.insert(
+                    session_id=session_id,
+                    device_id=device_id,
+                    console_id=target_console_id,
+                    rows=rows,
+                    cols=cols,
+                    status='active' if status == 'created' else status,
+                )
+                logger.info(
+                    f"[DB] PTY会话已记录: session_id={session_id}, pty_id={pty_session_id}"
+                )
 
-            # 记录审计日志（异步，不阻塞主流程）
-            asyncio.create_task(AuditLogRepository.insert(
-                event_type="pty_session",
-                action="create_session",
-                actor_type="web_console",
-                actor_id=console_id,
-                device_id=device_id,
-                resource_type="pty_session",
-                resource_id=str(session_id),
-                status="success",
-                details={
-                    "session_id": session_id,
-                    "size": f"{cols}x{rows}",
-                },
-            ))
-        except Exception as e:
-            logger.error(f"[DB] 记录 PTY 会话失败: {e}")
+                # 记录审计日志（异步，不阻塞主流程）
+                asyncio.create_task(AuditLogRepository.insert(
+                    event_type="pty_session",
+                    action="create_session",
+                    actor_type="web_console",
+                    actor_id=target_console_id,
+                    device_id=device_id,
+                    resource_type="pty_session",
+                    resource_id=str(session_id),
+                    status="success",
+                    details={
+                        "session_id": session_id,
+                        "size": f"{cols}x{rows}",
+                    },
+                ))
+            except Exception as e:
+                logger.error(f"[DB] 记录 PTY 会话失败: {e}")
+        else:
+            logger.debug(f"[DB] 跳过PTY会话记录: 无有效console_id, session={session_id}")
 
     async def handle_pty_resize(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))

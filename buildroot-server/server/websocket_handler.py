@@ -225,7 +225,7 @@ class WebSocketHandler:
                             logger.info(f"消息已转发到设备 {device_id}")
                         else:
                             logger.warning(f"转发消息到设备失败: {device_id}")
-                        return
+                        continue
 
                     # 服务端本地处理的消息
                     if msg_type == MessageType.DEVICE_LIST:
