@@ -216,6 +216,6 @@ class FileTransferManager:
                         try:
                             os.remove(temp_path)
                             logger.info(f"清理过期会话临时文件: {temp_path}")
-                        except:
+                        except Exception:
                             pass
                     logger.info(f"清理过期传输会话: {transfer_id}")

@@ -472,6 +472,38 @@
         </div>
     </div>
 
+    <!-- Device Edit Modal -->
+    <div class="modal-overlay" id="deviceEditModal" style="display:none;">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <div class="modal-title">✏️ 编辑设备</div>
+                <button class="modal-close" onclick="closeDeviceEditModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editDeviceId">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">设备ID</label>
+                    <input type="text" id="editDeviceIdDisplay" readonly
+                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-muted); font-size: 14px; outline: none;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">设备名称</label>
+                    <input type="text" id="editDeviceName" placeholder="例如：生产服务器-01"
+                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">标签（逗号分隔）</label>
+                    <input type="text" id="editDeviceTags" placeholder="例如：生产,服务器,Web"
+                           style="width: 100%; padding: 10px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-size: 14px; outline: none;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeDeviceEditModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveDeviceEdit()">💾 保存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settingsModal" style="display:none;">
         <div class="modal" style="max-width: 520px;">

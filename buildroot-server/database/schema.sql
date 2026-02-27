@@ -21,11 +21,9 @@ CREATE TABLE IF NOT EXISTS devices (
     last_connected_at TIMESTAMP WITH TIME ZONE,
     last_disconnected_at TIMESTAMP WITH TIME ZONE,
     last_seen_at TIMESTAMP WITH TIME ZONE,
-    last_heartbeat_at TIMESTAMP WITH TIME ZONE,
     current_status JSONB,
     last_status_reported_at TIMESTAMP WITH TIME ZONE,
     update_channel VARCHAR(50) DEFAULT 'stable',
-    auto_update BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     tags JSONB,
@@ -156,7 +154,6 @@ CREATE TABLE IF NOT EXISTS file_transfers (
     action_type VARCHAR(50),
     status VARCHAR(16) DEFAULT 'pending',
     checksum VARCHAR(32),
-    checksum_verified BOOLEAN DEFAULT FALSE,
     chunk_size INT,
     total_chunks INT,
     transferred_chunks INT DEFAULT 0,
@@ -165,7 +162,6 @@ CREATE TABLE IF NOT EXISTS file_transfers (
     completed_at TIMESTAMP WITH TIME ZONE,
     duration_seconds INT,
     error_message TEXT,
-    retry_count INT DEFAULT 0,
     request_id VARCHAR(50),
     metadata JSONB
 );
@@ -357,9 +353,6 @@ CREATE INDEX IF NOT EXISTS idx_ping_history_reported_at ON ping_history(reported
 CREATE INDEX IF NOT EXISTS idx_ping_history_device_reported ON ping_history(device_id, reported_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ping_history_device_target ON ping_history(device_id, target_ip);
 CREATE INDEX IF NOT EXISTS idx_ping_history_status ON ping_history(status);
-CREATE INDEX IF NOT EXISTS idx_update_approvals_update_history_id ON update_approvals(update_history_id);
-CREATE INDEX IF NOT EXISTS idx_update_approvals_action ON update_approvals(action);
-CREATE INDEX IF NOT EXISTS idx_update_approvals_approval_time ON update_approvals(approval_time DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_event_type ON audit_logs(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_device_id ON audit_logs(device_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);

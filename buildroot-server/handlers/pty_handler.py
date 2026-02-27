@@ -36,6 +36,16 @@ class PtyHandler(BaseHandler):
             logger.debug(
                 f"PTY session 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
+
+        try:
+            await PtySessionRepository.update_bytes_received(
+                device_id=device_id,
+                session_id=session_id,
+                bytes_received=len(pty_data),
+            )
+        except Exception as e:
+            logger.error(f"[DB] 更新 PTY bytes_received 失败: {e}")
+
     async def handle_pty_create(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))
         status = data.get("status", "unknown")
@@ -79,31 +89,36 @@ class PtyHandler(BaseHandler):
                     console_id=target_console_id,
                     rows=rows,
                     cols=cols,
-                    status='active' if status == 'created' else status,
+                    status="active" if status == "created" else status,
+                    created_by=target_console_id,
                 )
                 logger.info(
                     f"[DB] PTY会话已记录: session_id={session_id}, pty_id={pty_session_id}"
                 )
 
                 # 记录审计日志（异步，不阻塞主流程）
-                asyncio.create_task(AuditLogRepository.insert(
-                    event_type="pty_session",
-                    action="create_session",
-                    actor_type="web_console",
-                    actor_id=target_console_id,
-                    device_id=device_id,
-                    resource_type="pty_session",
-                    resource_id=str(session_id),
-                    status="success",
-                    details={
-                        "session_id": session_id,
-                        "size": f"{cols}x{rows}",
-                    },
-                ))
+                asyncio.create_task(
+                    AuditLogRepository.insert(
+                        event_type="pty_session",
+                        action="create_session",
+                        actor_type="web_console",
+                        actor_id=target_console_id,
+                        device_id=device_id,
+                        resource_type="pty_session",
+                        resource_id=str(session_id),
+                        status="success",
+                        details={
+                            "session_id": session_id,
+                            "size": f"{cols}x{rows}",
+                        },
+                    )
+                )
             except Exception as e:
                 logger.error(f"[DB] 记录 PTY 会话失败: {e}")
         else:
-            logger.debug(f"[DB] 跳过PTY会话记录: 无有效console_id, session={session_id}")
+            logger.debug(
+                f"[DB] 跳过PTY会话记录: 无有效console_id, session={session_id}"
+            )
 
     async def handle_pty_resize(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))
@@ -127,6 +142,7 @@ class PtyHandler(BaseHandler):
             logger.debug(
                 f"PTY resize 无对应 console (可能已断开): device={device_id}, session={session_id}"
             )
+
     async def handle_pty_close(self, device_id: str, data: dict) -> None:
         session_id = int(data.get("session_id", -1))
         reason = data.get("reason", "unknown")
@@ -166,19 +182,21 @@ class PtyHandler(BaseHandler):
 
             # 记录审计日志（异步，不阻塞主流程）
             console_id = target_console_id
-            asyncio.create_task(AuditLogRepository.insert(
-                event_type="pty_session",
-                action="close_session",
-                actor_type="web_console",
-                actor_id=console_id,
-                device_id=device_id,
-                resource_type="pty_session",
-                resource_id=str(session_id),
-                status="success",
-                details={
-                    "session_id": session_id,
-                    "reason": reason,
-                },
-            ))
+            asyncio.create_task(
+                AuditLogRepository.insert(
+                    event_type="pty_session",
+                    action="close_session",
+                    actor_type="web_console",
+                    actor_id=console_id,
+                    device_id=device_id,
+                    resource_type="pty_session",
+                    resource_id=str(session_id),
+                    status="success",
+                    details={
+                        "session_id": session_id,
+                        "reason": reason,
+                    },
+                )
+            )
         except Exception as e:
             logger.error(f"[DB] 更新 PTY 会话关闭状态失败: {e}")

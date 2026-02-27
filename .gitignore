@@ -9,5 +9,27 @@ dist
 .alma-snapshots
 build
 
+# Python
+*.py[cod]
+*.pyo
+*.pyc
+.Python
+*.egg-info
+.eggs
+*.egg
+
+# Tools
+.ruff_cache
+.mypy_cache
+.pytest_cache
+
+# IDE
+.idea
+*.swp
+*~
+
+# Backup files
+*.bak
+
 # Agent 配置文件（用户本地配置，不提交）
 agent.conf

@@ -138,9 +138,10 @@ function renderDeviceList() {
             <div class="device-card-header">
                 <div class="device-avatar">📱</div>
                 <div class="device-info">
-                    <h4>${device.device_id}</h4>
+                    <h4>${device.name || device.device_id}</h4>
                     <div class="device-status">在线</div>
                 </div>
+                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${device.device_id}')" title="编辑设备">✏️</button>
             </div>
             <div class="device-metrics">
                 <div class="device-metric">
@@ -156,6 +157,11 @@ function renderDeviceList() {
                     <div class="device-metric-label">负载</div>
                 </div>
             </div>
+            ${device.tags && device.tags.length > 0 ? `
+                <div class="device-tags" style="margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
+                    ${device.tags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${tag}</span>`).join('')}
+                </div>
+            ` : ''}
         </div>
     `).join('');
 }
@@ -175,6 +181,47 @@ function onSearchKeyDown(event) {
     if (event.key === 'Enter') {
         filterDevices();
     }
+}
+
+function openDeviceEditModal(deviceId) {
+    const device = devices.find(d => d.device_id === deviceId);
+    if (!device) {
+        showToast('设备不存在', 'error');
+        return;
+    }
+
+    document.getElementById('editDeviceId').value = deviceId;
+    document.getElementById('editDeviceIdDisplay').value = deviceId;
+    document.getElementById('editDeviceName').value = device.name || '';
+    document.getElementById('editDeviceTags').value = (device.tags || []).join(', ');
+
+    const modal = document.getElementById('deviceEditModal');
+    modal.style.display = 'flex';
+}
+
+function closeDeviceEditModal() {
+    const modal = document.getElementById('deviceEditModal');
+    modal.style.display = 'none';
+}
+
+function saveDeviceEdit() {
+    const deviceId = document.getElementById('editDeviceId').value;
+    const name = document.getElementById('editDeviceName').value.trim();
+    const tagsStr = document.getElementById('editDeviceTags').value.trim();
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+
+    if (!deviceId) {
+        showToast('设备ID不能为空', 'error');
+        return;
+    }
+
+    sendMessage(0x52, {  // DEVICE_UPDATE
+        device_id: deviceId,
+        name: name || null,
+        tags: tags.length > 0 ? tags : null
+    });
+
+    closeDeviceEditModal();
 }
 
 function queryDeviceList(params = {}) {
@@ -2135,6 +2182,14 @@ function handleMessage(type, data) {
             renderDeviceList();
             paginationState.totalCount--;
             renderPaginationUI();
+            break;
+        case 0x52:  // DEVICE_UPDATE
+            if (data.success) {
+                showToast('设备信息已更新', 'success');
+                queryDeviceList();
+            } else {
+                showToast(`更新失败: ${data.message}`, 'error');
+            }
             break;
         case MSG_TYPES.PING_STATUS:
             handlePingStatus(data);

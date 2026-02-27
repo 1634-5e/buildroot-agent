@@ -387,7 +387,7 @@ def test_update_manager():
         }
 
         result = await manager.handle_update_check("test-device", check_data)
-        print("更新检查结果:", result)
+        logger.debug(f"更新检查结果: {result}")
 
         # 测试下载请求
         if result.get("has_update"):
@@ -399,7 +399,7 @@ def test_update_manager():
             download_result = await manager.handle_update_download(
                 "test-device", download_data
             )
-            print("下载请求结果:", download_result)
+            logger.debug(f"下载请求结果: {download_result}")
 
     asyncio.run(test())
 

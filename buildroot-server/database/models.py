@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     ForeignKey,
     Index,
-        func,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
@@ -65,9 +65,6 @@ class Device(Base):
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), index=True
     )
-    last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
-    )
 
     current_status: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     last_status_reported_at: Mapped[Optional[datetime]] = mapped_column(
@@ -75,7 +72,6 @@ class Device(Base):
     )
 
     update_channel: Mapped[str] = mapped_column(String(50), default="stable")
-    auto_update: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now()
@@ -88,9 +84,7 @@ class Device(Base):
     total_uptime_seconds: Mapped[int] = mapped_column(BigInteger, default=0)
     connection_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    __table_args__ = (
-        Index("ix_devices_status_online", "status", "is_online"),
-    )
+    __table_args__ = (Index("ix_devices_status_online", "status", "is_online"),)
 
 
 class DeviceStatusHistory(Base):
@@ -197,7 +191,7 @@ class CommandHistory(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
     script_id: Mapped[Optional[str]] = mapped_column(String(50))
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
 
     __table_args__ = (
@@ -243,7 +237,7 @@ class ScriptHistory(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
     error_message: Mapped[Optional[str]] = mapped_column(Text)
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
 class FileTransfer(Base):
@@ -265,7 +259,6 @@ class FileTransfer(Base):
 
     status: Mapped[str] = mapped_column(String(50), default="pending", index=True)
     checksum: Mapped[Optional[str]] = mapped_column(String(64))
-    checksum_verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
     chunk_size: Mapped[Optional[int]] = mapped_column(Integer)
     total_chunks: Mapped[Optional[int]] = mapped_column(Integer)
@@ -279,10 +272,9 @@ class FileTransfer(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
     error_message: Mapped[Optional[str]] = mapped_column(Text)
-    retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
     request_id: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (Index("ix_file_transfers_device_status", "device_id", "status"),)
 
@@ -349,7 +341,7 @@ class UpdateHistory(Base):
 
     release_notes: Mapped[Optional[str]] = mapped_column(Text)
     changes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         Index("ix_update_history_device_status", "device_id", "status"),
@@ -384,7 +376,7 @@ class UpdateApproval(Base):
     approved_by_ip: Mapped[Optional[str]] = mapped_column(String(45))
 
     request_id: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
 class WebConsoleSession(Base):
@@ -429,7 +421,9 @@ class PtySession(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(Integer, nullable=False)
     device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    console_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    console_id: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, index=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), index=True

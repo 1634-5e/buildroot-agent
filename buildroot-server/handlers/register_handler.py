@@ -62,6 +62,7 @@ class RegisterHandler(BaseHandler):
             logger.info(f"[DB] 设备信息已保存: {device_id}")
         except Exception as e:
             import traceback
+
             logger.error(f"[DB] 保存设备信息失败: {e}\n{traceback.format_exc()}")
 
         # 发送注册结果响应
@@ -96,5 +97,5 @@ class RegisterHandler(BaseHandler):
                 return f"{addr[0]}:{addr[1]}" if addr else "unknown"
             else:
                 return "unknown"
-        except:
+        except Exception:
             return "unknown"

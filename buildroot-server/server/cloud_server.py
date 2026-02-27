@@ -226,7 +226,7 @@ class MessageRouter:
                     json_str = json_data_bytes.decode("utf-8")
                     if json_str.strip():
                         json_data = json.loads(json_str)
-                except:
+                except Exception:
                     json_data = {}
 
         json_data = json_data or {}

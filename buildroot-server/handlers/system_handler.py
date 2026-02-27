@@ -51,6 +51,29 @@ class SystemHandler(BaseHandler):
         except Exception as e:
             logger.error(f"[DB] 更新设备状态失败: {e}")
 
+        try:
+            await DeviceRepository.update_device_info(
+                device_id=device_id,
+                hostname=data.get("hostname"),
+                kernel_version=data.get("kernel_version"),
+                ip_addr=data.get("ip_addr"),
+                mac_addr=data.get("mac_addr"),
+            )
+            logger.debug(f"[DB] 设备基本信息已同步: {device_id}")
+        except Exception as e:
+            logger.error(f"[DB] 同步设备基本信息失败: {e}")
+
+        try:
+            uptime = data.get("uptime", 0)
+            if uptime > 0:
+                await DeviceRepository.update_uptime_seconds(
+                    device_id=device_id,
+                    uptime_seconds=uptime,
+                )
+                logger.debug(f"[DB] 运行时间已更新: {device_id}, uptime={uptime}s")
+        except Exception as e:
+            logger.error(f"[DB] 更新运行时间失败: {e}")
+
         buffer = get_status_history_buffer()
         asyncio.create_task(
             buffer.add_status(

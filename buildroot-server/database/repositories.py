@@ -34,15 +34,17 @@ class DeviceRepository:
     """设备数据仓储"""
 
     @staticmethod
-    async def get_by_device_id(device_id: str, use_cache: bool = True) -> Optional[dict]:
+    async def get_by_device_id(
+        device_id: str, use_cache: bool = True
+    ) -> Optional[dict]:
         """通过设备ID获取设备（带缓存）
-        
+
         Args:
             device_id: 设备ID
             use_cache: 是否使用缓存，查询实时状态时应设为 False
         """
         cache_key = f"device_{device_id}"
-        
+
         # 只有使用缓存时才检查缓存
         if use_cache:
             cached_value = await device_detail_cache.get(cache_key)
@@ -281,6 +283,62 @@ class DeviceRepository:
                 return True
             return False
 
+    @staticmethod
+    async def update_device_info(
+        device_id: str,
+        hostname: str = None,
+        kernel_version: str = None,
+        ip_addr: str = None,
+        mac_addr: str = None,
+        name: str = None,
+        tags: list = None,
+    ) -> bool:
+        """更新设备基本信息"""
+        async with db_manager.get_session() as session:
+            result = await session.execute(
+                select(Device).where(Device.device_id == device_id)
+            )
+            device = result.scalar_one_or_none()
+
+            if device:
+                if hostname is not None:
+                    device.hostname = hostname
+                if kernel_version is not None:
+                    device.kernel_version = kernel_version
+                if ip_addr is not None:
+                    device.ip_addr = ip_addr
+                if mac_addr is not None:
+                    device.mac_addr = mac_addr
+                if name is not None:
+                    device.name = name
+                if tags is not None:
+                    device.tags = tags
+
+                await session.commit()
+                await device_detail_cache.delete(f"device_{device_id}")
+                await device_list_cache.clear()
+                return True
+            return False
+
+    @staticmethod
+    async def update_uptime_seconds(
+        device_id: str,
+        uptime_seconds: int,
+    ) -> bool:
+        """更新设备运行时间（直接存储当前uptime值）"""
+        async with db_manager.get_session() as session:
+            result = await session.execute(
+                select(Device).where(Device.device_id == device_id)
+            )
+            device = result.scalar_one_or_none()
+
+            if device:
+                device.total_uptime_seconds = uptime_seconds
+                await session.commit()
+                await device_detail_cache.delete(f"device_{device_id}")
+                return True
+            return False
+
 
 class DeviceStatusHistoryRepository:
     """设备状态历史数据仓储"""
@@ -489,7 +547,9 @@ class PingHistoryRepository:
                     "avg_time": float(record.avg_time) if record.avg_time else None,
                     "min_time": float(record.min_time) if record.min_time else None,
                     "max_time": float(record.max_time) if record.max_time else None,
-                    "packet_loss": float(record.packet_loss) if record.packet_loss else None,
+                    "packet_loss": float(record.packet_loss)
+                    if record.packet_loss
+                    else None,
                     "packets_sent": record.packets_sent,
                     "packets_received": record.packets_received,
                     "raw_data": record.raw_data,
@@ -558,17 +618,20 @@ class CommandHistoryRepository:
                     history.stderr = stderr
                 if started_at is not None:
                     history.started_at = started_at
+                elif history.started_at is None:
+                    history.started_at = history.requested_at
                 if completed_at is not None:
                     history.completed_at = completed_at
 
-                if started_at and completed_at:
-                    history.duration_seconds = int(
-                        (completed_at - started_at).total_seconds()
-                    )
+                if history.started_at and (completed_at or history.completed_at):
+                    start = history.started_at
+                    end = completed_at or history.completed_at
+                    history.duration_seconds = int((end - start).total_seconds())
 
                 output_summary = (
                     (stdout or stderr or "")[:500] if (stdout or stderr) else None
                 )
+                history.output_summary = output_summary
 
                 await session.commit()
                 return True
@@ -890,6 +953,8 @@ class ScriptHistoryRepository:
         output: str = None,
         error_message: str = None,
         completed_at: datetime = None,
+        output_summary: str = None,
+        output_size: int = None,
         duration_seconds: int = None,
     ) -> bool:
         """更新脚本执行结果"""
@@ -906,7 +971,21 @@ class ScriptHistoryRepository:
                     script.output = output
                     script.error_message = error_message
                     script.completed_at = completed_at or datetime.now()
+
+                    if output_summary is None:
+                        output_summary = (output or "")[:500] if output else None
+                    script.output_summary = output_summary
+
+                    if output_size is None:
+                        output_size = len(output) if output else 0
+                    script.output_size = output_size
+
+                    if duration_seconds is None and script.started_at:
+                        duration_seconds = int(
+                            (script.completed_at - script.started_at).total_seconds()
+                        )
                     script.duration_seconds = duration_seconds
+
                     await session.commit()
             return True
         except Exception as e:
@@ -925,6 +1004,7 @@ class PtySessionRepository:
         rows: int = 24,
         cols: int = 80,
         status: str = "active",
+        created_by: str = None,
     ) -> dict:
         """插入 PTY 会话"""
         try:
@@ -936,6 +1016,7 @@ class PtySessionRepository:
                     rows=rows,
                     cols=cols,
                     status=status,
+                    created_by=created_by,
                 )
                 session.add(pty)
                 await session.commit()
@@ -977,6 +1058,57 @@ class PtySessionRepository:
             logger.error(f"Failed to update pty session: {e}")
             return False
 
+    @staticmethod
+    async def update_bytes_received(
+        device_id: str,
+        session_id: int,
+        bytes_received: int,
+    ) -> bool:
+        """更新 PTY 会话接收字节数"""
+        try:
+            async with db_manager.get_session() as session:
+                result = await session.execute(
+                    select(PtySession).where(
+                        and_(
+                            PtySession.session_id == session_id,
+                            PtySession.device_id == device_id,
+                            PtySession.status == "active",
+                        )
+                    )
+                )
+                pty = result.scalar_one_or_none()
+                if pty:
+                    pty.bytes_received = (pty.bytes_received or 0) + bytes_received
+                    await session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update PTY bytes received: {e}")
+            return False
+
+    @staticmethod
+    async def update_bytes_sent(
+        device_id: str,
+        session_id: int,
+    ) -> bool:
+        """更新 PTY 会话发送字节数（server 计算）"""
+        try:
+            async with db_manager.get_session() as session:
+                result = await session.execute(
+                    select(PtySession).where(
+                        and_(
+                            PtySession.session_id == session_id,
+                            PtySession.device_id == device_id,
+                        )
+                    )
+                )
+                pty = result.scalar_one_or_none()
+                if pty:
+                    await session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update PTY bytes sent: {e}")
+            return False
+
 
 class WebConsoleSessionRepository:
     """Web控制台会话数据仓储"""
@@ -986,6 +1118,8 @@ class WebConsoleSessionRepository:
         console_id: str,
         device_id: str = None,
         remote_addr: str = None,
+        user_id: str = None,
+        user_agent: str = None,
         last_seen_at: datetime = None,
     ) -> dict:
         """插入 Web 控制台会话"""
@@ -995,6 +1129,8 @@ class WebConsoleSessionRepository:
                     console_id=console_id,
                     device_id=device_id,
                     remote_addr=remote_addr,
+                    user_id=user_id,
+                    user_agent=user_agent,
                 )
                 session.add(console)
                 await session.commit()

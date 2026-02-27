@@ -6,7 +6,11 @@ from websockets.server import WebSocketServerProtocol
 
 from protocol.constants import MessageType
 from protocol.codec import MessageCodec
-from database.repositories import DeviceRepository
+from database.repositories import (
+    DeviceRepository,
+    WebConsoleSessionRepository,
+    AuditLogRepository,
+)
 from datetime import datetime
 
 
@@ -23,13 +27,50 @@ class WebSocketHandler:
     async def agent_handler(self, websocket: WebSocketServerProtocol) -> None:
         try:
             remote = getattr(websocket, "remote_address", "unknown")
-        except:
+        except Exception:
             remote = "unknown"
         logger.info(f"新连接: {remote}")
 
         self.conn_mgr.add_console(websocket)
 
+        console_id = None
+        console_info = self.conn_mgr.get_console_info(websocket)
+        if console_info:
+            console_id = console_info.get("console_id")
+
         device_id: str | None = None
+
+        user_id = None
+        user_agent = None
+        try:
+            request_headers = getattr(websocket, "request_headers", {})
+            if request_headers:
+                user_agent = request_headers.get("user-agent", "")
+
+            remote_addr = getattr(websocket, "remote_address", "unknown")
+            if isinstance(remote_addr, tuple):
+                remote_addr = remote_addr[0] if remote_addr else "unknown"
+            else:
+                remote_addr = str(remote_addr)
+
+            if console_id:
+                user_id = f"web_{console_id}"
+        except Exception as e:
+            logger.debug(f"获取用户信息失败: {e}")
+
+        if console_id:
+            try:
+                await WebConsoleSessionRepository.insert(
+                    console_id=console_id,
+                    remote_addr=remote_addr,
+                    user_id=user_id,
+                    user_agent=user_agent,
+                )
+                logger.info(
+                    f"[DB] Web控制台会话已创建: console_id={console_id}, user_id={user_id}"
+                )
+            except Exception as e:
+                logger.error(f"[DB] 创建Web控制台会话失败: {e}")
 
         try:
             if not hasattr(websocket, "__aiter__"):
@@ -164,7 +205,11 @@ class WebSocketHandler:
                             device = await DeviceRepository.get_by_device_id(
                                 device_id, use_cache=False
                             )
-                            if device and device.get("current_status") and device["current_status"].get("ping_status"):
+                            if (
+                                device
+                                and device.get("current_status")
+                                and device["current_status"].get("ping_status")
+                            ):
                                 ping_status = device["current_status"]["ping_status"]
                                 # Return ping status from database as CMD_RESPONSE
                                 response = MessageCodec.encode(
@@ -211,6 +256,7 @@ class WebSocketHandler:
                     SERVER_HANDLED_TYPES = (
                         MessageType.DEVICE_LIST,
                         MessageType.DEVICE_DISCONNECT,
+                        MessageType.DEVICE_UPDATE,
                     )
 
                     if device_id and msg_type not in SERVER_HANDLED_TYPES:
@@ -271,6 +317,67 @@ class WebSocketHandler:
                         ):
                             await websocket.send(response)
                             logger.info("设备列表已发送到web控制台")
+
+                    elif msg_type == MessageType.DEVICE_UPDATE:
+                        device_id = json_data.get("device_id")
+                        name = json_data.get("name")
+                        tags = json_data.get("tags")
+
+                        logger.info(
+                            f"Web控制台更新设备信息: device_id={device_id}, name={name}, tags={tags}"
+                        )
+
+                        try:
+                            await DeviceRepository.update_device_info(
+                                device_id=device_id,
+                                name=name,
+                                tags=tags,
+                            )
+                            logger.info(f"[DB] 设备信息已更新: {device_id}")
+
+                            response = MessageCodec.encode(
+                                MessageType.DEVICE_UPDATE,
+                                {
+                                    "success": True,
+                                    "device_id": device_id,
+                                    "message": "设备信息已更新",
+                                },
+                            )
+                            if hasattr(websocket, "send") and callable(
+                                getattr(websocket, "send", None)
+                            ):
+                                await websocket.send(response)
+
+                            asyncio.create_task(
+                                AuditLogRepository.insert(
+                                    event_type="device_update",
+                                    action="update_device_info",
+                                    actor_type="web_console",
+                                    actor_id=console_id,
+                                    device_id=device_id,
+                                    resource_type="device",
+                                    resource_id=device_id,
+                                    status="success",
+                                    details={
+                                        "name": name,
+                                        "tags": tags,
+                                    },
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(f"[DB] 更新设备信息失败: {e}")
+                            response = MessageCodec.encode(
+                                MessageType.DEVICE_UPDATE,
+                                {
+                                    "success": False,
+                                    "device_id": device_id,
+                                    "message": f"更新失败: {str(e)}",
+                                },
+                            )
+                            if hasattr(websocket, "send") and callable(
+                                getattr(websocket, "send", None)
+                            ):
+                                await websocket.send(response)
                 except Exception as e:
                     logger.error(f"Web控制台消息处理失败: {e}")
 
@@ -309,3 +416,14 @@ class WebSocketHandler:
                             "reason": "console disconnected",
                         },
                     )
+
+            if console_id:
+                try:
+                    await WebConsoleSessionRepository.update_closed(
+                        console_id=console_id,
+                        disconnected_at=datetime.now(),
+                        is_active=False,
+                    )
+                    logger.info(f"[DB] Web控制台会话已关闭: console_id={console_id}")
+                except Exception as e:
+                    logger.error(f"[DB] 更新Web控制台会话失败: {e}")

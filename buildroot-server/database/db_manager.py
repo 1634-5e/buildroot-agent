@@ -24,16 +24,19 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 def patched_get_server_version_info(self, connection):
     v = connection.exec_driver_sql("SELECT version()").scalar()
-    m = re.search(r'AtlasDB (\d+)\.(\d+)\.(\d+)(?:\.(\d+))?', v)
+    m = re.search(r"AtlasDB (\d+)\.(\d+)\.(\d+)(?:\.(\d+))?", v)
     if m:
         return tuple(int(x) for x in m.groups() if x is not None)
-    
-    print("Warning: Falling back to PostgreSQL version 12 for AtlasDB")
+
+    logger.warning("Falling back to PostgreSQL version 12 for AtlasDB")
     return (12, 0)
 
+
 PGDialect._get_server_version_info = patched_get_server_version_info
+
 
 class DatabaseManager:
     """数据库管理器 - 单例模式"""
