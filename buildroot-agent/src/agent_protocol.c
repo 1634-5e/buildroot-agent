@@ -1040,29 +1040,31 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
     }
     
     /* 内置命令处理 */
-    if (strcmp(cmd, "status") == 0) {
-        /* 立即上报状态 */
+    if (strcmp(cmd, "status") == 0 || strcmp(cmd, "system_status") == 0) {
+        /* 立即采集并返回系统状态 */
         LOG_INFO("收到状态查询命令，开始收集系统信息");
         system_status_t status;
         status_collect(&status);
         char *json = status_to_json(&status);
         if (json) {
-            char *final_json = NULL;
             if (request_id) {
                 size_t json_len = strlen(json);
-                size_t final_size = json_len + strlen(request_id) + 32;
-                final_json = malloc(final_size);
+                size_t final_size = json_len + strlen(ctx->config.device_id) + strlen(request_id) + 256;
+                char *final_json = malloc(final_size);
                 if (final_json) {
-                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
-                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
+                    snprintf(final_json, final_size,
+                        "{\"device_id\":\"%s\",\"request_id\":\"%s\",\"status\":\"completed\","
+                        "\"success\":true,\"exit_code\":0,%s",
+                        ctx->config.device_id, request_id, json + 1);
+                    socket_send_json(ctx, MSG_TYPE_CMD_RESPONSE, final_json);
                     free(final_json);
                 }
-            }
-            if (!final_json) {
+            } else {
                 socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
             }
             free(json);
-            LOG_INFO("系统状态已上报");
+            LOG_INFO("系统状态已返回");
+        }
     } else if (strcmp(cmd, "ping") == 0) {
         /* 查询ping状态 */
         LOG_INFO("收到ping查询命令");
@@ -1070,32 +1072,6 @@ static void handle_cmd_request(agent_context_t *ctx, const char *data)
             ping_execute_all(ctx);
         } else {
             LOG_INFO("Ping监控未启用");
-        }
-    } else if (strcmp(cmd, "system_status") == 0) {
-        }
-    } else if (strcmp(cmd, "system_status") == 0) {
-        /* 前端发送的 system_status 命令，同 status */
-        LOG_INFO("收到 system_status 命令，开始收集系统信息");
-        system_status_t status;
-        status_collect(&status);
-        char *json = status_to_json(&status);
-        if (json) {
-            char *final_json = NULL;
-            if (request_id) {
-                size_t json_len = strlen(json);
-                size_t final_size = json_len + strlen(request_id) + 32;
-                final_json = malloc(final_size);
-                if (final_json) {
-                    snprintf(final_json, final_size, "%.*s,\"request_id\":\"%s\"}", (int)(json_len - 1), json, request_id);
-                    socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, final_json);
-                    free(final_json);
-                }
-            }
-            if (!final_json) {
-                socket_send_json(ctx, MSG_TYPE_SYSTEM_STATUS, json);
-            }
-            free(json);
-            LOG_INFO("系统状态已上报");
         }
     } else if (strcmp(cmd, "reboot") == 0) {
         LOG_WARN("收到重启命令");

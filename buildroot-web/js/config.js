@@ -4,7 +4,6 @@
 
 const MSG_TYPES = {
     HEARTBEAT: 0x01,
-    SYSTEM_STATUS: 0x02,
     LOG_UPLOAD: 0x03,
     SCRIPT_RECV: 0x04,
     SCRIPT_RESULT: 0x05,

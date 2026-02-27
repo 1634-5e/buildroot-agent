@@ -2136,9 +2136,6 @@ function handleMessage(type, data) {
             paginationState.totalCount--;
             renderPaginationUI();
             break;
-        case MSG_TYPES.SYSTEM_STATUS:
-            updateSystemStatus(data);
-            break;
         case MSG_TYPES.PING_STATUS:
             handlePingStatus(data);
             break;

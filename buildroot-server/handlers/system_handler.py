@@ -106,13 +106,6 @@ class SystemHandler(BaseHandler):
                 request_id,
             )
 
-        # 优化: 广播状态更新给正在查看该设备的Web客户端
-        await self.broadcast_to_web_consoles(
-            MessageType.SYSTEM_STATUS,
-            {"device_id": device_id, **data},
-            target_device_id=device_id,
-        )
-
     async def handle_log_upload(self, device_id: str, data: dict) -> None:
         filepath = data.get("filepath", "unknown")
         if "chunk" in data:
