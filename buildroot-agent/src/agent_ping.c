@@ -14,10 +14,6 @@
 #include <netinet/in.h>
 #include <netinet/ip_icmp.h>
 #include <netdb.h>
-#include <errno.h>
-#include <signal.h>
-#include <pthread.h>
-
 #include "agent.h"
 
 typedef struct {
@@ -49,19 +45,25 @@ static unsigned short checksum(void *b, int len)
 
 static int resolve_ip(const char *hostname, struct sockaddr_in *addr)
 {
-    struct hostent *he;
+    struct addrinfo hints, *res;
+    int ret;
 
     if (inet_aton(hostname, &addr->sin_addr) != 0) {
         return 0;
     }
 
-    he = gethostbyname(hostname);
-    if (he == NULL) {
-        LOG_ERROR("无法解析主机名: %s", hostname);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_RAW;
+
+    ret = getaddrinfo(hostname, NULL, &hints, &res);
+    if (ret != 0) {
+        LOG_ERROR("无法解析主机名: %s (%s)", hostname, gai_strerror(ret));
         return -1;
     }
 
-    memcpy(&addr->sin_addr, he->h_addr_list[0], he->h_length);
+    memcpy(addr, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
     return 0;
 }
 

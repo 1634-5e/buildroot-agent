@@ -83,8 +83,9 @@ typedef enum {
     MSG_TYPE_FILE_DOWNLOAD_DATA = 0x26,    /* TCP下载数据 */
     MSG_TYPE_CMD_REQUEST    = 0x30,     /* 命令请求 */
     MSG_TYPE_CMD_RESPONSE   = 0x31,     /* 命令响应 */
-    MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
+MSG_TYPE_DEVICE_LIST    = 0x50,     /* 设备列表更新 */
     MSG_TYPE_DEVICE_DISCONNECT = 0x51,  /* 设备断开通知 */
+    MSG_TYPE_DEVICE_UPDATE  = 0x52,     /* 设备更新通知 */
     MSG_TYPE_REGISTER_RESULT = 0xF1,    /* 注册结果 */
 
     /* 更新管理消息 */

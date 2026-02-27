@@ -191,7 +191,7 @@ class CommandHistory(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
     script_id: Mapped[Optional[str]] = mapped_column(String(50))
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
 
     __table_args__ = (
@@ -237,7 +237,7 @@ class ScriptHistory(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
 
     error_message: Mapped[Optional[str]] = mapped_column(Text)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
 class FileTransfer(Base):
@@ -274,7 +274,7 @@ class FileTransfer(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text)
 
     request_id: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (Index("ix_file_transfers_device_status", "device_id", "status"),)
 
@@ -341,7 +341,7 @@ class UpdateHistory(Base):
 
     release_notes: Mapped[Optional[str]] = mapped_column(Text)
     changes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         Index("ix_update_history_device_status", "device_id", "status"),
@@ -376,7 +376,7 @@ class UpdateApproval(Base):
     approved_by_ip: Mapped[Optional[str]] = mapped_column(String(45))
 
     request_id: Mapped[Optional[str]] = mapped_column(String(50), index=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
 class WebConsoleSession(Base):

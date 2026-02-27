@@ -56,12 +56,13 @@ void agent_log(int level, const char *fmt, ...)
     
     /* 时间戳 */
     struct timeval tv;
+    struct tm tm_result;
     gettimeofday(&tv, NULL);
-    struct tm *tm = localtime(&tv.tv_sec);
+    localtime_r(&tv.tv_sec, &tm_result);
     
     fprintf(out, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] [%s] ",
-            tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-            tm->tm_hour, tm->tm_min, tm->tm_sec,
+            tm_result.tm_year + 1900, tm_result.tm_mon + 1, tm_result.tm_mday,
+            tm_result.tm_hour, tm_result.tm_min, tm_result.tm_sec,
             tv.tv_usec / 1000,
             log_level_names[level]);
     

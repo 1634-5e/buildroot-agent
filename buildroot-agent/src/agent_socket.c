@@ -117,7 +117,12 @@ static int connect_with_timeout(int sock_fd, struct sockaddr *addr, socklen_t ad
 static void *socket_recv_thread(void *arg)
 {
     socket_client_t *client = (socket_client_t *)arg;
-    unsigned char recv_buf[65536];
+    unsigned char *recv_buf = malloc(65536);
+    
+    if (!recv_buf) {
+        LOG_ERROR("接收缓冲区内存分配失败");
+        return NULL;
+    }
     
     LOG_INFO("Socket接收线程启动");
     
@@ -168,6 +173,8 @@ static void *socket_recv_thread(void *arg)
     }
     
     LOG_INFO("Socket接收线程退出");
+
+    free(recv_buf);
 
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
     client->thread_running = false;
@@ -247,10 +254,14 @@ static void *socket_send_thread(void *arg)
 static int do_connect(socket_client_t *client, const char *host, int port)
 {
     struct sockaddr_in server_addr;
-    struct hostent *he;
+    struct addrinfo hints, *res, *rp;
     int retry = 0;
+    int gai_ret;
+    char port_str[16];
     
     client->sock_fd = -1;
+    
+    snprintf(port_str, sizeof(port_str), "%d", port);
     
     /* 内层快速重试：最多2次（初始1次+快速重试1次），间隔1秒 */
     for (retry = 0; retry < 2 && g_agent_ctx && g_agent_ctx->running; retry++) {
@@ -267,23 +278,27 @@ static int do_connect(socket_client_t *client, const char *host, int port)
             break;
         }
         
-        client->sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+        /* 使用 getaddrinfo 替代废弃的 gethostbyname */
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        
+        gai_ret = getaddrinfo(host, port_str, &hints, &res);
+        if (gai_ret != 0) {
+            LOG_ERROR("无法解析主机名: %s (%s)", host, gai_strerror(gai_ret));
+            continue;
+        }
+        
+        client->sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (client->sock_fd < 0) {
             LOG_ERROR("创建socket失败: %s", strerror(errno));
-            return -1;
+            freeaddrinfo(res);
+            continue;
         }
         
-        he = gethostbyname(host);
-        if (!he) {
-            LOG_ERROR("无法解析主机名: %s", host);
-            close(client->sock_fd);
-            return -1;
-        }
-        
-        memset(&server_addr, 0, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
+        memcpy(&server_addr, res->ai_addr, res->ai_addrlen);
         server_addr.sin_port = htons(port);
-        memcpy(&server_addr.sin_addr, he->h_addr_list[0], he->h_length);
+        freeaddrinfo(res);
         
         LOG_INFO("连接到 %s:%d", host, port);
         
@@ -367,10 +382,31 @@ static int do_reconnect(socket_client_t *client, const char *host, int port)
     pthread_mutex_unlock(&client->reconnect_lock);
     
     if (ret == 0) {
-        pthread_create(&client->recv_thread, NULL, socket_recv_thread, client);
+        int recv_thread_ret = pthread_create(&client->recv_thread, NULL, socket_recv_thread, client);
+        if (recv_thread_ret != 0) {
+            LOG_ERROR("创建接收线程失败: %s", strerror(recv_thread_ret));
+            close(client->sock_fd);
+            client->sock_fd = -1;
+            pthread_mutex_lock(&client->reconnect_lock);
+            client->connected = false;
+            pthread_mutex_unlock(&client->reconnect_lock);
+            return -1;
+        }
 
         client->send_thread_running = true;
-        pthread_create(&client->send_thread, NULL, socket_send_thread, client);
+        int send_thread_ret = pthread_create(&client->send_thread, NULL, socket_send_thread, client);
+        if (send_thread_ret != 0) {
+            LOG_ERROR("创建发送线程失败: %s", strerror(send_thread_ret));
+            client->send_thread_running = false;
+            pthread_cancel(client->recv_thread);
+            pthread_join(client->recv_thread, NULL);
+            close(client->sock_fd);
+            client->sock_fd = -1;
+            pthread_mutex_lock(&client->reconnect_lock);
+            client->connected = false;
+            pthread_mutex_unlock(&client->reconnect_lock);
+            return -1;
+        }
 
         pthread_mutex_lock(&client->agent_ctx->lock);
         client->agent_ctx->connected = true;
@@ -576,10 +612,33 @@ int socket_connect(agent_context_t *ctx)
     
     if (ret == 0) {
         g_socket_client->thread_running = true;
-        pthread_create(&g_socket_client->recv_thread, NULL, socket_recv_thread, g_socket_client);
+        int recv_ret = pthread_create(&g_socket_client->recv_thread, NULL, socket_recv_thread, g_socket_client);
+        if (recv_ret != 0) {
+            LOG_ERROR("创建接收线程失败: %s", strerror(recv_ret));
+            g_socket_client->thread_running = false;
+            close(g_socket_client->sock_fd);
+            g_socket_client->sock_fd = -1;
+            pthread_mutex_lock(&g_socket_client->reconnect_lock);
+            g_socket_client->connected = false;
+            pthread_mutex_unlock(&g_socket_client->reconnect_lock);
+            return -1;
+        }
 
         /* 启动发送线程 */
-        pthread_create(&g_socket_client->send_thread, NULL, socket_send_thread, g_socket_client);
+        int send_ret = pthread_create(&g_socket_client->send_thread, NULL, socket_send_thread, g_socket_client);
+        if (send_ret != 0) {
+            LOG_ERROR("创建发送线程失败: %s", strerror(send_ret));
+            g_socket_client->thread_running = false;
+            g_socket_client->send_thread_running = false;
+            pthread_cancel(g_socket_client->recv_thread);
+            pthread_join(g_socket_client->recv_thread, NULL);
+            close(g_socket_client->sock_fd);
+            g_socket_client->sock_fd = -1;
+            pthread_mutex_lock(&g_socket_client->reconnect_lock);
+            g_socket_client->connected = false;
+            pthread_mutex_unlock(&g_socket_client->reconnect_lock);
+            return -1;
+        }
 
         /* 设置agent的connected状态，使心跳和状态线程能够工作 */
         pthread_mutex_lock(&g_socket_client->agent_ctx->lock);

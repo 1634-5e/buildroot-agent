@@ -27,7 +27,6 @@ bool g_approval_sent = false;
 /* 内部函数 */
 static int parse_version(const char *version_str, int *major, int *minor, int *patch);
 static int compare_versions(const char *v1, const char *v2);
-static int create_backup(const char *backup_path, char *backup_file);
 static int extract_update_package(const char *package_path, const char *output_dir);
 static int install_new_binary(const char *new_binary_path);
 static int verify_installation(void);
@@ -282,7 +281,8 @@ int update_backup_current_version(const char *backup_dir, char *backup_path)
 {
     char backup_file[512];
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    struct tm tm_info;
+    localtime_r(&now, &tm_info);
     
     /* 获取当前二进制路径 */
     char *current_binary = get_exe_path();
@@ -299,7 +299,7 @@ int update_backup_current_version(const char *backup_dir, char *backup_path)
     
     /* 生成备份文件名：agent-1.0.0-20240213-120000 */
     char timestamp[64];
-    strftime(timestamp, sizeof(timestamp), "%Y%m%d-%H%M%S", tm_info);
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d-%H%M%S", &tm_info);
     snprintf(backup_file, sizeof(backup_file), "%s/agent-%s-%s",
              backup_dir, AGENT_VERSION, timestamp);
     

@@ -61,8 +61,6 @@ class PtyHandler(BaseHandler):
             self.conn_mgr.pty_sessions[device_id] = {}
 
         if session_id not in self.conn_mgr.pty_sessions[device_id]:
-            import asyncio
-
             self.conn_mgr.pty_sessions[device_id][session_id] = asyncio.Queue()
 
         target_console_id = None

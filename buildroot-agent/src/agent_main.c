@@ -18,30 +18,13 @@ agent_context_t *g_agent_ctx = NULL;
 /* PID文件路径 */
 #define PID_FILE    "/tmp/buildroot-agent.pid"
 
-/* 信号处理 */
+/* 异步信号安全标志 */
+static volatile sig_atomic_t g_signal_received = 0;
+
+/* 信号处理 - 仅设置标志，不调用非异步信号安全函数 */
 static void signal_handler(int sig)
 {
-    LOG_INFO("收到信号: %d", sig);
-    
-    if (g_agent_ctx) {
-        g_agent_ctx->running = false;
-        
-        /* 额外处理：通知所有线程退出 */
-        /* 心跳和状态线程会检查running标志，无需额外操作 */
-        /* 重连线程和接收线程由socket模块管理 */
-        
-        /* 更新模式下，不立即退出，等待fork完成 */
-        if (g_in_update && sig != SIGQUIT) {
-            LOG_INFO("更新模式：延迟退出直到fork完成");
-            return;  // 不退出，让update_restart_agent继续执行
-        }
-    }
-    
-    /* 特殊处理SIGQUIT - 立即退出（可能不清理）*/
-    if (sig == SIGQUIT) {
-        LOG_INFO("收到SIGQUIT，立即退出");
-        _exit(1);
-    }
+    g_signal_received = sig;
 }
 
 
@@ -174,7 +157,9 @@ int agent_init(const char *config_path, const config_override_t *overrides)
     
     config_print(&g_agent_ctx->config);
     
-    mkdir_recursive(g_agent_ctx->config.script_path, 0755);
+    if (mkdir_recursive(g_agent_ctx->config.script_path, 0755) != 0) {
+        LOG_WARN("创建脚本目录失败: %s", g_agent_ctx->config.script_path);
+    }
     
     /* 加载ping监控配置 */
     if (ping_init_from_config(&g_agent_ctx->config) != 0) {
@@ -267,6 +252,29 @@ int agent_start(void)
     
     /* 主循环 */
     while (g_agent_ctx->running) {
+        /* 检查信号标志 */
+        if (g_signal_received) {
+            int sig = g_signal_received;
+            g_signal_received = 0;
+            
+            LOG_INFO("收到信号: %d", sig);
+            
+            /* 更新模式下，不立即退出，等待fork完成 */
+            if (g_in_update && sig != SIGQUIT) {
+                LOG_INFO("更新模式：延迟退出直到fork完成");
+                continue;
+            }
+            
+            /* 特殊处理SIGQUIT - 立即退出 */
+            if (sig == SIGQUIT) {
+                LOG_INFO("收到SIGQUIT，立即退出");
+                _exit(1);
+            }
+            
+            /* 其他信号：设置运行标志为false，优雅退出 */
+            g_agent_ctx->running = false;
+            break;
+        }
         sleep(1);
     }
     
@@ -449,7 +457,9 @@ int main(int argc, char *argv[])
     }
     
 /* 写入PID文件 */
-    write_pid_file(PID_FILE);
+    if (write_pid_file(PID_FILE) != 0) {
+        LOG_WARN("写入PID文件失败: %s", PID_FILE);
+    }
     
     /* 设置信号处理 */
     setup_signals();

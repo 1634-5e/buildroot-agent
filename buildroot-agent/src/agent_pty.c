@@ -384,6 +384,8 @@ int pty_create_session(agent_context_t *ctx, int session_id, int rows, int cols)
 /* 向PTY写入数据 */
 int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_t len)
 {
+    int master_fd = -1;
+    
     pthread_mutex_lock(&g_pty_lock);
     
     pty_session_t *session = find_pty_session(session_id);
@@ -400,14 +402,15 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
         return -1;
     }
     
-    /* 更新最后活动时间 */
+    /* 锁内复制fd和更新活动时间 */
+    master_fd = session->master_fd;
     session->last_activity = time(NULL);
+    
+    pthread_mutex_unlock(&g_pty_lock);
     
     /* Base64解码 */
     size_t decoded_len;
     unsigned char *decoded = base64_decode_pty(data, len, &decoded_len);
-    
-    pthread_mutex_unlock(&g_pty_lock);
     
     if (!decoded) {
         LOG_ERROR("Base64解码失败");
@@ -416,11 +419,11 @@ int pty_write_data(agent_context_t *ctx, int session_id, const char *data, size_
     LOG_DEBUG("PTY写入: session_id=%d, decoded_len=%zu", session_id, decoded_len);
     
     /* 写入PTY */
-    ssize_t written = write(session->master_fd, decoded, decoded_len);
+    ssize_t written = write(master_fd, decoded, decoded_len);
     free(decoded);
     
     if (written < 0) {
-        LOG_ERROR("PTY写入失败: fd=%d, %s", session->master_fd, strerror(errno));
+        LOG_ERROR("PTY写入失败: fd=%d, %s", master_fd, strerror(errno));
         return -1;
     }
     

@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql.base import PGDialect
+
+from database.models import Base
 
 from database.models import Base
 from config.settings import settings

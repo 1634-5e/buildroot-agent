@@ -33,18 +33,10 @@ file_transfer:
 # 数据库配置
 database:
   # 支持: postgresql, mysql, sqlite
-  db_type: "postgresql"
+  db_type: "sqlite"
   
-  # PostgreSQL/MySQL 配置
-  db_host: "localhost"
-  db_port: 5432
-  db_user: "admin"
-  db_password: "admin123"
-  db_name: "buildroot_agent"
-  
-  # 连接池配置
-  db_pool_min: 5
-  db_pool_max: 20
+  # SQLite 配置
+  db_name: "buildroot_agent.db"
 
 # 日志配置
 logging:

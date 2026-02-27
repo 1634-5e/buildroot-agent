@@ -38,6 +38,16 @@ class MessageRouter:
         self.command_handler = CommandHandler(conn_mgr)
 
         self.download_chunks = {}
+        self._max_download_chunks = 100
+
+    def _cleanup_download_chunks(self):
+        if len(self.download_chunks) > self._max_download_chunks:
+            oldest_keys = list(self.download_chunks.keys())[
+                : len(self.download_chunks) - self._max_download_chunks
+            ]
+            for key in oldest_keys:
+                del self.download_chunks[key]
+            logger.debug(f"清理 download_chunks: {len(oldest_keys)} 个")
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
         """发送消息到指定设备"""
@@ -208,11 +218,8 @@ class MessageRouter:
     async def handle_message(
         self, websocket, device_id: str, data: bytes, is_socket: bool = False
     ) -> None:
-        msg_type, json_data = (
-            self.register_handler.__class__.create_message.__self__
-            if False
-            else (None, {})
-        )
+        msg_type = None
+        json_data = {}
 
         import json
 
@@ -286,18 +293,6 @@ class MessageRouter:
                 if device_id and self.conn_mgr.is_device_connected(device_id):
                     await self.send_to_device(device_id, msg_type, json_data)
                 return
-
-        if msg_type == MessageType.FILE_LIST_REQUEST:
-            if device_id and self.conn_mgr.is_device_connected(device_id):
-                await self.send_to_device(device_id, msg_type, json_data)
-            return
-        elif msg_type == MessageType.FILE_REQUEST:
-            if device_id and self.conn_mgr.is_device_connected(device_id):
-                await self.send_to_device(device_id, msg_type, json_data)
-            return
-        elif msg_type == MessageType.FILE_DOWNLOAD_REQUEST:
-            await self.handle_file_download_request(device_id, json_data)
-            return
 
         if msg_type == MessageType.FILE_DATA:
             request_id = json_data.get("request_id")
@@ -403,7 +398,7 @@ class MessageRouter:
                     f"设备IDs={[d['device_id'] for d in paged_devices]}"
                 )
         else:
-            logger.warning(f"未知消息类型: 0x{msg_type:02X}")
+            logger.debug(f"未知消息类型: 0x{msg_type:02X}")
 
     async def _handle_download_package(self, device_id: str, json_data: dict) -> None:
         request_id = json_data.get("request_id", f"{device_id}-download")
@@ -416,6 +411,7 @@ class MessageRouter:
         )
 
         if request_id not in self.download_chunks:
+            self._cleanup_download_chunks()
             self.download_chunks[request_id] = {
                 "chunks": [None] * total_chunks,
                 "total": total_chunks,

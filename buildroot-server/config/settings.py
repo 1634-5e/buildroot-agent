@@ -126,7 +126,7 @@ class Settings(BaseSettings):
         if "log_level" in logging_config:
             env_key = f"{env_prefix}LOG_LEVEL"
             if env_key not in os.environ:
-                setattr(self, key, value)
+                setattr(self, "log_level", logging_config["log_level"])
 
 
 settings = Settings()

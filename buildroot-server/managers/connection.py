@@ -12,6 +12,8 @@ from database.repositories import WebConsoleSessionRepository, AuditLogRepositor
 
 logger = logging.getLogger(__name__)
 
+REQUEST_SESSION_TIMEOUT = 300  # 请求会话超时时间（秒）
+
 
 class ConnectionManager:
     """连接管理器"""
@@ -21,7 +23,7 @@ class ConnectionManager:
         self.web_consoles: Set[WebSocketServerProtocol] = set()
         self.console_info: Dict[WebSocketServerProtocol, Dict[str, Any]] = {}
         self.pty_sessions: Dict[str, Dict[int, asyncio.Queue]] = {}
-        self.request_sessions: Dict[str, Dict[str, str]] = {}
+        self.request_sessions: Dict[str, Dict[str, Any]] = {}
         self.file_transfer = file_transfer_manager
 
     def add_device(
@@ -161,10 +163,29 @@ class ConnectionManager:
         self.request_sessions[request_id] = {
             "console_id": console_id,
             "device_id": device_id,
+            "created_at": time.time(),
         }
         logger.debug(
             f"注册request_session: request_id={request_id}, console_id={console_id}, device_id={device_id}"
         )
+
+    def remove_request_session(self, request_id: str) -> None:
+        if request_id and request_id in self.request_sessions:
+            del self.request_sessions[request_id]
+            logger.debug(f"移除request_session: request_id={request_id}")
+
+    def cleanup_expired_request_sessions(self) -> int:
+        current_time = time.time()
+        expired = [
+            rid
+            for rid, info in self.request_sessions.items()
+            if current_time - info.get("created_at", 0) > REQUEST_SESSION_TIMEOUT
+        ]
+        for rid in expired:
+            del self.request_sessions[rid]
+        if expired:
+            logger.info(f"清理过期request_session: {len(expired)}个")
+        return len(expired)
 
     def get_console_by_request(
         self, request_id: str
@@ -234,5 +255,6 @@ class ConnectionManager:
                 return f"{addr[0]}:{addr[1]}" if addr else "unknown"
             else:
                 return "unknown"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"获取远程地址失败: {e}")
             return "unknown"

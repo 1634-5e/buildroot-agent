@@ -199,6 +199,8 @@ static int parse_config_line(agent_config_t *config, const char *key, const char
     if (strcmp(key, "server_addr") == 0) {
         set_string_field(config->server_addr, sizeof(config->server_addr), value);
     } else if (strcmp(key, "device_id") == 0) {
+        set_string_field(config->device_id, sizeof(config->device_id), value);
+    } else if (strcmp(key, "heartbeat_interval") == 0) {
         config->heartbeat_interval = atoi(value);
     } else if (strcmp(key, "reconnect_interval") == 0) {
         config->reconnect_interval = atoi(value);
