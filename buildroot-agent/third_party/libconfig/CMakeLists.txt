@@ -24,6 +24,9 @@ endif()
 add_library(${libname} ${libsrc})
 target_include_directories(${libname} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
+# 确保包含系统头文件路径
+include_directories(/usr/include)
+
 if(NOT BUILD_SHARED_LIBS)
     target_compile_definitions(${libname} PUBLIC LIBCONFIG_STATIC)
 endif()

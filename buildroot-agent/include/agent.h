@@ -352,6 +352,7 @@ void agent_cleanup(void);
 
 /* agent_config.c */
 config_load_result_t config_load(agent_config_t *config, const char *path);
+config_load_result_t config_load_yaml(agent_config_t *config, const char *path);
 int config_save(agent_config_t *config, const char *path);
 void config_set_defaults(agent_config_t *config);
 void config_apply_overrides(agent_config_t *config, const config_override_t *overrides);
