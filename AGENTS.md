@@ -282,6 +282,79 @@ logger.info(f"设备连接: {device_id}")
 
 ---
 
+## Code Quality Standards
+
+> Senior Engineer 编码原则：简洁、可读、可维护、生产级质量
+
+### 1. 先思考再写代码
+
+**实现计划（Plan）必须先输出并确认：**
+- 模块/函数拆分建议
+- 关键数据结构设计
+- 错误处理策略
+- 测试要点
+
+### 2. 代码规范（严格遵守）
+
+| 规则 | 要求 |
+|------|------|
+| 函数长度 | 尽量 < 30行，最大不超过50行 |
+| 命名 | 描述「做什么」而不是「怎么做」 |
+| 魔法数字/字符串 | 抽成常量并命名 |
+| 嵌套深度 | 最多2层（if/循环/回调） |
+| 单一职责 | 每个函数只做一件事 |
+| 语言习惯 | 优先使用 idiomatic 写法 |
+
+### 3. 错误处理（按语言区分）
+
+- **C** → 必须检查所有可能失败的函数返回值，goto error模式或显式返回码
+  - 所有分配内存的地方都要配对释放（RAII-like思维）
+  - 优先使用 `goto error;` 模式做资源清理
+  - 禁止隐式类型转换
+  - 函数参数要 const 就加 const
+  - 用 enum 而不是 #define 做状态/标志
+- **Python** → 优先使用 Exception + context manager，raise 自定义异常
+  - 优先使用 list/dict comprehension
+  - 善用 `@contextmanager`、`dataclasses`、`pydantic`
+  - 禁止 `import *`
+  - 异常使用 Exception 子类，**禁止** `except: pass`
+- **JS/TS** → 尽量用 Result/Error union 或 throw + async/await error handling
+  - 优先使用 const/let，极少用 var
+  - 异步代码一律 async/await，不要 then chaining
+  - 优先使用 object destructuring 和 rest/spread
+  - 禁止 for-in，优先 for-of / .forEach / map/filter
+
+### 4. 类型安全
+
+- **TypeScript** → 必须全面使用类型，禁止 any，尽可能使用 infer / typeof / keyof
+- **Python** → 必须添加 typing 注解（尤其是公开API）
+- **C** → 使用 const、enum、限制性指针
+  - 优先使用 restrict 限定符减少歧义
+  - 避免 void* 强制转换
+  - 结构体成员用 const 保护只读数据
+
+### 5. 自我审查清单
+
+写完代码后执行：
+- [ ] 能否把某个函数再拆小？
+- [ ] 有没有重复代码？
+- [ ] 命名是否足够清晰？
+- [ ] 注释是否只解释「为什么」而不是「是什么」？
+- [ ] 是否缺少边界case处理？
+
+### 6. 文档规范
+
+每个公开函数/类必须写清晰文档：
+- **Python** → Google/Numpy 风格 docstring
+- **JS/TS** → 完整 JSDoc
+- **C** → 块注释说明参数、返回值、错误码
+
+### 7. 交付标准
+
+最后一步：输出优化后的最终代码，并说明做了哪些清理/重构动作。
+
+---
+
 ## Protocol Sync
 
 Message types in two places, must stay synchronized:

@@ -1,19 +1,28 @@
 {
   "name": "buildroot-web",
-  "version": "1.0.0",
-  "description": "Buildroot Agent Web Console",
+  "version": "2.0.0",
+  "description": "Buildroot Agent Web Console - ES Modules Edition",
   "type": "module",
   "scripts": {
+    "dev": "npx serve . -p 5173",
+    "build": "echo 'No build step required - using native ES modules'",
+    "preview": "npx serve dist -p 4173",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "build": "echo 'No build step required for static site'",
-    "lint": "echo 'Linting not configured'"
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "ace-builds": "^1.32.0"
   },
   "devDependencies": {
     "vitest": "^1.0.0",
     "@vitest/coverage-v8": "^1.0.0",
-    "jsdom": "^23.0.0"
+    "jsdom": "^23.0.0",
+    "serve": "^14.2.0"
   },
   "vitest": {
     "test": {
@@ -21,7 +30,7 @@
       "globals": true,
       "coverage": {
         "reporter": ["text", "html", "json"],
-        "exclude": ["node_modules/", "public/"]
+        "exclude": ["node_modules/", "dist/"]
       }
     }
   }
