@@ -50,6 +50,13 @@ else()
     message(STATUS "Using dynamic linking")
 endif()
 
+# 测试配置
+option(ENABLE_TESTS "Enable unit tests" ON)
+if(ENABLE_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 # 安装规则 - 单目录自包含
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION .
@@ -109,3 +116,25 @@ set(CPACK_GENERATOR "TAR")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY 1)
 
 include(CPack)
+
+# 测试配置
+option(ENABLE_TESTS "Enable unit tests" ON)
+
+if(ENABLE_TESTS)
+    # 查找 CMocka 测试框架
+    find_library(CMOCKA_LIBRARY cmocka)
+    find_path(CMOCKA_INCLUDE_DIR cmocka.h)
+    
+    if(CMOCKA_LIBRARY AND CMOCKA_INCLUDE_DIR)
+        message(STATUS "CMocka found, tests enabled")
+        enable_testing()
+        
+        # 测试包含目录
+        include_directories(${CMOCKA_INCLUDE_DIR})
+        
+        # 测试目录
+        add_subdirectory(tests)
+    else()
+        message(WARNING "CMocka not found, tests disabled. Install: sudo apt-get install libcmocka-dev")
+    endif()
+endif()

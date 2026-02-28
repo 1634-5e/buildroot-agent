@@ -1,0 +1,28 @@
+{
+  "name": "buildroot-web",
+  "version": "1.0.0",
+  "description": "Buildroot Agent Web Console",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "build": "echo 'No build step required for static site'",
+    "lint": "echo 'Linting not configured'"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "jsdom": "^23.0.0"
+  },
+  "vitest": {
+    "test": {
+      "environment": "jsdom",
+      "globals": true,
+      "coverage": {
+        "reporter": ["text", "html", "json"],
+        "exclude": ["node_modules/", "public/"]
+      }
+    }
+  }
+}

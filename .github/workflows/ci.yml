@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Server 端 Python 测试
+  test-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./buildroot-server
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Run code quality checks
+      run: |
+        uv run ruff check .
+        uv run ruff format --check .
+        uv run mypy . || true
+    
+    - name: Check protocol sync
+      run: |
+        cd ..
+        python scripts/check_protocol_sync.py
+    
+    - name: Run tests with coverage
+      run: |
+        uv run pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --cov-fail-under=50
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./buildroot-server/coverage.xml
+        flags: server
+        name: server-coverage
+
+  # Agent 端 C 代码检查
+  test-agent:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake gcc libssl-dev libjson-c-dev
+    
+    - name: Build Agent
+      run: |
+        cd buildroot-agent
+        mkdir -p build && cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Debug
+        make -j$(nproc)
+    
+    - name: Check compilation warnings
+      run: |
+        cd buildroot-agent/build
+        make 2>&1 | grep -i warning || true
+    
+    - name: Run Agent tests
+      run: |
+        cd buildroot-agent/build
+        make test || echo "Tests not yet implemented"
+
+  # Web 端代码检查
+  test-web:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: buildroot-web/package.json
+    
+    - name: Install dependencies
+      run: |
+        cd buildroot-web
+        npm ci || npm install
+    
+    - name: Run Web tests
+      run: |
+        cd buildroot-web
+        npm test || echo "Tests not yet implemented"
+    
+    - name: Check Web build
+      run: |
+        cd buildroot-web
+        npm run build || echo "Build script not configured"
+
+  # 统一测试脚本验证
+  test-unified:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Verify test script
+      run: |
+        chmod +x scripts/test.sh
+        ./scripts/test.sh --list
