@@ -40,14 +40,41 @@ rm -rf build                                          # 清理
 **Options:** `-DCMAKE_BUILD_TYPE=Debug`, `-DSTATIC_LINK=ON`, `-DCMAKE_TOOLCHAIN_FILE=cmake/arm-buildroot.cmake`
 
 ### Python (buildroot-server)
+
+**项目管理工具:** [uv](https://docs.astral.sh/uv/) - 现代 Python 包管理器
+
 ```bash
-cd buildroot-server && pip install -e .               # 安装依赖
-python main.py                                        # 运行服务器
-ruff check . && ruff format .                         # 检查+格式化
+cd buildroot-server
+
+# 安装依赖
+uv sync                                              # 同步依赖（根据 pyproject.toml）
+uv add <package>                                     # 添加新依赖
+uv remove <package>                                  # 移除依赖
+
+# 运行服务器
+uv run python main.py                                # 使用 uv 运行（自动激活虚拟环境）
+
+# 代码检查与格式化
+uv run ruff check . && uv run ruff format .          # 检查+格式化
+uv run mypy .                                        # 类型检查（如需要）
+
+# 其他常用命令
+uv lock                                              # 更新 uv.lock
+uv pip list                                          # 查看已安装包
+uv venv                                              # 创建虚拟环境（如需要）
 ```
 
+**依赖管理说明:**
+- 使用 `pyproject.toml` 声明依赖（dependencies 和 optional-dependencies）
+- `uv.lock` 锁定精确版本，确保可复现的构建
+- 无需手动管理 requirements.txt
+
 ### Web (buildroot-web)
-单文件HTML (`web_console.html`), 依赖 xterm.js, Ace Editor (CDN)
+前端 Web 控制台，已从单文件 HTML 重构为多文件结构：
+- `index.html` - 主页面
+- `js/app.js`, `js/websocket.js`, `js/terminal.js`, `js/utils.js`, `js/config.js` - JavaScript 模块
+- `css/style.css` - 样式文件
+- `public/` - 静态资源（xterm.js, Ace Editor, 字体等）
 
 ---
 
@@ -131,3 +158,6 @@ Key types: `HEARTBEAT=0x01`, `PTY_CREATE=0x10`, `FILE_REQUEST=0x20`, `CMD_REQUES
 - **Config:** YAML `config.yaml` + env vars with `BR_SERVER_` prefix
 - **File Transfer:** Chunked, max 64KB, Base64 encoding
 - **Update Flow:** Non-mandatory needs Web approval; mandatory auto-proceeds
+- **Database:** 
+  - SQLite: 自动建表（开发/测试环境）
+  - PostgreSQL/MySQL: 需手动建表或使用 schema.sql（生产环境）

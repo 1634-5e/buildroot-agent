@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Buildroot Agent Server - SQLAlchemy Repository with Cache
-使用SQLAlchemy ORM进行数据访问，带缓存支持
+Buildroot Agent Server - SQLModel Repository with Cache
+使用SQLModel ORM进行数据访问，带缓存支持
 """
 
 import logging
 from typing import List, Optional
 from datetime import datetime
 
-from sqlalchemy import select, func, and_, or_
-from sqlalchemy.orm import selectinload
+from sqlmodel import select, and_, or_
 
 from database.models import (
     Device,

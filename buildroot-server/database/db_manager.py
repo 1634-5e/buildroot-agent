@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Buildroot Agent Server - SQLAlchemy Database Manager
-使用SQLAlchemy ORM管理数据库连接，支持多种数据库（PostgreSQL、MySQL、SQLite等）
+Buildroot Agent Server - SQLModel Database Manager
+使用SQLModel ORM管理数据库连接，支持多种数据库（PostgreSQL、MySQL、SQLite等）
 """
 
 import logging
 import re
-from typing import Optional, AsyncGenerator
+from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import quote_plus
 
@@ -17,10 +17,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql.base import PGDialect
+from sqlmodel import SQLModel
 
-from database.models import Base
-
-from database.models import Base
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -141,22 +139,37 @@ class DatabaseManager:
         return self._engine is not None
 
     async def create_tables(self):
-        """创建所有表"""
+        """创建所有表 - 仅在 SQLite 时自动创建，其他数据库需手动执行迁移"""
         if self._engine is None:
             raise RuntimeError("Database not initialized")
 
+        # 检查是否为 SQLite
+        db_url = str(self._engine.url)
+        if not db_url.startswith("sqlite"):
+            logger.info(
+                "Skipping auto table creation for non-SQLite database (PostgreSQL/MySQL)"
+            )
+            logger.info("Please run database migrations manually or use schema.sql")
+            return
+
         async with self._engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created")
+            await conn.run_sync(SQLModel.metadata.create_all)
+            logger.info("Database tables created (SQLite)")
 
     async def drop_tables(self):
-        """删除所有表"""
+        """删除所有表 - 仅在 SQLite 时允许"""
         if self._engine is None:
             raise RuntimeError("Database not initialized")
 
+        # 安全检查：只允许删除 SQLite 表
+        db_url = str(self._engine.url)
+        if not db_url.startswith("sqlite"):
+            logger.error("Drop tables is only allowed for SQLite (safety check)")
+            raise RuntimeError("Cannot drop tables for non-SQLite database")
+
         async with self._engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            logger.info("Database tables dropped")
+            await conn.run_sync(SQLModel.metadata.drop_all)
+            logger.info("Database tables dropped (SQLite)")
 
 
 # 全局数据库管理器实例
