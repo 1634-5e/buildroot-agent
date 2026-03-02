@@ -64,7 +64,7 @@ describe('utils.module.js', () => {
     });
 
     it('should handle invalid timestamps', () => {
-      expect(formatDate(0)).not.toBe('--');
+      expect(formatDate(0)).toBe('--');
       expect(formatDate(null)).toBe('--');
       expect(formatDate(undefined)).toBe('--');
     });
