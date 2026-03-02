@@ -29,7 +29,7 @@ jobs:
           -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
           -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
           -DCMAKE_BUILD_TYPE=Release
-        make -j$(nproc)
+        make buildroot-agent -j$(nproc)
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
