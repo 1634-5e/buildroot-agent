@@ -19,7 +19,7 @@ import 'ace-builds/src-noconflict/ext-language_tools'
 import 'ace-builds/src-noconflict/ext-modelist'
 
 // Import modules
-import { MSG_TYPES, MONITOR_REFRESH_INTERVAL, STATE_LABELS, FILE_ICONS, IMAGE_EXTS, BINARY_EXTS, BINARY_TYPE_LABELS } from './config.js'
+import { MSG_TYPES, MONITOR_REFRESH_INTERVAL, PING_REFRESH_INTERVAL, STATE_LABELS, FILE_ICONS, IMAGE_EXTS, BINARY_EXTS, BINARY_TYPE_LABELS } from './config.js'
 import { showToast, formatBytes, formatUptime, getFileIcon, getFileTypeLabel, getAceLanguageMode, isFileEditable, isBinaryFile, safeGetElement, debugFileListChunks, navigateTo, collapseAllFolders, sendDownloadRequest } from './utils.js'
 import { ws, isConnected, isReconnecting, connectWebSocket, sendMessage, reconnectWebSocket, getWsUrl, updateConnectionStatus } from './websocket.js'
 import { 
@@ -83,11 +83,23 @@ let pingTargets = []
 let pingResults = {}
 let isPingAutoRefreshEnabled = true
 let pingRefreshInterval = null
+let isPingExecuting = false  // Flag to prevent duplicate requests
+let pingRequestStartTime = null  // Track when ping request was sent
+let pingTargets = []
+let pingResults = {}
+let isPingAutoRefreshEnabled = true
+let pingRefreshInterval = null
+let isPingExecuting = false  // Flag to prevent duplicate requests
+let pingRequestStartTime = null  // Track when ping request was sent
+let pingTargets = []
+let pingResults = {}
+let isPingAutoRefreshEnabled = true
+let pingRefreshInterval = null
 
 // Refresh throttle state
 let lastSystemRefreshTime = 0
 let lastPingRefreshTime = 0
-const REFRESH_COOLDOWN_MS = 2000
+const REFRESH_COOLDOWN_MS = 500
 
 // Flag to track manual refresh (for change detection toast)
 let isManualSystemRefresh = false
@@ -108,6 +120,7 @@ export {
     cachedProcesses, processSortKey, processSortAsc, processMemTotal,
     monitorRefreshInterval, isMonitorAutoRefreshEnabled, downloadChunks,
     pingTargets, pingResults, isPingAutoRefreshEnabled, pingRefreshInterval,
+    isPingExecuting, pingRequestStartTime,
     lastSystemRefreshTime, lastPingRefreshTime, REFRESH_COOLDOWN_MS,
     isManualSystemRefresh, isManualPingRefresh,
     previousSystemStatus, previousPingResults,
@@ -123,6 +136,9 @@ export {
     resetEditorState, handleEditorChange, updateAceCursorInfo, saveFileToDevice,
     onFileSaveSuccess, onFileSaveError, showFileConflictDialog, cancelFileSave, confirmFileSave,
     updateSystemStatus, updateProcessList, renderProcessList, sortProcesses, filterProcessList,
+    startMonitorAutoRefresh, stopMonitorAutoRefresh, toggleMonitorAutoRefresh,
+    refreshSystemStatus, refreshSystemStatusThrottled, refreshPingStatus, refreshPingStatusThrottled,
+    startPingAutoRefresh, stopPingAutoRefresh, updatePingLoadingState,
     startMonitorAutoRefresh, stopMonitorAutoRefresh, toggleMonitorAutoRefresh,
     refreshSystemStatus, refreshSystemStatusThrottled, refreshPingStatus, refreshPingStatusThrottled,
     handleCommandResponse, runScript, handleScriptResult, closeModal, copyOutput,

@@ -39,6 +39,8 @@ export const MSG_TYPES = {
 
 export const MONITOR_REFRESH_INTERVAL = 5000 // 5 seconds - balance between performance and real-time
 
+export const PING_REFRESH_INTERVAL = 10000 // 10 seconds - reasonable for network monitoring (Ping takes time to execute)
+
 export const STATE_LABELS = {
     'R': '运行',
     'S': '睡眠',
