@@ -1,0 +1,37 @@
+name: Cross Compile Buildroot Agent
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf cmake make
+
+    - name: Build
+      working-directory: buildroot-agent
+      run: |
+        mkdir -p build && cd build
+        cmake .. \
+          -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+          -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+          -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: buildroot-agent-arm
+        path: buildroot-agent/build/buildroot-agent
