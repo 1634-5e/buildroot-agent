@@ -24,7 +24,7 @@ let allTreeItems = [];
 let pendingFilePreview = null;
 let pendingFileSave = null;
 let fileListChunks = {};
-
+let fileTreeLoaded = false;  // 优化: 标记文件树是否已加载
 // Editor State
 let isEditorActive = false;
 let editorCurrentFile = null;
@@ -99,12 +99,12 @@ function updateDeviceList(newDevices) {
             disconnectDevice();
         }
     }
-
     const settings = loadSettings();
     const autoSelect = settings.autoSelectDevice !== false;
     if (autoSelect && devices.length > 0 && !currentDevice && isConnected && !isReconnecting) {
         console.log('Auto-selecting first device:', devices[0].device_id);
-        setTimeout(() => selectDevice(devices[0].device_id), 100);
+        // 优化: 移除不必要的延迟
+        selectDevice(devices[0].device_id);
     }
 }
 
@@ -392,16 +392,26 @@ function selectDevice(deviceId) {
     document.getElementById('detailDeviceName').textContent = device.device_id;
     document.getElementById('detailDeviceIp').textContent = device.ip_addr || 'IP未知';
 
-    setTimeout(() => connectTerminal(), 100);
+    // 显示加载状态
+    showDeviceLoading('正在初始化终端...');
 
+    // 优化: 并行加载，立即刷新数据（无需等待 requestAnimationFrame）
+    // 注意: 文件树延迟加载，只在切换到文件标签时加载
+    connectTerminal();
+    refreshFiles();
+    refreshSystemStatus();
+    refreshPingStatus();  // 立即加载 Ping 数据，无需等待
+    fileTreeLoaded = false;  // 重置文件树加载状态
+
+    // 启动自动刷新（如果还没有启动）
+    if (!monitorRefreshInterval) {
+        startMonitorAutoRefresh();
+    }
+
+    // 隐藏加载状态（给一点延迟让用户看到）
     setTimeout(() => {
-        refreshFiles();
-        refreshFileTree();
-    }, 200);
-
-    setTimeout(() => refreshSystemStatus(), 300);
-
-    startMonitorAutoRefresh();
+        hideDeviceLoading();
+    }, 500);
 
     showToast(`已选择设备: ${deviceId}`, 'success');
 }
@@ -417,8 +427,33 @@ function disconnectDevice() {
     document.getElementById('deviceDetail').classList.remove('active');
     document.getElementById('emptyState').style.display = 'flex';
     clearTerminal();
+    hideDeviceLoading();
 }
 
+// ============================================
+// Loading State Management
+// ============================================
+
+function showDeviceLoading(text = '正在连接设备...') {
+    const overlay = document.getElementById('deviceLoadingOverlay');
+    if (overlay) {
+        const textEl = overlay.querySelector('.device-loading-text');
+        if (textEl) {
+            textEl.textContent = text;
+        }
+        overlay.classList.add('active');
+    }
+}
+
+function hideDeviceLoading() {
+    const overlay = document.getElementById('deviceLoadingOverlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
+// ============================================
+// File Management
 // ============================================
 // File Management
 // ============================================
@@ -1883,25 +1918,38 @@ function filterProcessList() {
 }
 
 function startMonitorAutoRefresh() {
+    // 清理旧的 intervals
     if (monitorRefreshInterval) {
         clearInterval(monitorRefreshInterval);
+        monitorRefreshInterval = null;
+    }
+    if (pingRefreshInterval) {
+        clearInterval(pingRefreshInterval);
+        pingRefreshInterval = null;
     }
 
     isMonitorAutoRefreshEnabled = true;
 
     if (currentTab === 'monitor') {
         refreshSystemStatus();
-        refreshPingStatus();  // 同时刷新 Ping 状态
+        refreshPingStatus();
     }
 
+    // 系统状态使用较短的刷新间隔（5秒）
     monitorRefreshInterval = setInterval(() => {
         if (currentTab === 'monitor' && currentDevice && isMonitorAutoRefreshEnabled) {
             refreshSystemStatus();
-            refreshPingStatus();  // 同时刷新 Ping 状态
         }
     }, MONITOR_REFRESH_INTERVAL);
 
-    console.log('Monitor auto-refresh started');
+    // Ping 状态使用较长的刷新间隔（10秒），避免频繁请求
+    pingRefreshInterval = setInterval(() => {
+        if (currentTab === 'monitor' && currentDevice && isPingAutoRefreshEnabled) {
+            refreshPingStatus();
+        }
+    }, PING_REFRESH_INTERVAL);
+
+    console.log('Monitor auto-refresh started (system: 5s, ping: 10s)');
 }
 
 function stopMonitorAutoRefresh() {
@@ -1909,9 +1957,16 @@ function stopMonitorAutoRefresh() {
         clearInterval(monitorRefreshInterval);
         monitorRefreshInterval = null;
     }
+    if (pingRefreshInterval) {
+        clearInterval(pingRefreshInterval);
+        pingRefreshInterval = null;
+    }
     isMonitorAutoRefreshEnabled = false;
+    isPingAutoRefreshEnabled = false;
     console.log('Monitor auto-refresh stopped');
 }
+
+
 
 function toggleMonitorAutoRefresh() {
     isMonitorAutoRefreshEnabled = !isMonitorAutoRefreshEnabled;
@@ -1988,9 +2043,10 @@ function refreshPingStatusThrottled() {
 function handleCommandResponse(data) {
     if (data.request_id?.startsWith('status')) {
         updateSystemStatus(data);
+        // 隐藏加载状态
+        hideDeviceLoading();
     } else if (data.request_id?.startsWith('ping')) {
         handlePingStatus(data);
-    } else if (data.output) {
     } else if (data.output) {
         appendTerminalOutput(data.output + '\n');
     }
@@ -2086,7 +2142,11 @@ function switchTab(tab) {
             }, 50);
         }
     } else if (tab === 'files') {
-        // 切换回文件页时不自动刷新，保留文件树的展开状态
+        // 优化: 延迟加载文件树，只在首次切换到文件标签时加载
+        if (!fileTreeLoaded && currentDevice) {
+            refreshFileTree();
+            fileTreeLoaded = true;
+        }
     } else if (tab === 'monitor') {
         refreshSystemStatus();
         refreshPingStatus();  // 切换到监控页时立即刷新ping数据

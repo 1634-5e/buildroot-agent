@@ -2052,3 +2052,55 @@ pre.output {
     font-weight: 600;
     font-family: 'JetBrains Mono', monospace;
 }
+
+/* ============================================
+   Loading Indicators
+   ============================================ */
+
+.device-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(13, 13, 18, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--transition), visibility var(--transition);
+}
+
+.device-loading-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.device-loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.device-loading-spinner::before {
+    content: '';
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: device-loading-spin 0.8s linear infinite;
+}
+
+@keyframes device-loading-spin {
+    to { transform: rotate(360deg); }
+}
+
+.device-loading-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+}

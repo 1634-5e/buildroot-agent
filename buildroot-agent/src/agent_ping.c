@@ -13,7 +13,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
-#include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <netdb.h>
 #include "agent.h"
@@ -143,10 +143,37 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
             char recv_buf[256];
             struct sockaddr_in from;
             socklen_t from_len = sizeof(from);
+            struct iphdr *ip_hdr;
+            struct icmphdr *icmp_hdr;
+            size_t ip_hdr_len;
 
             len = recvfrom(sock, recv_buf, sizeof(recv_buf), 0,
                         (struct sockaddr *)&from, &from_len);
             if (len > 0) {
+                /* 解析 IP 头 */
+                ip_hdr = (struct iphdr *)recv_buf;
+                ip_hdr_len = ip_hdr->ihl * 4;
+
+                /* 检查缓冲区大小是否足够 */
+                if (len < ip_hdr_len + sizeof(struct icmphdr)) {
+                    LOG_WARN("接收到的包太短");
+                    continue;
+                }
+
+                /* 获取 ICMP 头（跳过 IP 头） */
+                icmp_hdr = (struct icmphdr *)(recv_buf + ip_hdr_len);
+
+                /* 验证是否是 ICMP Echo Reply */
+                if (icmp_hdr->type != ICMP_ECHOREPLY) {
+                    continue;
+                }
+
+                /* 验证是否是对我们发送的包的响应 */
+                if (icmp_hdr->un.echo.id != (getpid() & 0xFFFF) ||
+                    icmp_hdr->un.echo.sequence != i) {
+                    continue;
+                }
+
                 gettimeofday(&tv_end, NULL);
 
                 timersub(&tv_end, &tv_start, &tv_diff);

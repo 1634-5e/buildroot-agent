@@ -38,6 +38,8 @@ const MSG_TYPES = {
 };
 
 const MONITOR_REFRESH_INTERVAL = 5000; // 5 seconds - balance between performance and real-time
+const PING_REFRESH_INTERVAL = 10000; // 10 seconds - reasonable for network monitoring (ping takes time to execute)
+
 
 const STATE_LABELS = {
     'R': '运行',

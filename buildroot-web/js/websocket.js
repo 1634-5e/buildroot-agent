@@ -41,18 +41,15 @@ function connectWebSocket() {
             consoleId = 'console_' + Math.random().toString(36).substr(2, 8);
             console.log('Generated console_id:', consoleId);
         }
-
         processMessageQueue();
 
+        // 优化: 立即查询设备列表
         queryDeviceList({
             page: 0,
             page_size: paginationState.pageSize,
             search_keyword: ''
         });
-
-        if (devices.length > 0 && !currentDevice) {
-            setTimeout(() => selectDevice(devices[0].device_id), 200);
-        }
+        // 注意: 自动选择第一个设备在 updateDeviceList() 中处理，移除这里的延迟选择
     };
 
     ws.onclose = () => {
