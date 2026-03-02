@@ -76,9 +76,9 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
     struct timeval tv_out;
     fd_set read_set;
     int i;
-    float total_time = 0.0;
-    float min_time = 99999.0;
-    float max_time = 0.0;
+    double total_time = 0.0;
+    double min_time = 99999.0;
+    double max_time = 0.0;
     int packets_received = 0;
 
     if (!result) {
@@ -154,11 +154,30 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
                 ip_hdr = (struct iphdr *)recv_buf;
                 ip_hdr_len = ip_hdr->ihl * 4;
 
+                /* 防止 ip_hdr_len 下溢：确保缓冲区至少有 IP 头 */
+                if (len < ip_hdr_len) {
+                    LOG_WARN("接收到的包太短: len=%zd, ip_hdr_len=%zu", len, ip_hdr_len);
+                    continue;
+                }
+
                 /* 检查缓冲区大小是否足够 */
                 if (len < ip_hdr_len + sizeof(struct icmphdr)) {
                     LOG_WARN("接收到的包太短");
                     continue;
                 }
+
+                /* 验证 TTL 值是否合理 */
+                if (ip_hdr->ttl == 0) {
+                    LOG_WARN("无效的 TTL 值: %d", ip_hdr->ttl);
+                    continue;
+                }
+
+                /* 验证源 IP 地址是否匹配目标 IP */
+                if (from.sin_addr.s_addr != addr.sin_addr.s_addr) {
+                    LOG_DEBUG("忽略来自非目标IP的响应");
+                    continue;
+                }
+
 
                 /* 获取 ICMP 头（跳过 IP 头） */
                 icmp_hdr = (struct icmphdr *)(recv_buf + ip_hdr_len);
@@ -177,8 +196,8 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
                 gettimeofday(&tv_end, NULL);
 
                 timersub(&tv_end, &tv_start, &tv_diff);
-                float rtt = (float)tv_diff.tv_sec * 1000.0 +
-                           (float)tv_diff.tv_usec / 1000.0;
+                double rtt = (double)tv_diff.tv_sec * 1000.0 +
+                           (double)tv_diff.tv_usec / 1000.0;
 
                 total_time += rtt;
                 if (rtt < min_time) min_time = rtt;
@@ -207,13 +226,17 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
         result->packet_loss = 100.0;
     } else if (packets_received < count) {
         result->status = PING_STATUS_UNREACHABLE;
-        result->avg_time = total_time / packets_received;
+        result->avg_time = (float)(total_time / packets_received);
+        result->min_time = (float)min_time;
+        result->max_time = (float)max_time;
         result->min_time = min_time;
         result->max_time = max_time;
         result->packet_loss = (float)(count - packets_received) / count * 100.0;
     } else {
         result->status = PING_STATUS_REACHABLE;
-        result->avg_time = total_time / packets_received;
+        result->avg_time = (float)(total_time / packets_received);
+        result->min_time = (float)min_time;
+        result->max_time = (float)max_time;
         result->min_time = min_time;
         result->max_time = max_time;
         result->packet_loss = 0.0;
