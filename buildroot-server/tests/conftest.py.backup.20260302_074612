@@ -32,7 +32,7 @@ class MockAgent:
         self.received_messages = []
         self._read_task = None
 
-    async def connect(self, host: str = "127.0.0.1", port: int = 18766):
+    async def connect(self, host: str = "127.0.0.1", port: int = 8766):
         """连接到 Server。"""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.setblocking(False)
@@ -146,7 +146,7 @@ def temp_db():
 
 
 @pytest.fixture(scope="session")
-def server_process():
+async def server_process():
     """启动测试服务器进程。
 
     用于集成测试，启动真实的 Server 进程。
@@ -159,8 +159,8 @@ def server_process():
     # 设置测试环境变量
     env = os.environ.copy()
     env["BR_SERVER_DATABASE__URL"] = "sqlite+aiosqlite:///test_integration.db"
-    env["BR_SERVER_SERVER__AGENT_PORT"] = "18766"
-    env["BR_SERVER_SERVER__WEB_PORT"] = "18765"
+    env["BR_SERVER_SERVER__AGENT_PORT"] = "8766"
+    env["BR_SERVER_SERVER__WEB_PORT"] = "8765"
     env["BR_SERVER_LOG__LEVEL"] = "ERROR"  # 减少日志输出
 
     # 启动服务器进程
@@ -179,7 +179,7 @@ def server_process():
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
-            result = sock.connect_ex(("127.0.0.1", 18766))
+            result = sock.connect_ex(("127.0.0.1", 8766))
             sock.close()
             if result == 0:
                 break

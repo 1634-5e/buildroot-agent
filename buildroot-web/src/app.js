@@ -1,11 +1,83 @@
-
-
 // ============================================
 // Ace Editor - Initialization and Management
 // ============================================
 
 import ace from 'ace-builds'
+import { showToast, safeGetElement, formatBytes, getFileIcon, isFileEditable, isBinaryFile, loadSettings, escapeHtml } from './utils.js'
+import { MSG_TYPES, IMAGE_EXTS, BINARY_EXTS, MONITOR_REFRESH_INTERVAL, STATE_LABELS } from './config.js'
+import { sendMessage, isConnected, isReconnecting } from './websocket.js'
+// ============================================
+// Application State
+// ============================================
 
+let devices = []
+let currentDevice = null
+let currentTab = 'terminal'
+let currentPath = '/root'
+let paginationState = {
+    currentPage: 0,
+    pageSize: 20,
+    totalCount: 0,
+    searchKeyword: '',
+    isLoading: false,
+    debounceTimer: null
+}
+
+// File Tree State
+let fileTreeData = {}
+let selectedFiles = new Set()
+let lastSelectedFile = null
+let expandedDirs = new Set(['/'])
+let allTreeItems = []
+let pendingFilePreview = null
+let pendingFileSave = null
+let fileListChunks = {}
+
+// Editor State
+let isEditorActive = false
+let editorCurrentFile = null
+let editorWordWrap = false
+let editorLastSavedContent = ''
+let syntaxHighlightEnabled = true
+let aceEditor = null
+let aceSession = null
+let aceEditorReady = false
+let openEditorTabs = new Map()
+let activeEditorTabPath = null
+
+// Monitor State
+let cachedProcesses = []
+let processSortKey = 'cpu'
+let statusUpdateThrottle = null
+let processSortAsc = false
+let processMemTotal = 1
+let monitorRefreshInterval = null
+let isMonitorAutoRefreshEnabled = true
+let downloadChunks = {}
+
+// Ping Monitor State
+let pingTargets = []
+let pingResults = {}
+let isPingAutoRefreshEnabled = true
+let pingRefreshInterval = null
+
+// Refresh throttle state
+let lastSystemRefreshTime = 0
+let lastPingRefreshTime = 0
+const REFRESH_COOLDOWN_MS = 2000
+
+// Flag to track manual refresh (for change detection toast)
+let isManualSystemRefresh = false
+let isManualPingRefresh = false
+
+// Previous data for change detection
+let previousSystemStatus = null
+let previousPingResults = null
+
+// WebSocket state (re-exported from websocket.js)
+// ============================================
+// Ace Editor - Initialization and Management
+// ============================================
 export function initAceEditor() {
     try {
         if (typeof ace === 'undefined') {
@@ -45,7 +117,6 @@ export function initAceEditor() {
 
         aceEditor.resize()
         aceEditorReady = true
-        console.log('[Ace Editor] 初始化完成')
     } catch (e) {
         console.error('[Ace Editor] 初始化失败:', e)
         aceEditorReady = false
@@ -60,7 +131,6 @@ export function displayEditorContent(content, readonly = false, retryCount = 0) 
 
     if (!aceEditorReady || !aceEditor) {
         if (retryCount < 10) {
-            console.log(`[Ace Editor] 等待初始化，延迟显示内容... (重试 ${retryCount + 1}/10)`)
             setTimeout(() => {
                 displayEditorContent(content, readonly, retryCount + 1)
             }, 100)
@@ -70,7 +140,6 @@ export function displayEditorContent(content, readonly = false, retryCount = 0) 
         return
     }
 
-    console.log('[Ace Editor] 设置内容，长度:', content.length)
 
     aceSession.off("change", handleEditorChange)
 
@@ -154,9 +223,7 @@ export function enterEditor() {
     let content
     if (aceEditor && aceEditorReady) {
         content = aceEditor.getValue()
-        console.log('[EnterEditor] 从 Ace Editor 获取内容，长度:', content.length)
     } else {
-        console.log('[EnterEditor] Ace Editor 未就绪')
         return
     }
 
@@ -187,7 +254,6 @@ export function enterEditor() {
     const languageMode = getAceLanguageMode(editorCurrentFile.name)
     if (aceSession) {
         aceSession.setMode(languageMode)
-        console.log(`[Ace Editor] 设置语言模式: ${languageMode}`)
     }
 
     renderEditorTabs()
@@ -552,7 +618,6 @@ export function updateSystemStatus(data) {
 }
 
 function _renderSystemStatus(data) {
-    console.log('Updating system status:', data)
     
     // Update status timestamp display
     const timestamp = data.status_timestamp ? new Date(data.status_timestamp) : new Date()
@@ -760,9 +825,10 @@ export function renderProcessList() {
         return processSortAsc ? va - vb : vb - va
     })
 
+    const safeKeyword = keyword ? escapeHtml(keyword) : ''
     if (list.length === 0) {
         container.innerHTML = keyword
-            ? '<div class="process-empty"><div class="process-empty-icon">🔍</div><div class="process-empty-text">未找到匹配的进程</div><div class="process-empty-hint">尝试其他关键词</div></div>'
+            ? `<div class="process-empty"><div class="process-empty-icon">🔍</div><div class="process-empty-text">未找到包含 "${safeKeyword}" 的进程</div><div class="process-empty-hint">尝试其他关键词</div></div>`
             : '<div class="process-empty"><div class="process-empty-icon">📊</div><div class="process-empty-text">等待进程数据</div><div class="process-empty-hint">设备连接后将自动采集进程信息</div></div>'
         return
     }
@@ -774,11 +840,11 @@ export function renderProcessList() {
         const memPercent = processMemTotal > 0 ? Math.min((memKB / (processMemTotal * 1024)) * 100, 100) : 0
         const memClass = memPercent > 50 ? 'high' : ''
         const state = p.state || 'S'
-        const stateLabel = STATE_LABELS[state] || state
+        const safeName = escapeHtml(p.name || '--')
 
         return `<div class="process-row">
             <span class="process-pid">${p.pid || '--'}</span>
-            <span class="process-name" title="${p.name || ''}">${p.name || '--'}</span>
+            <span class="process-name" title="${safeName}">${safeName}</span>
             <span class="process-metric-cell">
                 <span class="process-metric-value">${cpu.toFixed(1)}%</span>
                 <span class="process-metric-bar"><span class="process-metric-bar-fill cpu-bar ${cpuClass}" style="width:${Math.min(cpu, 100)}%"></span></span>
@@ -847,7 +913,6 @@ export function startMonitorAutoRefresh() {
         }
     }, MONITOR_REFRESH_INTERVAL)
 
-    console.log('Monitor auto-refresh started')
 }
 
 export function stopMonitorAutoRefresh() {
@@ -856,7 +921,6 @@ export function stopMonitorAutoRefresh() {
         monitorRefreshInterval = null
     }
     isMonitorAutoRefreshEnabled = false
-    console.log('Monitor auto-refresh stopped')
 }
 
 export function toggleMonitorAutoRefresh() {
@@ -1153,7 +1217,6 @@ export function handleMessage(type, data) {
             handlePtyClose(data)
             break
         case MSG_TYPES.FILE_LIST_RESPONSE:
-            console.log('[FILE_LIST] Received FILE_LIST_RESPONSE:', data)
 
             if (data.chunk !== undefined && data.total_chunks) {
                 const path = data.path
@@ -1162,7 +1225,6 @@ export function handleMessage(type, data) {
                 const request_id = data.request_id
                 const files = data.files || []
 
-                console.log(`[FILE_LIST] Chunk ${chunk}/${totalChunks} for path ${path}, files count: ${files.length}, request_id: ${request_id}`)
 
                 if (!request_id) {
                     console.error('[FILE_LIST] Missing request_id in chunked response')
@@ -1177,7 +1239,6 @@ export function handleMessage(type, data) {
                         path: path,
                         timestamp: Date.now()
                     }
-                    console.log(`[FILE_LIST] Initialized chunk storage for request ${request_id}, total chunks: ${totalChunks}`)
                 } else {
                     fileListChunks[request_id].timestamp = Date.now()
                 }
@@ -1189,13 +1250,9 @@ export function handleMessage(type, data) {
                 chunkData.chunks[chunk] = files
                 chunkData.receivedChunks++
 
-                console.log(`[FILE_LIST] Received ${chunkData.receivedChunks}/${totalChunks} chunks for request ${request_id}`)
-                console.log(`[FILE_LIST] Chunk ${chunk} contains ${files.length} files:`, files.map(f => f.name))
 
                 if (chunkData.receivedChunks >= totalChunks) {
                     const allFiles = chunkData.chunks.flat()
-                    console.log(`[FILE_LIST] All chunks received for request ${request_id}, total files: ${allFiles.length}`)
-                    console.log(`[FILE_LIST] All files:`, allFiles.map(f => f.name))
 
                     if (path) {
                         updateTreeWithFiles(path, allFiles)
@@ -1204,7 +1261,6 @@ export function handleMessage(type, data) {
                     delete fileListChunks[request_id]
                 }
             } else {
-                console.log(`[FILE_LIST] Single chunk response for ${data.path}, files count: ${(data.files || []).length}`)
                 if (data.path) {
                     updateTreeWithFiles(data.path, data.files || [])
                 }
@@ -1223,7 +1279,6 @@ export function handleMessage(type, data) {
             handleDownloadPackage(data)
             break
         default:
-            console.log('Unknown message type:', type, data)
     }
 }
 
@@ -1440,12 +1495,6 @@ window.refreshPingStatusThrottled = refreshPingStatusThrottled
 window.togglePingAutoRefresh = togglePingAutoRefresh
 window.sortProcesses = sortProcesses
 window.filterProcessList = filterProcessList
-window.terminalSearchToggle = terminalSearchToggle
-window.terminalSearchNext = terminalSearchNext
-window.terminalSearchPrev = terminalSearchPrev
-window.handleTerminalSearchKey = handleTerminalSearchKey
-window.clearTerminal = clearTerminal
-window.reconnectWebSocket = reconnectWebSocket
 window.showView = showView
 window.handleMessage = handleMessage
 window.cancelFileSave = cancelFileSave
@@ -1460,3 +1509,967 @@ window.appState = {
 }
 
 window.handleAppMessage = handleMessage
+
+// ============================================
+// Device Management (Migrated from js/app.js)
+// ============================================
+
+export function updateDeviceList(newDevices) {
+    devices = Array.isArray(newDevices) ? newDevices : []
+    renderDeviceList()
+
+    if (currentDevice) {
+        const stillOnline = devices.some(d => d.device_id === currentDevice.device_id)
+        if (!stillOnline) {
+            showToast(`设备 ${currentDevice.device_id} 已离线`, 'warning')
+            disconnectDevice()
+        }
+    }
+
+    const settings = loadSettings()
+    const autoSelect = settings.autoSelectDevice !== false
+    if (autoSelect && devices.length > 0 && !currentDevice && isConnected) {
+        setTimeout(() => selectDevice(devices[0].device_id), 100)
+    }
+}
+
+export function renderDeviceList() {
+    const list = safeGetElement('deviceList')
+    if (!list) {
+        console.warn('deviceList element not found, cannot render')
+        return
+    }
+
+    const searchInput = safeGetElement('deviceSearch')
+    const search = searchInput ? searchInput.value.toLowerCase() : ''
+
+    const filtered = devices.filter(d =>
+        d.device_id.toLowerCase().includes(search)
+    )
+
+    if (filtered.length === 0) {
+        list.innerHTML = `
+            <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                <div style="font-size: 48px; margin-bottom: 16px;">📡</div>
+                <div>暂无设备</div>
+            </div>
+        `
+        return
+    }
+
+    list.innerHTML = filtered.map(device => `
+        <div class="device-card ${currentDevice?.device_id === device.device_id ? 'active' : ''}"
+             onclick="selectDevice('${device.device_id}')">
+            <div class="device-card-header">
+                <div class="device-avatar">📱</div>
+                <div class="device-info">
+                    <h4>${device.name || device.device_id}</h4>
+                    <div class="device-status">在线</div>
+                </div>
+                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${device.device_id}')" title="编辑设备">✏️</button>
+            </div>
+            <div class="device-metrics">
+                <div class="device-metric">
+                    <div class="device-metric-value">${device.cpu_usage?.toFixed(0) || '--'}%</div>
+                    <div class="device-metric-label">CPU</div>
+                </div>
+                <div class="device-metric">
+                    <div class="device-metric-value">${((device.mem_used || 0) / 1024).toFixed(1)}G</div>
+                    <div class="device-metric-label">内存</div>
+                </div>
+                <div class="device-metric">
+                    <div class="device-metric-value">${device.load_1min?.toFixed(1) || '--'}</div>
+                    <div class="device-metric-label">负载</div>
+                </div>
+            </div>
+            ${device.tags && device.tags.length > 0 ? `
+                <div class="device-tags" style="margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
+                    ${device.tags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${tag}</span>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `).join('')
+}
+
+export function filterDevices() {
+    const searchInput = safeGetElement('deviceSearch')
+    if (searchInput) {
+        queryDeviceList({
+            page: 0,
+            page_size: paginationState.pageSize,
+            search_keyword: searchInput.value.trim()
+        })
+    }
+}
+
+export function onSearchKeyDown(event) {
+    if (event.key === 'Enter') {
+        filterDevices()
+    }
+}
+
+export function openDeviceEditModal(deviceId) {
+    const device = devices.find(d => d.device_id === deviceId)
+    if (!device) {
+        showToast('设备不存在', 'error')
+        return
+    }
+
+    document.getElementById('editDeviceId').value = deviceId
+    document.getElementById('editDeviceIdDisplay').value = deviceId
+    document.getElementById('editDeviceName').value = device.name || ''
+    document.getElementById('editDeviceTags').value = (device.tags || []).join(', ')
+
+    const modal = document.getElementById('deviceEditModal')
+    modal.style.display = 'flex'
+}
+
+export function closeDeviceEditModal() {
+    const modal = document.getElementById('deviceEditModal')
+    modal.style.display = 'none'
+}
+
+export function saveDeviceEdit() {
+    const deviceId = document.getElementById('editDeviceId').value
+    const name = document.getElementById('editDeviceName').value.trim()
+    const tagsStr = document.getElementById('editDeviceTags').value.trim()
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : []
+
+    if (!deviceId) {
+        showToast('设备ID不能为空', 'error')
+        return
+    }
+
+    sendMessage(0x52, {  // DEVICE_UPDATE
+        device_id: deviceId,
+        name: name || null,
+        tags: tags.length > 0 ? tags : null
+    })
+
+    closeDeviceEditModal()
+}
+
+export function queryDeviceList(params = {}) {
+    const { page = 0, page_size = 20, search_keyword = '' } = params
+
+    if (paginationState.debounceTimer) {
+        clearTimeout(paginationState.debounceTimer)
+    }
+
+    paginationState.debounceTimer = setTimeout(() => {
+        paginationState.currentPage = page
+        paginationState.pageSize = page_size
+        paginationState.searchKeyword = search_keyword
+        paginationState.isLoading = true
+
+        renderPaginationUI()
+
+        try {
+            sendMessage(MSG_TYPES.DEVICE_LIST, {
+                action: "get_list",
+                page: page,
+                page_size: page_size,
+                search_keyword: search_keyword,
+                sort_by: "device_id",
+                sort_order: "asc"
+            })
+        } catch (error) {
+            console.error('查询设备列表失败:', error)
+            paginationState.isLoading = false
+            renderPaginationUI()
+        }
+    }, 300)
+}
+
+export function renderPaginationUI() {
+    const deviceListEl = safeGetElement('deviceList')
+    if (!deviceListEl) return
+
+    const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize)
+    const currentPage = paginationState.currentPage
+
+    if (totalPages <= 1) return
+
+    const pages = generatePageNumbers(currentPage, totalPages)
+
+    const paginationHTML = `
+        <div class="pagination">
+            <div class="pagination-controls">
+                <button class="pagination-btn" onclick="prevPage()" ${currentPage === 0 ? 'disabled' : ''}>◀</button>
+                ${pages.map(page => {
+                    if (page === '...') {
+                        return '<span class="pagination-ellipsis">...</span>'
+                    }
+                    return `<button class="pagination-page ${page === currentPage ? 'active' : ''}"
+                                     onclick="goToPage(${page})">${page + 1}</button>`
+                }).join('')}
+                <button class="pagination-btn" onclick="nextPage()" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>▶</button>
+            </div>
+            <div class="pagination-info">
+                共 ${paginationState.totalCount} 条 · 第 ${currentPage + 1}/${totalPages} 页
+            </div>
+        </div>
+    `
+
+    const existingPagination = deviceListEl.querySelector('.pagination')
+    if (existingPagination) {
+        existingPagination.outerHTML = paginationHTML
+    } else {
+        deviceListEl.innerHTML += paginationHTML
+    }
+}
+
+function generatePageNumbers(currentPage, totalPages) {
+    const pages = []
+    const maxVisible = 5
+
+    if (totalPages <= maxVisible) {
+        for (let i = 0; i < totalPages; i++) {
+            pages.push(i)
+        }
+    } else {
+        pages.push(0)
+
+        let start = Math.max(1, currentPage - 1)
+        let end = Math.min(totalPages - 2, currentPage + 1)
+
+        if (currentPage < 3) {
+            start = 1
+            end = 3
+        }
+
+        if (currentPage > totalPages - 4) {
+            start = totalPages - 4
+            end = totalPages - 2
+        }
+
+        if (start > 1) {
+            pages.push('...')
+        }
+
+        for (let i = start; i <= end; i++) {
+            pages.push(i)
+        }
+
+        if (end < totalPages - 2) {
+            pages.push('...')
+        }
+
+        pages.push(totalPages - 1)
+    }
+
+    return pages
+}
+
+export function goToPage(page) {
+    queryDeviceList({
+        page: page,
+        page_size: paginationState.pageSize,
+        search_keyword: paginationState.searchKeyword
+    })
+}
+
+export function prevPage() {
+    if (paginationState.currentPage > 0) {
+        queryDeviceList({
+            page: paginationState.currentPage - 1,
+            page_size: paginationState.pageSize,
+            search_keyword: paginationState.searchKeyword
+        })
+    }
+}
+
+export function nextPage() {
+    const totalPages = Math.ceil(paginationState.totalCount / paginationState.pageSize)
+    if (paginationState.currentPage < totalPages - 1) {
+        queryDeviceList({
+            page: paginationState.currentPage + 1,
+            page_size: paginationState.pageSize,
+            search_keyword: paginationState.searchKeyword
+        })
+    }
+}
+
+export function selectDevice(deviceId) {
+    const device = devices.find(d => d.device_id === deviceId)
+    if (!device) return
+
+    if (!isConnected || isReconnecting) {
+        showToast('等待WebSocket连接...', 'warning')
+        setTimeout(() => selectDevice(deviceId), 1000)
+        return
+    }
+    if (currentDevice && ptySessionId) {
+        sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId })
+        ptySessionId = null
+    }
+
+    currentDevice = device
+
+    document.querySelectorAll('.device-card').forEach(el => el.classList.remove('active'))
+    if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active')
+    }
+
+    document.getElementById('emptyState').style.display = 'none'
+    document.getElementById('deviceDetail').classList.add('active')
+    document.getElementById('detailDeviceName').textContent = device.device_id
+    document.getElementById('detailDeviceIp').textContent = device.ip_addr || 'IP未知'
+
+    setTimeout(() => {
+        if (window.connectTerminal) window.connectTerminal()
+    }, 100)
+
+    setTimeout(() => {
+        refreshFiles()
+        refreshFileTree()
+    }, 200)
+
+    setTimeout(() => refreshSystemStatus(), 300)
+
+    startMonitorAutoRefresh()
+
+    showToast(`已选择设备: ${deviceId}`, 'success')
+}
+
+export function disconnectDevice() {
+    stopMonitorAutoRefresh()
+
+    if (ptySessionId) {
+        sendMessage(MSG_TYPES.PTY_CLOSE, { session_id: ptySessionId })
+        ptySessionId = null
+    }
+    currentDevice = null
+    document.getElementById('deviceDetail').classList.remove('active')
+    document.getElementById('emptyState').style.display = 'flex'
+    if (window.clearTerminal) window.clearTerminal()
+}
+
+// ============================================
+// File Management (Migrated from js/app.js)
+// ============================================
+
+export function refreshFileTree() {
+    if (!currentDevice) return
+    const container = safeGetElement('fileTreeRoot')
+    if (!container) {
+        console.warn('fileTreeRoot element not found, cannot refresh')
+        return
+    }
+    expandedDirs.clear()
+    expandedDirs.add('/')
+    loadTreeItem('/', container)
+}
+
+export function loadTreeItem(path, container) {
+    if (container) {
+        container.innerHTML = '<div class="tree-loading">加载中...</div>'
+    } else {
+        console.warn('Invalid container for tree item, path:', path)
+        return
+    }
+
+    sendMessage(MSG_TYPES.FILE_LIST_REQUEST, {
+        path: path,
+        request_id: 'tree-' + Date.now()
+    })
+}
+
+export function renderTreeItem(item, parentPath, index) {
+    const fullPath = parentPath === '/' ? '/' + item.name : parentPath + '/' + item.name
+    const isExpanded = expandedDirs.has(fullPath)
+    const isDir = item.is_dir
+
+    const div = document.createElement('div')
+    const isSelected = selectedFiles.has(fullPath)
+    div.className = `tree-item ${isExpanded && isDir ? 'expanded' : ''} ${isSelected ? 'selected' : ''}`
+    div.dataset.path = fullPath
+    div.dataset.isDir = isDir
+    div.dataset.index = index
+
+    const toggleHtml = isDir ?
+        `<span class="tree-toggle">▶</span>` :
+        `<span class="tree-toggle empty"></span>`
+
+    const iconHtml = isDir ?
+        (isExpanded ? '📂' : '📁') :
+        getFileIcon(item.name)
+
+    div.innerHTML = `
+        ${toggleHtml}
+        <span class="tree-icon">${iconHtml}</span>
+        <span class="tree-label">${item.name}</span>
+    `
+
+    if (isDir) {
+        const toggle = div.querySelector('.tree-toggle')
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation()
+            toggleTreeItem(fullPath, div)
+        })
+    }
+
+    div.addEventListener('click', (e) => {
+        handleTreeItemClick(e, fullPath, isDir, item, div)
+    })
+
+    return div
+}
+
+export function handleTreeItemClick(e, fullPath, isDir, item, div) {
+    document.querySelectorAll('.tree-item.focused').forEach(el => el.classList.remove('focused'))
+    div.classList.add('focused')
+
+    if (isDir) {
+        const isExpanded = expandedDirs.has(fullPath)
+        navigateTo(fullPath)
+        toggleTreeItem(fullPath, div)
+        if (!e.ctrlKey && !e.shiftKey) {
+            clearFileSelection()
+        }
+    } else {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            toggleFileSelection(fullPath, div)
+        } else if (e.shiftKey && lastSelectedFile) {
+            e.preventDefault()
+            selectFileRange(lastSelectedFile, fullPath)
+        } else {
+            clearFileSelection()
+            addFileToSelection(fullPath, div)
+            selectFileInTree(fullPath, item)
+        }
+        lastSelectedFile = fullPath
+    }
+
+    updateSelectionInfo()
+}
+
+export function toggleFileSelection(path, element) {
+    if (selectedFiles.has(path)) {
+        selectedFiles.delete(path)
+        element.classList.remove('selected')
+    } else {
+        selectedFiles.add(path)
+        element.classList.add('selected')
+    }
+}
+
+export function addFileToSelection(path, element) {
+    selectedFiles.add(path)
+    element.classList.add('selected')
+}
+
+export function clearFileSelection() {
+    selectedFiles.clear()
+    document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'))
+    lastSelectedFile = null
+}
+
+export function selectFileRange(startPath, endPath) {
+    const visibleItems = []
+    document.querySelectorAll('.tree-item[data-is-dir="false"]').forEach(el => {
+        visibleItems.push({
+            path: el.dataset.path,
+            element: el
+        })
+    })
+
+    const startIndex = visibleItems.findIndex(i => i.path === startPath)
+    const endIndex = visibleItems.findIndex(i => i.path === endPath)
+
+    if (startIndex === -1 || endIndex === -1) return
+
+    const minIndex = Math.min(startIndex, endIndex)
+    const maxIndex = Math.max(startIndex, endIndex)
+
+    for (let i = minIndex; i <= maxIndex; i++) {
+        const item = visibleItems[i]
+        addFileToSelection(item.path, item.element)
+    }
+}
+
+export function updateSelectionInfo() {
+    const infoEl = document.getElementById('fileSelectionInfo')
+    const countEl = document.getElementById('selectionCount')
+
+    if (selectedFiles.size > 0) {
+        infoEl.style.display = 'block'
+        countEl.textContent = selectedFiles.size
+    } else {
+        infoEl.style.display = 'none'
+    }
+}
+
+export function collapseAllFolders() {
+    expandedDirs.clear()
+    expandedDirs.add('/')
+
+    document.querySelectorAll('.tree-item.expanded').forEach(el => {
+        el.classList.remove('expanded')
+        const icon = el.querySelector('.tree-icon')
+        if (icon && el.dataset.isDir === 'true') {
+            icon.textContent = '📁'
+        }
+    })
+
+    document.querySelectorAll('.tree-children').forEach(el => {
+        el.style.display = 'none'
+    })
+
+    showToast('已折叠所有文件夹', 'info')
+}
+
+export function downloadSelectedFiles() {
+    if (selectedFiles.size === 0) {
+        showToast('请先选择要下载的文件', 'warning')
+        return
+    }
+
+    const files = Array.from(selectedFiles)
+
+    if (files.length === 1) {
+        sendDownloadRequest(files[0])
+    } else {
+        showToast(`正在打包 ${files.length} 个文件...`, 'info')
+        sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
+            paths: files,
+            format: 'tar'
+        })
+    }
+}
+
+export function toggleTreeItem(path, element) {
+    const isExpanded = expandedDirs.has(path)
+
+    if (isExpanded) {
+        expandedDirs.delete(path)
+        const pathPrefix = path === '/' ? '/' : path + '/'
+        expandedDirs.forEach(subPath => {
+            if (subPath.startsWith(pathPrefix)) {
+                expandedDirs.delete(subPath)
+            }
+        })
+        element.classList.remove('expanded')
+        const childrenContainer = element.nextElementSibling
+        if (childrenContainer && childrenContainer.classList.contains('tree-children')) {
+            childrenContainer.style.display = 'none'
+        }
+    } else {
+        expandedDirs.add(path)
+        element.classList.add('expanded')
+        let childrenContainer = element.nextElementSibling
+        if (!childrenContainer || !childrenContainer.classList.contains('tree-children')) {
+            childrenContainer = document.createElement('div')
+            childrenContainer.className = 'tree-children'
+            element.parentNode.insertBefore(childrenContainer, element.nextSibling)
+            loadTreeItem(path, childrenContainer)
+        } else {
+            childrenContainer.style.display = 'block'
+        }
+    }
+
+    const icon = element.querySelector('.tree-icon')
+    if (icon) {
+        icon.textContent = isExpanded ? '📁' : '📂'
+    }
+
+}
+
+export function updateTreeWithFiles(path, files) {
+
+    let container
+    if (path === '/') {
+        container = safeGetElement('fileTreeRoot')
+    } else {
+        const parentItem = document.querySelector(`.tree-item[data-path="${path}"]`)
+        if (parentItem) {
+            container = parentItem.nextElementSibling
+            if (!container || !container.classList.contains('tree-children')) {
+                container = document.createElement('div')
+                container.className = 'tree-children'
+                parentItem.parentNode?.insertBefore(container, parentItem.nextSibling)
+            }
+        }
+    }
+
+    if (!container) {
+        console.error('[TREE] Container not found for path:', path)
+        return
+    }
+
+
+    files.sort((a, b) => {
+        if (a.is_dir && !b.is_dir) return -1
+        if (!a.is_dir && b.is_dir) return 1
+        return a.name.localeCompare(b.name)
+    })
+
+    container.innerHTML = ''
+
+    if (files.length === 0) {
+        const emptyMsg = document.createElement('div')
+        emptyMsg.className = 'tree-empty'
+        emptyMsg.style.padding = '8px 12px'
+        emptyMsg.style.color = 'var(--text-muted)'
+        emptyMsg.style.fontSize = '12px'
+        emptyMsg.textContent = '(空)'
+        container.appendChild(emptyMsg)
+        return
+    }
+
+    let dirCount = 0
+    let fileCount = 0
+
+    files.forEach((item, index) => {
+        const treeItem = renderTreeItem(item, path, index)
+        container.appendChild(treeItem)
+        if (item.is_dir) {
+            dirCount++
+        } else {
+            fileCount++
+        }
+    })
+
+}
+
+export function refreshCurrentDir() {
+    if (!currentDevice) return
+    refreshFiles(currentPath)
+}
+
+export function refreshFiles(path) {
+    if (!currentDevice) return
+    sendMessage(MSG_TYPES.FILE_LIST_REQUEST, {
+        path: path,
+        request_id: 'files-' + Date.now()
+    })
+}
+
+export function updateFileList(files) {
+    return
+}
+
+export function selectFileItem(path, isDir, name, size) {
+    clearFileSelection()
+    selectedFiles.add(path)
+    event.currentTarget.classList.add('selected')
+    updateSelectionInfo()
+
+    if (!isDir) {
+        previewFile(path, name, size)
+    }
+}
+
+export function selectFileInTree(path, item) {
+    previewFile(path, item.name, item.size)
+}
+
+export function previewFile(path, name, size) {
+
+    if (isEditorActive && isEditorDirty()) {
+        if (!confirm('当前文件已修改但未保存，确定切换？')) return
+    }
+    if (isEditorActive) exitEditor()
+
+    editorCurrentFile = { path, name, size, mtime: 0 }
+
+    const preview = safeGetElement('filePreview')
+    const placeholder = safeGetElement('filePreviewPlaceholder')
+    const previewName = safeGetElement('previewFilename')
+    const previewSize = safeGetElement('previewFilesize')
+
+    if (placeholder) placeholder.style.display = 'none'
+    if (preview) preview.style.display = 'flex'
+    const previewPanel = document.getElementById('filePreviewPanel')
+    if (previewPanel) previewPanel.style.display = 'flex'
+
+    if (previewName) previewName.textContent = name
+    if (previewSize) previewSize.textContent = formatBytes(size)
+
+    const ext = name.split('.').pop().toLowerCase()
+
+    if (aceEditor && aceEditorReady) {
+        aceSession.off("change", handleEditorChange)
+        aceEditor.setValue('', -1)
+        aceSession.on("change", handleEditorChange)
+        aceEditor.setReadOnly(true)
+
+        if (IMAGE_EXTS.includes(ext)) {
+            aceSession.off("change", handleEditorChange)
+            aceEditor.setValue(`[图片文件 - ${formatBytes(size)}]\n\n请点击下载按钮查看图片`, -1)
+            aceSession.on("change", handleEditorChange)
+            pendingFilePreview = { path, name, ext, size }
+            sendMessage(MSG_TYPES.FILE_REQUEST, {
+                action: 'download',
+                filepath: path,
+                request_id: 'preview-img-' + Date.now()
+            })
+
+            const btnEdit = document.getElementById('btnEditFile')
+            if (btnEdit) btnEdit.style.display = 'none'
+        } else {
+            const readLength = Math.min(size, 32768)
+            aceSession.off("change", handleEditorChange)
+            aceEditor.setValue('加载中...', -1)
+            aceSession.on("change", handleEditorChange)
+            pendingFilePreview = { path, name, ext, size }
+
+            sendMessage(MSG_TYPES.FILE_REQUEST, {
+                action: 'read',
+                filepath: path,
+                offset: 0,
+                length: readLength,
+                request_id: 'read-' + Date.now()
+            })
+
+            const btnEdit = document.getElementById('btnEditFile')
+            if (btnEdit) btnEdit.style.display = 'none'
+
+            setTimeout(() => {
+                if (pendingFilePreview && pendingFilePreview.path === path) {
+                    if (aceEditor.getValue() === '加载中...') {
+                        aceSession.off("change", handleEditorChange)
+                        aceEditor.setValue('加载超时，请重试', -1)
+                        aceSession.on("change", handleEditorChange)
+                    }
+                    pendingFilePreview = null
+                }
+            }, 10000)
+        }
+    } else {
+        setTimeout(() => previewFile(path, name, size), 100)
+    }
+}
+
+export function handleFileData(data) {
+
+    if (pendingFileSave && data.filepath && data.filepath === pendingFileSave.path) {
+        if (data.success) {
+            if (editorCurrentFile) {
+                editorCurrentFile.mtime = data.mtime || 0
+            }
+            onFileSaveSuccess()
+        } else if (data.error) {
+            onFileSaveError(data.error)
+        }
+        return
+    }
+
+    if (!pendingFilePreview) {
+        console.warn('[FILE_DATA] No pending file preview')
+        return
+    }
+
+    const { path, name, ext, size } = pendingFilePreview
+
+    if (data.filepath && data.filepath !== path) {
+        console.warn(`[FILE_DATA] File path mismatch: expected ${path}, got ${data.filepath}`)
+        return
+    }
+
+    if (data.error) {
+        console.error('[FILE_DATA] Error:', data.error)
+        aceEditor.setValue(`错误: ${data.error}`, -1)
+        pendingFilePreview = null
+        return
+    }
+
+    let content = ''
+    let bytes = null
+
+    if (data.content) {
+        const binaryString = atob(data.content)
+        bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+        }
+    } else if (data.chunk_data) {
+        const binaryString = atob(data.chunk_data)
+        bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i)
+        }
+    }
+
+    if (bytes && isBinaryFile(bytes)) {
+        const binaryExt = name.split('.').pop().toLowerCase()
+
+        if (BINARY_EXTS.includes(binaryExt)) {
+            content = `[二进制文件 - ${binaryExt.toUpperCase()}]\n\n文件大小: ${formatBytes(size)}\n\n此文件不支持在线编辑，请下载后查看`
+        } else {
+            content = `[二进制文件]\n\n文件大小: ${formatBytes(size)}\n\n此文件不支持在线编辑，请下载后查看`
+        }
+    } else if (bytes) {
+        content = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+    } else {
+        aceEditor.setValue('文件内容为空', -1)
+        pendingFilePreview = null
+        return
+    }
+
+    const editable = isFileEditable(name, content)
+
+    editorLastSavedContent = content
+    if (editorCurrentFile) {
+        editorCurrentFile.mtime = data.mtime || 0
+        editorCurrentFile.editable = editable
+    }
+
+    displayEditorContent(content, true)
+
+    resetEditorState()
+
+    const btnEdit = document.getElementById('btnEditFile')
+    if (btnEdit) {
+        btnEdit.style.display = editable ? 'inline-flex' : 'none'
+        if (!editable) {
+            btnEdit.title = '此文件类型不支持编辑'
+        } else {
+            btnEdit.title = '编辑文件'
+        }
+    }
+
+    pendingFilePreview = null
+}
+
+export function closePreview() {
+    const previewPanel = document.getElementById('filePreviewPanel')
+    const placeholder = document.getElementById('filePreviewPlaceholder')
+    const preview = document.getElementById('filePreview')
+
+    if (placeholder) placeholder.style.display = 'flex'
+    if (preview) preview.style.display = 'none'
+    if (previewPanel) previewPanel.style.display = 'none'
+
+    exitEditor()
+}
+
+export function navigateTo(path) {
+    currentPath = path
+    
+    clearFileSelection()
+    updateSelectionInfo()
+
+    refreshFiles(path)
+
+    document.querySelectorAll('.tree-item').forEach(el => {
+        el.classList.remove('selected')
+        if (el.dataset.path === path && el.dataset.isDir === 'true') {
+            el.classList.add('selected')
+        }
+    })
+}
+
+export function sendDownloadRequest(path) {
+    sendMessage(MSG_TYPES.DOWNLOAD_PACKAGE, {
+        path: path,
+        format: 'tar'
+    })
+    showToast('开始下载...', 'info')
+}
+
+export function handleDownloadPackage(data) {
+
+    if (data.chunk_index !== undefined && data.total_chunks !== undefined) {
+        handleChunkedDownload(data)
+        return
+    }
+
+    if (!data.filename || !data.content || !data.size) {
+        console.error('Download package data missing required fields:', data)
+        showToast('下载包数据不完整', 'error')
+        return
+    }
+
+    try {
+        downloadFile(data.filename, data.content)
+    } catch (error) {
+        console.error('Error downloading file:', error)
+        showToast('下载失败: ' + error.message, 'error')
+    }
+}
+
+function handleChunkedDownload(data) {
+    const request_id = data.request_id || 'default'
+    const chunk_index = data.chunk_index
+    const total_chunks = data.total_chunks
+
+    if (!downloadChunks[request_id]) {
+        downloadChunks[request_id] = {
+            chunks: new Array(total_chunks).fill(null),
+            total: total_chunks,
+            filename: data.filename,
+            size: data.size
+        }
+    }
+
+    const chunkData = downloadChunks[request_id]
+    chunkData.chunks[chunk_index] = data.content
+
+
+    const isComplete = chunkData.chunks.every(c => c !== null && c !== undefined)
+
+    if (isComplete || data.is_last) {
+        const fullContent = chunkData.chunks.join('')
+
+        try {
+            downloadFile(chunkData.filename, fullContent)
+            showToast(`文件已下载: ${chunkData.filename}`, 'success')
+        } catch (error) {
+            console.error('Error downloading file:', error)
+            showToast('下载失败: ' + error.message, 'error')
+        }
+
+        delete downloadChunks[request_id]
+    } else {
+        const remaining = chunkData.chunks.filter(c => c === undefined || c === null).length
+    }
+}
+
+function downloadFile(filename, content) {
+    const binaryData = atob(content)
+    const bytes = new Uint8Array(binaryData.length)
+    for (let i = 0; i < binaryData.length; i++) {
+        bytes[i] = binaryData.charCodeAt(i)
+    }
+
+    const blob = new Blob([bytes], { type: 'application/gzip' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+}
+
+// ============================================
+// Export state variables
+// ============================================
+
+export {
+    devices, currentDevice, currentTab, currentPath, paginationState,
+    fileTreeData, selectedFiles, lastSelectedFile, expandedDirs, allTreeItems,
+    pendingFilePreview, pendingFileSave, fileListChunks,
+    isEditorActive, editorCurrentFile, editorWordWrap, editorLastSavedContent,
+    syntaxHighlightEnabled, aceEditor, aceSession, aceEditorReady,
+    openEditorTabs, activeEditorTabPath,
+    cachedProcesses, processSortKey, processSortAsc, processMemTotal,
+    monitorRefreshInterval, isMonitorAutoRefreshEnabled, downloadChunks,
+    pingTargets, pingResults, isPingAutoRefreshEnabled, pingRefreshInterval,
+    lastSystemRefreshTime, lastPingRefreshTime, REFRESH_COOLDOWN_MS,
+    isManualSystemRefresh, isManualPingRefresh,
+    previousSystemStatus, previousPingResults
+}
+
+// ============================================
+// WebSocket state (re-exported from websocket.js)
+// ============================================
+
+export { ws, isConnected, isReconnecting, reconnectAttempts, maxReconnectAttempts } from './websocket.js'
+
+
+
+

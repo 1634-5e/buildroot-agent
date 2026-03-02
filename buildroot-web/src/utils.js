@@ -56,7 +56,7 @@ export function showToast(message, type = 'info') {
     toast.className = `toast ${type}`
     toast.innerHTML = `
         <span style="font-size: 20px;">${icons[type]}</span>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `
 
     container.appendChild(toast)
@@ -202,24 +202,7 @@ export function resetSettings() {
 }
 
 export function debugFileListChunks(fileListChunks) {
-    console.log('[FILE_LIST] Current chunk storage:')
     for (const [request_id, chunkData] of Object.entries(fileListChunks)) {
-        console.log(`  ${request_id}: ${chunkData.receivedChunks}/${chunkData.totalChunks} chunks, path: ${chunkData.path}`)
     }
 }
 
-// Navigation helpers
-export function navigateTo(path) {
-    // This will be implemented by importing module
-    console.log('navigateTo called:', path)
-}
-
-export function collapseAllFolders() {
-    // This will be implemented by importing module
-    console.log('collapseAllFolders called')
-}
-
-export function sendDownloadRequest(path) {
-    // This will be implemented by importing module
-    console.log('sendDownloadRequest called:', path)
-}

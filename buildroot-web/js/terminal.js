@@ -8,7 +8,7 @@ let searchAddon = null;
 let webLinksAddon = null;
 let terminalInitialized = false;
 let ptySessionId = null;
-
+let windowResizeHandler = null;
 function initTerminal() {
     if (terminalInitialized) return;
 
@@ -77,11 +77,12 @@ function initTerminal() {
         if (sizeEl) sizeEl.textContent = `${size.cols}x${size.rows}`;
     });
 
-    window.addEventListener('resize', () => {
+    windowResizeHandler = () => {
         if (currentTab === 'terminal') {
             fitAddon.fit();
         }
-    });
+    };
+    window.addEventListener('resize', windowResizeHandler);
 
     const oldInput = document.getElementById('terminalInput');
     if (oldInput) oldInput.style.display = 'none';
@@ -113,7 +114,6 @@ function connectTerminal() {
         }
 
         const newSessionId = Math.floor(Math.random() * 1000000000);
-        console.log('Creating PTY session:', newSessionId);
 
         term.reset();
         term.writeln(`\x1b[1;32mConnecting to ${currentDevice.name || currentDevice.device_id}...\x1b[0m`);
@@ -134,7 +134,6 @@ function connectTerminal() {
             updateTerminalStatus('connecting');
             setTimeout(() => {
                 if (ptySessionId === newSessionId) {
-                console.log('PTY session waiting for response...');
                 }
             }, 8000);
         } else {
@@ -164,7 +163,6 @@ function handleTerminalData(data) {
 }
 
 function handlePtyCreateResponse(data) {
-    console.log('PTY create response:', data);
 
     if (data.success === true || data.status === 'created' || data.status === 'success') {
         showToast('终端连接成功', 'success');
@@ -189,7 +187,6 @@ function handlePtyCreateResponse(data) {
 }
 
 function handlePtyClose(data) {
-    console.log('PTY close received:', data);
     const sessionId = data.session_id || data.id;
     const reason = data.reason || data.error;
 
@@ -220,6 +217,18 @@ function clearTerminal() {
     }
 }
 
+function cleanupTerminal() {
+    if (windowResizeHandler) {
+        window.removeEventListener('resize', windowResizeHandler);
+        windowResizeHandler = null;
+    }
+    if (term) {
+        term.dispose();
+        term = null;
+    }
+    terminalInitialized = false;
+    ptySessionId = null;
+}
 function reconnectTerminal() {
     if (term) term.clear();
     reconnectWebSocket();

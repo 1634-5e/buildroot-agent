@@ -56,7 +56,7 @@ function showToast(message, type = 'info') {
     toast.className = `toast ${type}`;
     toast.innerHTML = `
         <span style="font-size: 20px;">${icons[type]}</span>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `;
 
     container.appendChild(toast);
@@ -210,8 +210,6 @@ function resetSettings() {
 }
 
 function debugFileListChunks() {
-    console.log('[FILE_LIST] Current chunk storage:');
     for (const [request_id, chunkData] of Object.entries(fileListChunks)) {
-        console.log(`  ${request_id}: ${chunkData.receivedChunks}/${chunkData.totalChunks} chunks, path: ${chunkData.path}`);
     }
 }

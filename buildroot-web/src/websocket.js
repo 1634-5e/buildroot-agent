@@ -43,11 +43,9 @@ export function connectWebSocket() {
 
     const wsUrl = getWsUrl()
 
-    console.log('Connecting to WebSocket:', wsUrl)
     ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-        console.log('WebSocket connected')
         isConnected = true
         isReconnecting = false
         reconnectAttempts = 0
@@ -56,7 +54,6 @@ export function connectWebSocket() {
 
         if (!consoleId) {
             consoleId = 'console_' + Math.random().toString(36).substr(2, 8)
-            console.log('Generated console_id:', consoleId)
         }
 
         processMessageQueue()
@@ -73,7 +70,6 @@ export function connectWebSocket() {
     }
 
     ws.onclose = () => {
-        console.log('WebSocket disconnected')
         isConnected = false
         updateConnectionStatus(false)
 
@@ -91,7 +87,6 @@ export function connectWebSocket() {
                 maxReconnectDelay
             )
 
-            console.log(`Attempting reconnection ${reconnectAttempts}/${maxReconnectAttempts} in ${delay}ms`)
 
             reconnectTimeout = setTimeout(() => {
                 if (isReconnecting) {
@@ -138,7 +133,6 @@ export function connectWebSocket() {
                 console.error('Error parsing message data:', parseErr, 'Data:', dataStr)
                 return
             }
-            console.log('Received message:', msgType, data)
             
             // handleMessage will be called by importing module
             if (window.handleAppMessage) {
@@ -189,11 +183,9 @@ export function updateConnectionStatus(connected) {
 export function sendMessage(type, data) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         if (isReconnecting || isConnected) {
-            console.log('Queueing message:', type, data)
             messageQueue.push({ type, data, timestamp: Date.now() })
             return true
         } else {
-            console.log('WebSocket not connected, cannot send message:', type, data)
             showToast('未连接到服务器', 'error')
             return false
         }
@@ -217,16 +209,13 @@ export function sendMessage(type, data) {
         msg.set(bytes, 3)
 
         if (type === MSG_TYPES.FILE_REQUEST) {
-            console.log(`[SEND] FILE_REQUEST message size: ${msg.length} bytes, data:`, data)
         }
 
         ws.send(msg)
-        console.log('Sent message:', type, data)
         return true
     } catch (error) {
         console.error('Error sending message:', error)
         if (isReconnecting || isConnected) {
-            console.log('Queueing message after send error:', type, data)
             messageQueue.push({ type, data, timestamp: Date.now() })
             return true
         } else {
@@ -249,14 +238,12 @@ export function reconnectWebSocket() {
 
 function processMessageQueue() {
     if (messageQueue.length > 0) {
-        console.log(`Processing ${messageQueue.length} queued messages`)
         const now = Date.now()
         const maxAge = 30000
 
         const validMessages = messageQueue.filter(msg => now - msg.timestamp < maxAge)
 
         if (validMessages.length !== messageQueue.length) {
-            console.log(`Discarded ${messageQueue.length - validMessages.length} expired messages`)
         }
 
         messageQueue = []

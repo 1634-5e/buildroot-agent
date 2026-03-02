@@ -41,7 +41,13 @@ typedef struct {
     bool connected;
     bool connecting;
     int retry_count;
-    
+
+    /* 接收缓冲区（TCP消息分帧） */
+    unsigned char *recv_buf;
+    size_t recv_buf_size;
+    size_t recv_buf_pos;
+    pthread_mutex_t recv_lock;
+
     /* 重连机制 */
     bool should_reconnect;            /* 是否启用自动重连 */
     pthread_t reconnect_thread;       /* 重连监控线程 */
@@ -117,29 +123,23 @@ static int connect_with_timeout(int sock_fd, struct sockaddr *addr, socklen_t ad
 static void *socket_recv_thread(void *arg)
 {
     socket_client_t *client = (socket_client_t *)arg;
-    unsigned char *recv_buf = malloc(65536);
-    
-    if (!recv_buf) {
-        LOG_ERROR("接收缓冲区内存分配失败");
-        return NULL;
-    }
-    
+
     LOG_INFO("Socket接收线程启动");
-    
+
     while (1) {
         pthread_mutex_lock(&client->reconnect_lock);
         bool thread_running = client->thread_running;
         bool connected = client->connected;
         pthread_mutex_unlock(&client->reconnect_lock);
-        
+
         if (!thread_running || !connected) {
             break;
         }
-        
+
         /* 使用poll()添加超时，避免无限阻塞，确保能响应Ctrl-C */
         struct pollfd pfd = { .fd = client->sock_fd, .events = POLLIN };
         int poll_ret = poll(&pfd, 1, POLL_TIMEOUT_MS);
-        
+
         if (poll_ret < 0) {
             if (errno == EINTR) {
                 continue;
@@ -149,10 +149,21 @@ static void *socket_recv_thread(void *arg)
         } else if (poll_ret == 0) {
             continue;  /* 超时，继续检查thread_running标志 */
         }
-        
-        int bytes_received = recv(client->sock_fd, recv_buf, sizeof(recv_buf), 0);
-        
+
+        /* 检查是否有空间接收数据 */
+        pthread_mutex_lock(&client->recv_lock);
+        if (client->recv_buf_pos >= client->recv_buf_size) {
+            LOG_ERROR("接收缓冲区溢出");
+            pthread_mutex_unlock(&client->recv_lock);
+            break;
+        }
+
+        /* 接收数据到缓冲区 */
+        size_t space = client->recv_buf_size - client->recv_buf_pos;
+        int bytes_received = recv(client->sock_fd, client->recv_buf + client->recv_buf_pos, space, 0);
+
         if (bytes_received <= 0) {
+            pthread_mutex_unlock(&client->recv_lock);
             if (bytes_received == 0) {
                 LOG_INFO("服务器关闭连接");
                 break;
@@ -164,17 +175,51 @@ static void *socket_recv_thread(void *arg)
                 break;
             }
         }
-        
-        LOG_DEBUG("收到数据: %d bytes", bytes_received);
-        
-        if (client->agent_ctx && bytes_received > 0) {
-            protocol_handle_message(client->agent_ctx, (const char *)recv_buf, bytes_received);
-        }
-    }
-    
-    LOG_INFO("Socket接收线程退出");
 
-    free(recv_buf);
+        client->recv_buf_pos += bytes_received;
+        LOG_DEBUG("收到数据: %d bytes (缓冲区: %zu/%zu)",
+                  bytes_received, client->recv_buf_pos, client->recv_buf_size);
+
+        /* 解析缓冲区中的消息 */
+        while (client->recv_buf_pos >= 3) {
+            /* 消息格式: 类型(1B) + 长度(2B, Big Endian) + JSON数据 */
+            unsigned char msg_type = client->recv_buf[0];
+            uint16_t json_len = ((uint16_t)client->recv_buf[1] << 8) | (uint16_t)client->recv_buf[2];
+            size_t total_msg_len = 3 + json_len;
+
+            if (json_len > 65533) {
+                LOG_ERROR("消息长度异常: %u字节", json_len);
+                /* 清空缓冲区 */
+                client->recv_buf_pos = 0;
+                break;
+            }
+
+            /* 检查是否有完整消息 */
+            if (client->recv_buf_pos < total_msg_len) {
+                LOG_DEBUG("消息不完整，等待更多数据: 需要%zu，已接收%zu",
+                          total_msg_len, client->recv_buf_pos);
+                break;
+            }
+
+            /* 处理完整消息 */
+            if (client->agent_ctx) {
+                pthread_mutex_unlock(&client->recv_lock);
+                protocol_handle_message(client->agent_ctx,
+                                      (const char *)client->recv_buf,
+                                      total_msg_len);
+                pthread_mutex_lock(&client->recv_lock);
+            }
+
+            /* 从缓冲区移除已处理的消息 */
+            memmove(client->recv_buf, client->recv_buf + total_msg_len,
+                   client->recv_buf_pos - total_msg_len);
+            client->recv_buf_pos -= total_msg_len;
+        }
+
+        pthread_mutex_unlock(&client->recv_lock);
+    }
+
+    LOG_INFO("Socket接收线程退出");
 
     pthread_mutex_lock(&g_socket_client->reconnect_lock);
     client->thread_running = false;
@@ -476,7 +521,16 @@ static socket_client_t *socket_client_init(agent_context_t *ctx)
     client->queued_count = 0;
     client->agent_ctx = ctx;
 
-    pthread_mutex_init(&client->send_lock, NULL);
+    /* 接收缓冲区初始化 */
+    client->recv_buf_size = 65536;
+    client->recv_buf = (unsigned char *)malloc(client->recv_buf_size);
+    if (!client->recv_buf) {
+        LOG_ERROR("接收缓冲区分配失败");
+        free(client);
+        return NULL;
+    }
+    client->recv_buf_pos = 0;
+    pthread_mutex_init(&client->recv_lock, NULL);
     pthread_cond_init(&client->send_cond, NULL);
     pthread_mutex_init(&client->reconnect_lock, NULL);
     pthread_cond_init(&client->reconnect_cond, NULL);
@@ -541,8 +595,13 @@ static void socket_client_cleanup(socket_client_t *client)
     client->msg_tail = NULL;
     client->queued_count = 0;
     pthread_mutex_unlock(&client->send_lock);
-    
-    pthread_mutex_destroy(&client->send_lock);
+
+    /* 清理接收缓冲区 */
+    pthread_mutex_destroy(&client->recv_lock);
+    if (client->recv_buf) {
+        free(client->recv_buf);
+        client->recv_buf = NULL;
+    }
     pthread_cond_destroy(&client->send_cond);
     pthread_mutex_destroy(&client->reconnect_lock);
     pthread_cond_destroy(&client->reconnect_cond);

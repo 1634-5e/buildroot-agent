@@ -1,9 +1,8 @@
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, ConfigDict
 
 class BaseMessage(BaseModel):
-    request_id: str | None = Field(default=None)
-    device_id: str | None = Field(default=None)
-
-    class Config:
-        extra = "allow"
+    """基础消息模型"""
+    model_config = ConfigDict(
+        populate_by_name=True,
+        str_strip_whitespace=True
+    )
