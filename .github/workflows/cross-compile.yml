@@ -25,13 +25,19 @@ jobs:
       run: |
         mkdir -p build && cd build
         cmake .. \
-          -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-          -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/arm-github-actions.cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DSTATIC_LINK=ON
         make -j$(nproc)
+
+    - name: Verify ARM binary
+      working-directory: buildroot-agent
+      run: |
+        file build/bin/buildroot-agent | grep -q ARM
+        echo "Binary verified as ARM architecture"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: buildroot-agent-arm
-        path: buildroot-agent/build/buildroot-agent
+        path: buildroot-agent/build/bin/buildroot-agent
