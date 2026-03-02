@@ -88,7 +88,6 @@ setInterval(() => {
 // ============================================
 
 function updateDeviceList(newDevices) {
-    console.log('Updating device list:', newDevices);
     devices = Array.isArray(newDevices) ? newDevices : [];
     renderDeviceList();
 
@@ -102,8 +101,7 @@ function updateDeviceList(newDevices) {
 
     const settings = loadSettings();
     const autoSelect = settings.autoSelectDevice !== false;
-    if (autoSelect && devices.length > 0 && !currentDevice && isConnected && !isReconnecting) {
-        console.log('Auto-selecting first device:', devices[0].device_id);
+    if (autoSelect && devices.length > 0 && !currentDevice && isConnected) {
         setTimeout(() => selectDevice(devices[0].device_id), 100);
     }
 }
@@ -132,16 +130,20 @@ function renderDeviceList() {
         return;
     }
 
-    list.innerHTML = filtered.map(device => `
+    list.innerHTML = filtered.map(device => {
+        const safeName = escapeHtml(device.name || device.device_id);
+        const safeDeviceId = escapeHtml(device.device_id);
+        const safeTags = (device.tags || []).map(tag => escapeHtml(tag));
+        return `
         <div class="device-card ${currentDevice?.device_id === device.device_id ? 'active' : ''}"
-             onclick="selectDevice('${device.device_id}')">
+             onclick="selectDevice('${safeDeviceId}')">
             <div class="device-card-header">
                 <div class="device-avatar">📱</div>
                 <div class="device-info">
-                    <h4>${device.name || device.device_id}</h4>
+                    <h4>${safeName}</h4>
                     <div class="device-status">在线</div>
                 </div>
-                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${device.device_id}')" title="编辑设备">✏️</button>
+                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${safeDeviceId}')" title="编辑设备">✏️</button>
             </div>
             <div class="device-metrics">
                 <div class="device-metric">
@@ -159,11 +161,11 @@ function renderDeviceList() {
             </div>
             ${device.tags && device.tags.length > 0 ? `
                 <div class="device-tags" style="margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
-                    ${device.tags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${tag}</span>`).join('')}
+                    ${safeTags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${tag}</span>`).join('')}
                 </div>
             ` : ''}
         </div>
-    `).join('');
+    `;
 }
 
 function filterDevices() {
@@ -432,12 +434,10 @@ function refreshFileTree() {
     }
     expandedDirs.clear();
     expandedDirs.add('/');
-    console.log('Loading root directory tree...');
     loadTreeItem('/', container);
 }
 
 function loadTreeItem(path, container) {
-    console.log('Loading tree item:', path);
     if (container) {
         container.innerHTML = '<div class="tree-loading">加载中...</div>';
     } else {
@@ -474,7 +474,7 @@ function renderTreeItem(item, parentPath, index) {
     div.innerHTML = `
         ${toggleHtml}
         <span class="tree-icon">${iconHtml}</span>
-        <span class="tree-label">${item.name}</span>
+        <span class="tree-label">${escapeHtml(item.name)}</span>
     `;
 
     if (isDir) {
@@ -616,7 +616,6 @@ function downloadSelectedFiles() {
 }
 
 function toggleTreeItem(path, element) {
-    console.log('Toggling tree item:', path);
     const isExpanded = expandedDirs.has(path);
 
     if (isExpanded) {
@@ -652,27 +651,21 @@ function toggleTreeItem(path, element) {
         icon.textContent = isExpanded ? '📁' : '📂';
     }
 
-    console.log(`Tree item ${isExpanded ? 'collapsed' : 'expanded'}:`, path);
 }
 
 function updateTreeWithFiles(path, files) {
-    console.log('[TREE] ===== Starting tree update for path:', path, 'with', files.length, 'files =====');
 
     let container;
     if (path === '/') {
         container = safeGetElement('fileTreeRoot');
-        console.log('[TREE] Using fileTreeRoot container');
     } else {
         const parentItem = document.querySelector(`.tree-item[data-path="${path}"]`);
-        console.log('[TREE] Parent item for', path, ':', parentItem);
         if (parentItem) {
             container = parentItem.nextElementSibling;
-            console.log('[TREE] Found existing container:', container);
             if (!container || !container.classList.contains('tree-children')) {
                 container = document.createElement('div');
                 container.className = 'tree-children';
                 parentItem.parentNode?.insertBefore(container, parentItem.nextSibling);
-                console.log('[TREE] Created new container');
             }
         }
     }
@@ -682,8 +675,6 @@ function updateTreeWithFiles(path, files) {
         return;
     }
 
-    console.log('[TREE] Container element:', container);
-    console.log('[TREE] Container children before clear:', container.children.length);
 
     files.sort((a, b) => {
         if (a.is_dir && !b.is_dir) return -1;
@@ -692,7 +683,6 @@ function updateTreeWithFiles(path, files) {
     });
 
     container.innerHTML = '';
-    console.log('[TREE] Container cleared');
 
     if (files.length === 0) {
         const emptyMsg = document.createElement('div');
@@ -702,12 +692,9 @@ function updateTreeWithFiles(path, files) {
         emptyMsg.style.fontSize = '12px';
         emptyMsg.textContent = '(空)';
         container.appendChild(emptyMsg);
-        console.log('[TREE] Empty directory:', path);
-        console.log('[TREE] ===== Tree update completed (empty) =====');
         return;
     }
 
-    console.log('[TREE] Adding', files.length, 'items to tree');
     let dirCount = 0;
     let fileCount = 0;
 
@@ -721,9 +708,6 @@ function updateTreeWithFiles(path, files) {
         }
     });
 
-    console.log('[TREE] Added', dirCount, 'directories and', fileCount, 'files');
-    console.log('[TREE] Container children after update:', container.children.length);
-    console.log('[TREE] ===== Tree update completed =====');
 }
 
 function refreshCurrentDir() {
@@ -733,7 +717,6 @@ function refreshCurrentDir() {
 
 function refreshFiles(path) {
     if (!currentDevice) return;
-    console.log('Refreshing files for path:', path);
     sendMessage(MSG_TYPES.FILE_LIST_REQUEST, {
         path: path,
         request_id: 'files-' + Date.now()
@@ -741,7 +724,6 @@ function refreshFiles(path) {
 }
 
 function updateFileList(files) {
-    console.log('updateFileList called but file list view is not implemented, ignoring');
     return;
 }
 
@@ -761,7 +743,6 @@ function selectFileInTree(path, item) {
 }
 
 function previewFile(path, name, size) {
-    console.log('Previewing file:', path, name, size);
 
     if (isEditorActive && isEditorDirty()) {
         if (!confirm('当前文件已修改但未保存，确定切换？')) return;
@@ -811,7 +792,6 @@ function previewFile(path, name, size) {
             aceSession.on("change", handleEditorChange);
             pendingFilePreview = { path, name, ext, size };
 
-            console.log(`[PREVIEW] Sending file read request for ${path}, length: ${readLength} (file size: ${size})`);
             sendMessage(MSG_TYPES.FILE_REQUEST, {
                 action: 'read',
                 filepath: path,
@@ -840,7 +820,6 @@ function previewFile(path, name, size) {
 }
 
 function handleFileData(data) {
-    console.log('[FILE_DATA] Received file data:', data);
 
     if (pendingFileSave && data.filepath && data.filepath === pendingFileSave.path) {
         if (data.success) {
@@ -971,7 +950,6 @@ function sendDownloadRequest(path) {
 }
 
 function handleDownloadPackage(data) {
-    console.log('Handling download package:', data);
 
     if (data.chunk_index !== undefined && data.total_chunks !== undefined) {
         handleChunkedDownload(data);
@@ -1004,19 +982,16 @@ function handleChunkedDownload(data) {
             filename: data.filename,
             size: data.size
         };
-        console.log(`开始接收分块文件: ${data.filename}, 共${total_chunks}块`);
     }
 
     const chunkData = downloadChunks[request_id];
     chunkData.chunks[chunk_index] = data.content;
 
-    console.log(`收到分块 ${chunk_index + 1}/${total_chunks}`);
 
     const isComplete = chunkData.chunks.every(c => c !== null && c !== undefined);
 
     if (isComplete || data.is_last) {
         const fullContent = chunkData.chunks.join('');
-        console.log(`分块接收完成: ${chunkData.filename}, 大小: ${chunkData.size}`);
 
         try {
             downloadFile(chunkData.filename, fullContent);
@@ -1029,7 +1004,6 @@ function handleChunkedDownload(data) {
         delete downloadChunks[request_id];
     } else {
         const remaining = chunkData.chunks.filter(c => c === undefined || c === null).length;
-        console.log(`等待更多分块，还需${remaining}块`);
     }
 }
 
@@ -1052,7 +1026,6 @@ function downloadFile(filename, content) {
 
     URL.revokeObjectURL(url);
 
-    console.log('File downloaded successfully:', filename);
 }
 
 // ============================================
@@ -1099,7 +1072,6 @@ function initAceEditor() {
 
         aceEditor.resize();
         aceEditorReady = true;
-        console.log('[Ace Editor] 初始化完成');
     } catch (e) {
         console.error('[Ace Editor] 初始化失败:', e);
         aceEditorReady = false;
@@ -1114,7 +1086,6 @@ function displayEditorContent(content, readonly = false, retryCount = 0) {
 
     if (!aceEditorReady || !aceEditor) {
         if (retryCount < 10) {
-            console.log(`[Ace Editor] 等待初始化，延迟显示内容... (重试 ${retryCount + 1}/10)`);
             setTimeout(() => {
                 displayEditorContent(content, readonly, retryCount + 1);
             }, 100);
@@ -1124,7 +1095,6 @@ function displayEditorContent(content, readonly = false, retryCount = 0) {
         return;
     }
 
-    console.log('[Ace Editor] 设置内容，长度:', content.length);
 
     aceSession.off("change", handleEditorChange);
 
@@ -1208,9 +1178,7 @@ function enterEditor() {
     let content;
     if (aceEditor && aceEditorReady) {
         content = aceEditor.getValue();
-        console.log('[EnterEditor] 从 Ace Editor 获取内容，长度:', content.length);
     } else {
-        console.log('[EnterEditor] Ace Editor 未就绪');
         return;
     }
 
@@ -1241,7 +1209,6 @@ function enterEditor() {
     const languageMode = getAceLanguageMode(editorCurrentFile.name);
     if (aceSession) {
         aceSession.setMode(languageMode);
-        console.log(`[Ace Editor] 设置语言模式: ${languageMode}`);
     }
 
     renderEditorTabs();
@@ -1258,12 +1225,14 @@ function renderEditorTabs() {
         const isActive = path === activeEditorTabPath;
         const icon = getFileIcon(tab.name);
         const displayName = tab.name.length > 25 ? tab.name.substring(0, 22) + '...' : tab.name;
+        const safePath = encodeURIComponent(path);
+        const safeName = escapeHtml(displayName);
 
-        html += `<div class="editor-tab ${isActive ? 'active' : ''}" data-path="${path}" onclick="switchToTab('${path}')">
+        html += `<div class="editor-tab ${isActive ? 'active' : ''}" data-path="${safePath}" onclick="switchToTab(decodeURIComponent('${safePath}'))">
             <span>${icon}</span>
-            <span class="tab-name">${displayName}</span>
+            <span class="tab-name">${safeName}</span>
             ${tab.modified ? '<span class="tab-modified"></span>' : ''}
-            <span class="tab-close" onclick="event.stopPropagation(); closeEditorTab('${path}')">×</span>
+            <span class="tab-close" onclick="event.stopPropagation(); closeEditorTab(decodeURIComponent('${safePath}'))">×</span>
         </div>`;
     });
 
@@ -1536,7 +1505,7 @@ function showFileConflictDialog(error) {
                     <div class="modal-title">⚠️ 文件冲突</div>
                 </div>
                 <div class="modal-body">
-                    <p id="fileConflictError" style="color: var(--text-primary); margin-bottom: 16px;">${error || '文件已被其他用户修改'}</p>
+                    <p id="fileConflictError" style="color: var(--text-primary); margin-bottom: 16px;">${escapeHtml(error || '文件已被其他用户修改')}</p>
                     <p style="color: var(--text-muted); font-size: 13px;">选择是否覆盖服务器上的文件？</p>
                 </div>
                 <div class="modal-footer">
@@ -1606,7 +1575,6 @@ function updateSystemStatus(data) {
 }
 
 function _renderSystemStatus(data) {
-    console.log('Updating system status:', data);
     
     // Update status timestamp display
     const timestamp = data.status_timestamp ? new Date(data.status_timestamp) : new Date();
@@ -1814,9 +1782,10 @@ function renderProcessList() {
         return processSortAsc ? va - vb : vb - va;
     });
 
+    const safeKeyword = keyword ? escapeHtml(keyword) : '';
     if (list.length === 0) {
         container.innerHTML = keyword
-            ? '<div class="process-empty"><div class="process-empty-icon">🔍</div><div class="process-empty-text">未找到匹配的进程</div><div class="process-empty-hint">尝试其他关键词</div></div>'
+            ? `<div class="process-empty"><div class="process-empty-icon">🔍</div><div class="process-empty-text">未找到包含 "${safeKeyword}" 的进程</div><div class="process-empty-hint">尝试其他关键词</div></div>`
             : '<div class="process-empty"><div class="process-empty-icon">📊</div><div class="process-empty-text">等待进程数据</div><div class="process-empty-hint">设备连接后将自动采集进程信息</div></div>';
         return;
     }
@@ -1829,10 +1798,11 @@ function renderProcessList() {
         const memClass = memPercent > 50 ? 'high' : '';
         const state = p.state || 'S';
         const stateLabel = STATE_LABELS[state] || state;
+        const safeName = escapeHtml(p.name || '--');
 
         return `<div class="process-row">
             <span class="process-pid">${p.pid || '--'}</span>
-            <span class="process-name" title="${p.name || ''}">${p.name || '--'}</span>
+            <span class="process-name" title="${safeName}">${safeName}</span>
             <span class="process-metric-cell">
                 <span class="process-metric-value">${cpu.toFixed(1)}%</span>
                 <span class="process-metric-bar"><span class="process-metric-bar-fill cpu-bar ${cpuClass}" style="width:${Math.min(cpu, 100)}%"></span></span>
@@ -1844,7 +1814,6 @@ function renderProcessList() {
             <span class="process-state"><span class="process-state-dot state-${state}"></span><span class="process-state-text">${stateLabel}</span></span>
             <span class="process-time">${p.time || '--'}</span>
         </div>`;
-    }).join('');
 }
 
 function sortProcesses(key) {
@@ -1901,7 +1870,6 @@ function startMonitorAutoRefresh() {
         }
     }, MONITOR_REFRESH_INTERVAL);
 
-    console.log('Monitor auto-refresh started');
 }
 
 function stopMonitorAutoRefresh() {
@@ -1910,7 +1878,6 @@ function stopMonitorAutoRefresh() {
         monitorRefreshInterval = null;
     }
     isMonitorAutoRefreshEnabled = false;
-    console.log('Monitor auto-refresh stopped');
 }
 
 function toggleMonitorAutoRefresh() {
@@ -2204,7 +2171,6 @@ function handleMessage(type, data) {
             handlePtyClose(data);
             break;
         case MSG_TYPES.FILE_LIST_RESPONSE:
-            console.log('[FILE_LIST] Received FILE_LIST_RESPONSE:', data);
 
             if (data.chunk !== undefined && data.total_chunks) {
                 const path = data.path;
@@ -2213,7 +2179,6 @@ function handleMessage(type, data) {
                 const request_id = data.request_id;
                 const files = data.files || [];
 
-                console.log(`[FILE_LIST] Chunk ${chunk}/${totalChunks} for path ${path}, files count: ${files.length}, request_id: ${request_id}`);
 
                 if (!request_id) {
                     console.error('[FILE_LIST] Missing request_id in chunked response');
@@ -2228,7 +2193,6 @@ function handleMessage(type, data) {
                         path: path,
                         timestamp: Date.now()
                     };
-                    console.log(`[FILE_LIST] Initialized chunk storage for request ${request_id}, total chunks: ${totalChunks}`);
                 } else {
                     fileListChunks[request_id].timestamp = Date.now();
                 }
@@ -2240,13 +2204,9 @@ function handleMessage(type, data) {
                 chunkData.chunks[chunk] = files;
                 chunkData.receivedChunks++;
 
-                console.log(`[FILE_LIST] Received ${chunkData.receivedChunks}/${totalChunks} chunks for request ${request_id}`);
-                console.log(`[FILE_LIST] Chunk ${chunk} contains ${files.length} files:`, files.map(f => f.name));
 
                 if (chunkData.receivedChunks >= totalChunks) {
                     const allFiles = chunkData.chunks.flat();
-                    console.log(`[FILE_LIST] All chunks received for request ${request_id}, total files: ${allFiles.length}`);
-                    console.log(`[FILE_LIST] All files:`, allFiles.map(f => f.name));
 
                     if (path) {
                         updateTreeWithFiles(path, allFiles);
@@ -2255,7 +2215,6 @@ function handleMessage(type, data) {
                     delete fileListChunks[request_id];
                 }
             } else {
-                console.log(`[FILE_LIST] Single chunk response for ${data.path}, files count: ${(data.files || []).length}`);
                 if (data.path) {
                     updateTreeWithFiles(data.path, data.files || []);
                 }
@@ -2274,7 +2233,6 @@ function handleMessage(type, data) {
             handleDownloadPackage(data);
             break;
         default:
-            console.log('Unknown message type:', type, data);
     }
 }
 
@@ -2286,13 +2244,11 @@ document.addEventListener('DOMContentLoaded', () => {
     applySettings();
     // Wait for Ace to be available (it uses AMD async loading)
     if (typeof window.ace === 'undefined') {
-        console.log('[Ace Editor] Waiting for Ace to load...');
         let aceCheckCount = 0;
         const aceCheckInterval = setInterval(() => {
             aceCheckCount++;
             if (typeof window.ace !== 'undefined') {
                 clearInterval(aceCheckInterval);
-                console.log('[Ace Editor] Ace loaded after', aceCheckCount * 100, 'ms');
                 initAceEditor();
             } else if (aceCheckCount >= 50) {
                 clearInterval(aceCheckInterval);
@@ -2459,11 +2415,12 @@ function renderPingResults() {
         const statusIcon = getStatusIcon(result.status);
         const statusClass = getStatusClass(result.status);
         const statusText = getStatusText(result.status);
+        const safeIp = escapeHtml(ip);
 
         html += `
             <div class="ping-result-card">
                 <div class="ping-result-header">
-                    <span class="ping-result-ip">${ip}</span>
+                    <span class="ping-result-ip">${safeIp}</span>
                     <span class="ping-result-status ${statusClass}">${statusIcon} ${statusText}</span>
                 </div>
                 <div class="ping-result-details">

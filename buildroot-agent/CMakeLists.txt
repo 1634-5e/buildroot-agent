@@ -50,13 +50,7 @@ else()
     message(STATUS "Using dynamic linking")
 endif()
 
-# 测试配置
-option(ENABLE_TESTS "Enable unit tests" ON)
-if(ENABLE_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
-
+# 安装规则 - 单目录自包含
 # 安装规则 - 单目录自包含
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION .
@@ -120,21 +114,33 @@ include(CPack)
 # 测试配置
 option(ENABLE_TESTS "Enable unit tests" ON)
 
-if(ENABLE_TESTS)
+if(ENABLE_TESTS AND NOT STATIC_LINK)
     # 查找 CMocka 测试框架
-    find_library(CMOCKA_LIBRARY cmocka)
-    find_path(CMOCKA_INCLUDE_DIR cmocka.h)
-    
-    if(CMOCKA_LIBRARY AND CMOCKA_INCLUDE_DIR)
-        message(STATUS "CMocka found, tests enabled")
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(CMOCKA cmocka)
+    else()
+        find_library(CMOCKA_LIBRARY cmocka)
+        find_path(CMOCKA_INCLUDE_DIR cmocka.h)
+        if(CMOCKA_LIBRARY AND CMOCKA_INCLUDE_DIR)
+            set(CMOCKA_FOUND TRUE)
+            set(CMOCKA_LIBRARIES ${CMOCKA_LIBRARY})
+            set(CMOCKA_INCLUDE_DIRS ${CMOCKA_INCLUDE_DIR})
+        endif()
+    endif()
+
+    if(CMOCKA_FOUND)
+        message(STATUS "CMocka found: ${CMOCKA_LIBRARIES}")
         enable_testing()
-        
+
         # 测试包含目录
-        include_directories(${CMOCKA_INCLUDE_DIR})
-        
+        include_directories(${CMOCKA_INCLUDE_DIRS})
+
         # 测试目录
         add_subdirectory(tests)
     else()
         message(WARNING "CMocka not found, tests disabled. Install: sudo apt-get install libcmocka-dev")
     endif()
+elseif(ENABLE_TESTS AND STATIC_LINK)
+    message(STATUS "Tests disabled: static linking incompatible with cmocka (no static library available)")
 endif()

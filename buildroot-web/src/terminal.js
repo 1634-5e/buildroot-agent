@@ -130,7 +130,6 @@ export function connectTerminal() {
         }
 
         const newSessionId = Math.floor(Math.random() * 1000000000)
-        console.log('Creating PTY session:', newSessionId)
 
         term.reset()
         term.writeln(`\x1b[1;32mConnecting to ${currentDevice.name || currentDevice.device_id}...\x1b[0m`)
@@ -151,7 +150,6 @@ export function connectTerminal() {
             updateTerminalStatus('connecting')
             setTimeout(() => {
                 if (ptySessionId === newSessionId) {
-                console.log('PTY session waiting for response...')
                 }
             }, 8000)
         } else {
@@ -181,7 +179,6 @@ export function handleTerminalData(data) {
 }
 
 export function handlePtyCreateResponse(data) {
-    console.log('PTY create response:', data)
 
     if (data.success === true || data.status === 'created' || data.status === 'success') {
         showToast('终端连接成功', 'success')
@@ -206,7 +203,6 @@ export function handlePtyCreateResponse(data) {
 }
 
 export function handlePtyClose(data) {
-    console.log('PTY close received:', data)
     const sessionId = data.session_id || data.id
     const reason = data.reason || data.error
 

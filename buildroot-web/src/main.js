@@ -2,14 +2,12 @@
 // Main Entry Point - Vite + ES Modules
 // ============================================
 
-// Import xterm.js and addons
+// Import xterm.js, addons and CSS
 import { Terminal } from '@xterm/xterm'
+import '@xterm/xterm/css/xterm.css'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-
-// Import xterm.css
-import '@xterm/xterm/css/xterm.css'
 
 // Import Ace Editor
 import ace from 'ace-builds'
@@ -20,7 +18,7 @@ import 'ace-builds/src-noconflict/ext-modelist'
 
 // Import modules
 import { MSG_TYPES, MONITOR_REFRESH_INTERVAL, STATE_LABELS, FILE_ICONS, IMAGE_EXTS, BINARY_EXTS, BINARY_TYPE_LABELS } from './config.js'
-import { showToast, formatBytes, formatUptime, getFileIcon, getFileTypeLabel, getAceLanguageMode, isFileEditable, isBinaryFile, safeGetElement, debugFileListChunks, navigateTo, collapseAllFolders, sendDownloadRequest } from './utils.js'
+import { showToast, formatBytes, formatUptime, getFileIcon, getFileTypeLabel, getAceLanguageMode, isFileEditable, isBinaryFile, safeGetElement, debugFileListChunks } from './utils.js'
 import { ws, isConnected, isReconnecting, connectWebSocket, sendMessage, reconnectWebSocket, getWsUrl, updateConnectionStatus } from './websocket.js'
 import { 
     term, fitAddon, searchAddon, webLinksAddon, terminalInitialized, ptySessionId,
@@ -30,75 +28,10 @@ import {
 } from './terminal.js'
 
 // ============================================
-// Application State
+// Import state from app.js
 // ============================================
 
-let devices = []
-let currentDevice = null
-let currentTab = 'terminal'
-let currentPath = '/root'
-let paginationState = {
-    currentPage: 0,
-    pageSize: 20,
-    totalCount: 0,
-    searchKeyword: '',
-    isLoading: false,
-    debounceTimer: null
-}
-
-// File Tree State
-let fileTreeData = {}
-let selectedFiles = new Set()
-let lastSelectedFile = null
-let expandedDirs = new Set(['/'])
-let allTreeItems = []
-let pendingFilePreview = null
-let pendingFileSave = null
-let fileListChunks = {}
-
-// Editor State
-let isEditorActive = false
-let editorCurrentFile = null
-let editorWordWrap = false
-let editorLastSavedContent = ''
-let syntaxHighlightEnabled = true
-let aceEditor = null
-let aceSession = null
-let aceEditorReady = false
-let openEditorTabs = new Map()
-let activeEditorTabPath = null
-
-// Monitor State
-let cachedProcesses = []
-let processSortKey = 'cpu'
-let statusUpdateThrottle = null
-let processSortAsc = false
-let processMemTotal = 1
-let monitorRefreshInterval = null
-let isMonitorAutoRefreshEnabled = true
-let downloadChunks = {}
-
-// Ping Monitor State
-let pingTargets = []
-let pingResults = {}
-let isPingAutoRefreshEnabled = true
-let pingRefreshInterval = null
-
-// Refresh throttle state
-let lastSystemRefreshTime = 0
-let lastPingRefreshTime = 0
-const REFRESH_COOLDOWN_MS = 2000
-
-// Flag to track manual refresh (for change detection toast)
-let isManualSystemRefresh = false
-let isManualPingRefresh = false
-
-// Previous data for change detection
-let previousSystemStatus = null
-let previousPingResults = null
-
-// Export necessary variables and functions for other modules
-export {
+import {
     devices, currentDevice, currentTab, currentPath, paginationState,
     fileTreeData, selectedFiles, lastSelectedFile, expandedDirs, allTreeItems,
     pendingFilePreview, pendingFileSave, fileListChunks,
@@ -111,13 +44,7 @@ export {
     lastSystemRefreshTime, lastPingRefreshTime, REFRESH_COOLDOWN_MS,
     isManualSystemRefresh, isManualPingRefresh,
     previousSystemStatus, previousPingResults,
-    updateDeviceList, selectDevice, disconnectDevice,
-    refreshFileTree, loadTreeItem, renderTreeItem, handleTreeItemClick,
-    toggleFileSelection, addFileToSelection, clearFileSelection, selectFileRange,
-    updateSelectionInfo, collapseAllFolders, downloadSelectedFiles,
-    toggleTreeItem, updateTreeWithFiles, refreshCurrentDir, refreshFiles,
-    updateFileList, selectFileItem, selectFileInTree, previewFile, handleFileData,
-    closePreview, navigateTo, sendDownloadRequest,
+
     initAceEditor, displayEditorContent, toggleEditor, enterEditor, renderEditorTabs,
     switchToTab, closeEditorTab, exitEditor, cancelEdit, isEditorDirty, markEditorAsClean,
     resetEditorState, handleEditorChange, updateAceCursorInfo, saveFileToDevice,
@@ -129,11 +56,31 @@ export {
     showView, switchTab, rebootDevice, showSettings, closeSettings,
     loadSettingsToForm, saveSettings, handleMessage,
     handlePingStatus, updatePingStatusTime, renderPingResults,
-    getStatusIcon, getStatusClass, getStatusText, togglePingAutoRefresh
-}
+    getStatusIcon, getStatusClass, getStatusText, togglePingAutoRefresh,
+    updateDeviceList, selectDevice, disconnectDevice,
+    refreshFileTree, loadTreeItem, renderTreeItem, handleTreeItemClick,
+    toggleFileSelection, addFileToSelection, clearFileSelection, selectFileRange,
+    updateSelectionInfo, collapseAllFolders, downloadSelectedFiles,
+    toggleTreeItem, updateTreeWithFiles, refreshCurrentDir, refreshFiles,
+    updateFileList, selectFileItem, selectFileInTree, previewFile, handleFileData,
+    closePreview, navigateTo, sendDownloadRequest,
+    handleDownloadPackage, queryDeviceList, filterDevices, onSearchKeyDown,
+    renderPaginationUI, goToPage, prevPage, nextPage,
+    openDeviceEditModal, closeDeviceEditModal, saveDeviceEdit
+} from './app.js'
+
+// ============================================
+// Export state for websocket module
+// ============================================
+
+export { ws, isConnected, isReconnecting, reconnectAttempts, maxReconnectAttempts } from './websocket.js'
 
 // Import the app module which will use these exports
 import './app.js'
+
+// ============================================
+// Clean up expired chunk data periodically
+// ============================================
 
 // ============================================
 // Clean up expired chunk data periodically
@@ -160,7 +107,6 @@ setInterval(() => {
 // ============================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[App] DOM Content Loaded')
     
     // Initialize Ace Editor
     initAceEditor()
@@ -211,3 +157,62 @@ window.addEventListener('unhandledrejection', (event) => {
     event.preventDefault()
     return false
 })
+
+// ============================================
+// Expose functions to window for inline event handlers
+// ============================================
+
+window.selectDevice = selectDevice
+window.disconnectDevice = disconnectDevice
+window.openDeviceEditModal = openDeviceEditModal
+window.closeDeviceEditModal = closeDeviceEditModal
+window.saveDeviceEdit = saveDeviceEdit
+window.filterDevices = filterDevices
+window.onSearchKeyDown = onSearchKeyDown
+window.goToPage = goToPage
+window.prevPage = prevPage
+window.nextPage = nextPage
+window.refreshFileTree = refreshFileTree
+window.collapseAllFolders = collapseAllFolders
+window.downloadSelectedFiles = downloadSelectedFiles
+window.showNewFileDialog = () => { showToast('新建文件功能待实现', 'info') }
+window.createNewFile = () => { showToast('新建文件功能待实现', 'info') }
+window.closeNewFileDialog = () => { document.getElementById('newFileDialog').style.display = 'none' }
+window.toggleTreeItem = toggleTreeItem
+window.handleTreeItemClick = handleTreeItemClick
+window.previewFile = previewFile
+window.closePreview = closePreview
+window.toggleEditor = toggleEditor
+window.saveFileToDevice = saveFileToDevice
+window.cancelEdit = cancelEdit
+window.switchToTab = switchToTab
+window.closeEditorTab = closeEditorTab
+window.showKeyboardShortcuts = () => { document.getElementById('keyboardShortcutsModal').style.display = 'flex' }
+window.showKeyboardShortcuts = () => { document.getElementById('keyboardShortcutsModal').style.display = 'flex' }
+window.closeKeyboardShortcuts = () => { document.getElementById('keyboardShortcutsModal').style.display = 'none' }
+window.rebootDevice = rebootDevice
+window.showSettings = showSettings
+window.closeSettings = closeSettings
+window.saveSettings = saveSettings
+window.resetSettings = () => { showToast('恢复默认设置', 'info') }
+window.runScript = runScript
+window.closeModal = closeModal
+window.copyOutput = copyOutput
+window.refreshSystemStatusThrottled = refreshSystemStatusThrottled
+window.toggleMonitorAutoRefresh = toggleMonitorAutoRefresh
+window.refreshPingStatusThrottled = refreshPingStatusThrottled
+window.togglePingAutoRefresh = togglePingAutoRefresh
+window.sortProcesses = sortProcesses
+window.filterProcessList = filterProcessList
+window.terminalSearchToggle = terminalSearchToggle
+window.terminalSearchNext = terminalSearchNext
+window.terminalSearchPrev = terminalSearchPrev
+window.handleTerminalSearchKey = handleTerminalSearchKey
+window.clearTerminal = clearTerminal
+window.reconnectWebSocket = reconnectWebSocket
+window.showView = showView
+window.handleMessage = handleMessage
+window.cancelFileSave = cancelFileSave
+window.confirmFileSave = confirmFileSave
+window.navigateTo = navigateTo
+window.sendDownloadRequest = sendDownloadRequest

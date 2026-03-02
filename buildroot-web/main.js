@@ -35,4 +35,3 @@ import './js/websocket.js'
 import './js/terminal.js'
 import './js/app.js'
 
-console.log('Buildroot Web Console loaded with Vite')
