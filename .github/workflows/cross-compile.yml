@@ -2,22 +2,22 @@ name: Cross Compile Buildroot Agent
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
   cross-compile:
-    runs-on: ubuntu-latest
-    container: ubuntu:14.04
-    
+    runs-on: ubuntu-22.04
+    container: ubuntu:22.04
+
     steps:
     - name: Install dependencies in container
       run: |
         apt-get update
         apt-get install -y git gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf cmake make
-    
+
     - name: Checkout code
       uses: actions/checkout@v4
 
