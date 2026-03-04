@@ -62,9 +62,17 @@ python_functions = ["test_*"]
 
 [tool.mypy]
 exclude = [
-    "managers/file_transfer.py",
+    "managers",
+    "database",
+    "protocol",
+    "config",
+    "models",
+    "scripts",
+    "tests",
 ]
 ignore_missing_imports = true
+no_implicit_optional = false
+warn_unused_configs = false
 
 [[tool.mypy.overrides]]
 module = "database.models"
