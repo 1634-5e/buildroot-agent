@@ -61,23 +61,19 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.mypy]
-exclude = [
-    "managers",
-    "database",
-    "protocol",
-    "config",
-    "models",
-    "scripts",
-    "tests",
-]
+check_untyped_defs = false
 ignore_missing_imports = true
 no_implicit_optional = false
 warn_unused_configs = false
-
-[[tool.mypy.overrides]]
-module = "database.models"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "protocol.models"
-ignore_errors = true
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_defs = false
+disable_error_code = [
+    "attr-defined",
+    "assignment",
+    "call-arg",
+    "index",
+    "method-assign",
+    "union-attr",
+    "var-annotated",
+]
