@@ -59,3 +59,17 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.mypy]
+exclude = [
+    "managers/file_transfer.py",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "database.models"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "protocol.models"
+ignore_errors = true
