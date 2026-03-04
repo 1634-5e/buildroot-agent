@@ -37,20 +37,22 @@ class CommandHandler(BaseHandler):
                 logger.error(f"[DB] 记录命令执行失败: {e}")
 
             # 记录审计日志（异步，不阻塞主流程）
-            asyncio.create_task(AuditLogRepository.insert(
-                event_type="command_execution",
-                action="execute_command",
-                actor_type="web_console",
-                actor_id=console_id,
-                device_id=device_id,
-                resource_type="command",
-                resource_id=request_id,
-                status="pending",
-                details={
-                    "command": command[:200],
-                    "request_id": request_id,
-                },
-            ))
+            asyncio.create_task(
+                AuditLogRepository.insert(
+                    event_type="command_execution",
+                    action="execute_command",
+                    actor_type="web_console",
+                    actor_id=console_id,
+                    device_id=device_id,
+                    resource_type="command",
+                    resource_id=request_id,
+                    status="pending",
+                    details={
+                        "command": command[:200],
+                        "request_id": request_id,
+                    },
+                )
+            )
 
         # 转发命令到设备
         if device_id and self.conn_mgr.is_device_connected(device_id):
@@ -88,21 +90,23 @@ class CommandHandler(BaseHandler):
                 logger.error(f"[DB] 更新命令执行结果失败: {e}")
 
             # 记录审计日志（异步，不阻塞主流程）
-            asyncio.create_task(AuditLogRepository.insert(
-                event_type="command_execution",
-                action="command_completed",
-                actor_type="device",
-                actor_id=device_id,
-                device_id=device_id,
-                resource_type="command",
-                resource_id=request_id,
-                status="success" if exit_code == 0 else "failure",
-                result_message=f"Exit code: {exit_code}",
-                details={
-                    "exit_code": exit_code,
-                    "stdout_length": len(stdout) if stdout else 0,
-                    "stderr_length": len(stderr) if stderr else 0,
-                },
-            ))
+            asyncio.create_task(
+                AuditLogRepository.insert(
+                    event_type="command_execution",
+                    action="command_completed",
+                    actor_type="device",
+                    actor_id=device_id,
+                    device_id=device_id,
+                    resource_type="command",
+                    resource_id=request_id,
+                    status="success" if exit_code == 0 else "failure",
+                    result_message=f"Exit code: {exit_code}",
+                    details={
+                        "exit_code": exit_code,
+                        "stdout_length": len(stdout) if stdout else 0,
+                        "stderr_length": len(stderr) if stderr else 0,
+                    },
+                )
+            )
         else:
-            logger.warning(f"CMD_RESPONSE缺少request_id，不发送")
+            logger.warning("CMD_RESPONSE缺少request_id，不发送")

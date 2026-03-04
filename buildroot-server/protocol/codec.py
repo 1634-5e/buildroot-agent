@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict
 from pydantic import BaseModel, ValidationError
 
 from protocol.constants import MessageType
@@ -31,9 +31,6 @@ from protocol.models import (
     UpdateInfo,
     UpdateDownload,
     UpdateProgress,
-    UpdateComplete,
-    UpdateError,
-    UpdateRollback,
     UpdateRequestApproval,
     UpdateDownloadReady,
     UpdateApproveInstall,

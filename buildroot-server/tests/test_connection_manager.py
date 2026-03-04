@@ -124,7 +124,7 @@ class TestConnectionManager:
         mock_websocket = Mock()
         await self.test_add_console(manager)
         mock_websocket = list(manager.web_consoles)[0]
-        console_id = manager.console_info[mock_websocket]["console_id"]
+        manager.console_info[mock_websocket]["console_id"]
 
         device_id, session_ids = manager.remove_console(mock_websocket)
 
@@ -239,7 +239,7 @@ class TestConnectionManager:
         # 先添加控制台
         await self.test_add_console(manager)
         mock_websocket = list(manager.web_consoles)[0]
-        console_id = manager.console_info[mock_websocket]["console_id"]
+        manager.console_info[mock_websocket]["console_id"]
         manager.set_console_device(mock_websocket, "test-device")
 
         # 添加请求会话（不存在的console_id）

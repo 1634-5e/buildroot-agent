@@ -1,18 +1,14 @@
 import asyncio
 import logging
-from typing import Dict, Any
 from datetime import datetime
 
 from database.repositories import (
     DeviceRepository,
-    DeviceStatusHistoryRepository,
     ScriptHistoryRepository,
-    AuditLogRepository,
 )
 from database.batch_buffer import get_status_history_buffer, get_audit_log_buffer
 from handlers.base import BaseHandler
 from protocol.constants import MessageType
-from protocol.models import Heartbeat, SystemStatus, LogUpload, ScriptRecv, ScriptResult
 
 logger = logging.getLogger(__name__)
 

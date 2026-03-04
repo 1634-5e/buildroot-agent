@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from websockets.server import WebSocketServerProtocol
 
 from protocol.constants import MessageType
 
@@ -46,7 +45,7 @@ class SocketHandler:
 
                     # 注册模式：处理 REGISTER 消息（首次连接或重新注册）
                     if msg_type == MessageType.REGISTER:
-                        logger.info(f"[SOCKET] 收到REGISTER注册消息 - 尝试注册设备")
+                        logger.info("[SOCKET] 收到REGISTER注册消息 - 尝试注册设备")
                         try:
                             json_str = data.decode("utf-8")
                             json_data = json.loads(json_str)

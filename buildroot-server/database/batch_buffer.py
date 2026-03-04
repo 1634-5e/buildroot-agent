@@ -6,8 +6,7 @@ Buildroot Agent Server - Batch Write Buffer
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import List, Any, Optional
 from dataclasses import dataclass, field
 
 from database.models import DeviceStatusHistory, AuditLog, PingHistory
@@ -245,6 +244,7 @@ _status_history_buffer: Optional[StatusHistoryBuffer] = None
 _audit_log_buffer: Optional[AuditLogBuffer] = None
 _ping_history_buffer: Optional[PingHistoryBuffer] = None
 
+
 def get_status_history_buffer() -> StatusHistoryBuffer:
     """获取设备状态历史缓冲器（单例）"""
     global _status_history_buffer
@@ -301,6 +301,5 @@ async def stop_batch_buffers():
     if _ping_history_buffer:
         await _ping_history_buffer.stop()
         _ping_history_buffer = None
-
 
     logger.info("Batch buffers stopped")

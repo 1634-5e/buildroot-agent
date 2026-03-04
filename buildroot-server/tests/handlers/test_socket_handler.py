@@ -6,7 +6,7 @@ SocketHandler 单元测试
 import pytest
 import asyncio
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock
 
 from handlers.socket_handler import SocketHandler
 from protocol.constants import MessageType

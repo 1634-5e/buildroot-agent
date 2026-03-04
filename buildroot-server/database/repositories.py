@@ -868,21 +868,21 @@ class AuditLogRepository:
 
             return [
                 {
-                    "id": l.id,
-                    "event_type": l.event_type,
-                    "event_time": l.event_time,
-                    "actor_type": l.actor_type,
-                    "actor_id": l.actor_id,
-                    "device_id": l.device_id,
-                    "console_id": l.console_id,
-                    "action": l.action,
-                    "resource_type": l.resource_type,
-                    "resource_id": l.resource_id,
-                    "status": l.status,
-                    "result_message": l.result_message,
-                    "ip_address": l.ip_address,
+                    "id": log.id,
+                    "event_type": log.event_type,
+                    "event_time": log.event_time,
+                    "actor_type": log.actor_type,
+                    "actor_id": log.actor_id,
+                    "device_id": log.device_id,
+                    "console_id": log.console_id,
+                    "action": log.action,
+                    "resource_type": log.resource_type,
+                    "resource_id": log.resource_id,
+                    "status": log.status,
+                    "result_message": log.result_message,
+                    "ip_address": log.ip_address,
                 }
-                for l in logs
+                for log in logs
             ]
 
 

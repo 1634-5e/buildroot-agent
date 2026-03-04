@@ -9,7 +9,6 @@ import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import text, delete, func
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_manager import db_manager
 from database.models import (
@@ -19,8 +18,6 @@ from database.models import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
 
 
 async def cleanup_old_data(retention_days: int = 90):
@@ -68,7 +65,7 @@ async def vacuum_analyze():
     )
 
     if dialect_name != "postgresql":
-        logger.info(f"VACUUM ANALYZE only available for PostgreSQL, skipping")
+        logger.info("VACUUM ANALYZE only available for PostgreSQL, skipping")
         return
 
     tables = [
@@ -145,11 +142,11 @@ async def main():
         # 清理旧数据
         logger.info("=" * 50)
         logger.info("Cleaning old device_status_history data (older than 90 days)...")
-        status_deleted = await cleanup_old_data(retention_days=90)
+        await cleanup_old_data(retention_days=90)
 
         logger.info("=" * 50)
         logger.info("Cleaning old audit_logs (older than 180 days)...")
-        audit_deleted = await cleanup_old_audit_logs(retention_days=180)
+        await cleanup_old_audit_logs(retention_days=180)
 
         # 运行VACUUM ANALYZE
         logger.info("=" * 50)

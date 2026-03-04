@@ -11,7 +11,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -151,10 +150,8 @@ def server_process():
 
     用于集成测试，启动真实的 Server 进程。
     """
-    import subprocess
     import sys
     import time
-    import signal
 
     # 设置测试环境变量
     env = os.environ.copy()
@@ -183,7 +180,7 @@ def server_process():
             sock.close()
             if result == 0:
                 break
-        except:
+        except Exception:
             pass
         time.sleep(0.5)
     else:

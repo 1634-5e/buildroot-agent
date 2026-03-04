@@ -6,7 +6,6 @@ import websockets
 from config.settings import settings
 from managers.connection import ConnectionManager
 from managers.file_transfer import FileTransferManager
-from managers.update import UpdateManager
 from handlers.register_handler import RegisterHandler
 from handlers.system_handler import SystemHandler
 from handlers.pty_handler import PtyHandler

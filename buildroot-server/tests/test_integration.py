@@ -5,7 +5,6 @@
 
 import asyncio
 import json
-import time
 
 import pytest
 
@@ -173,7 +172,7 @@ class TestPTY:
         await asyncio.sleep(1.0)
 
         # 验证收到数据（创建成功后会有 shell 提示符输出）
-        data_msgs = agent.get_messages(MessageType.PTY_DATA)
+        agent.get_messages(MessageType.PTY_DATA)
         # 可能有数据也可能没有，取决于实现
 
     async def test_pty_data_exchange(self, connected_agent):
@@ -204,12 +203,10 @@ class TestPTY:
         # 验证收到输出数据
         data_msgs = agent.get_messages(MessageType.PTY_DATA)
         # 可能有多个数据包，检查是否包含预期的输出
-        found_output = False
         for msg_type, data in data_msgs:
             try:
                 payload = json.loads(data)
                 if "hello_pty_test" in payload.get("data", ""):
-                    found_output = True
                     break
             except json.JSONDecodeError:
                 continue
@@ -301,7 +298,7 @@ class TestFileTransfer:
 
         await asyncio.sleep(1.0)
 
-        responses = agent.get_messages(MessageType.FILE_LIST_RESPONSE)
+        agent.get_messages(MessageType.FILE_LIST_RESPONSE)
         # 验证收到响应
 
     async def test_file_download_request(self, connected_agent):

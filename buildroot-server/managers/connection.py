@@ -6,9 +6,8 @@ from datetime import datetime
 from typing import Dict, Set, Any, Optional
 from websockets.server import WebSocketServerProtocol
 
-from models.file_transfer import FileTransferSession
 
-from database.repositories import WebConsoleSessionRepository, AuditLogRepository
+from database.repositories import WebConsoleSessionRepository
 
 logger = logging.getLogger(__name__)
 

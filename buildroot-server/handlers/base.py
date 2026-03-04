@@ -2,7 +2,6 @@ import logging
 import time
 import websockets
 from typing import Optional
-from websockets.server import WebSocketServerProtocol
 
 from protocol.constants import MessageType
 from protocol.codec import MessageCodec
