@@ -45,8 +45,9 @@ class TestConnection:
         results = mock_agent.get_messages(MessageType.REGISTER_RESULT)
         assert len(results) == 1, f"应收到1条注册响应，实际收到 {len(results)}"
 
-        msg_type, data = results[0]
-        result = json.loads(data)
+        msg = results[0]
+        data = msg["data"]
+        result = data
         assert result.get("success") is True, f"注册失败: {result}"
 
     async def test_heartbeat(self, connected_agent):
@@ -205,7 +206,7 @@ class TestPTY:
         # 可能有多个数据包，检查是否包含预期的输出
         for msg_type, data in data_msgs:
             try:
-                payload = json.loads(data)
+                payload = data
                 if "hello_pty_test" in payload.get("data", ""):
                     break
             except json.JSONDecodeError:
@@ -354,7 +355,7 @@ class TestCommand:
 
         # 验证返回错误状态
         msg_type, data = responses[0]
-        result = json.loads(data)
+        result = data
         assert result.get("success") is False or result.get("exit_code") != 0, (
             "应返回错误状态"
         )

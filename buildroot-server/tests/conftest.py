@@ -38,6 +38,7 @@ class MockAgent:
         await asyncio.get_event_loop().sock_connect(self.socket, (host, port))
         self.connected = True
         self._read_task = asyncio.create_task(self._read_loop())
+        return self
 
     async def _read_loop(self):
         """后台读取消息。"""
@@ -92,6 +93,35 @@ class MockAgent:
         """发送心跳。"""
         await self.send(MessageType.HEARTBEAT, {"timestamp": int(time.time() * 1000)})
 
+    async def send_heartbeat(self):
+        """发送心跳（别名）。"""
+        await self.heartbeat()
+
+    async def send_pty_create(self, device_id: str, rows: int, cols: int):
+        """发送 PTY 创建请求。"""
+        await self.send(
+            MessageType.PTY_CREATE, {"device_id": device_id, "rows": rows, "cols": cols}
+        )
+
+    async def send_pty_close(self, device_id: str, session_id: int):
+        """发送 PTY 关闭请求。"""
+        await self.send(
+            MessageType.PTY_CLOSE, {"device_id": device_id, "session_id": session_id}
+        )
+
+    async def send_file_list_request(self, device_id: str, path: str):
+        """发送文件列表请求。"""
+        await self.send(
+            MessageType.FILE_LIST_REQUEST, {"device_id": device_id, "path": path}
+        )
+
+    async def send_file_download_request(self, device_id: str, file_path: str):
+        """发送文件下载请求。"""
+        await self.send(
+            MessageType.FILE_DOWNLOAD_REQUEST,
+            {"device_id": device_id, "file_path": file_path},
+        )
+
     def clear_messages(self):
         """清空接收到的消息。"""
         self.received_messages.clear()
@@ -100,9 +130,14 @@ class MockAgent:
         """发送消息。"""
         await self.send(msg_type, data or {})
 
-    async def send_status(self):
+    async def send_status(self, status: dict = None):
         """发送状态请求。"""
-        await self.send(3, {"timestamp": int(time.time() * 1000)})  # MessageType.STATUS_REQUEST = 3
+        if status:
+            await self.send(MessageType.SYSTEM_STATUS, status)
+        else:
+            await self.send(
+                3, {"timestamp": int(time.time() * 1000)}
+            )  # MessageType.STATUS_REQUEST = 3
 
     async def send_register(self):
         """发送注册消息。"""
@@ -137,7 +172,8 @@ class MockAgent:
         messages = []
         while time.time() - start < timeout:
             messages = [
-                msg for msg in self.received_messages
+                msg
+                for msg in self.received_messages
                 if msg_type is None or msg["type"] == msg_type
             ]
             if messages:
@@ -246,7 +282,11 @@ def test_config():
 
 
 @pytest_asyncio.fixture
-async def connected_agent(mock_agent):
+async def connected_agent(mock_agent, server_process, test_config):
     """创建已连接的 MockAgent 实例。"""
-    await mock_agent.connect()
-    yield mock_agent
+    agent = await mock_agent.connect(
+        test_config["server_host"], test_config["socket_port"]
+    )
+    # 等待连接完全建立
+    await asyncio.sleep(0.2)
+    yield agent

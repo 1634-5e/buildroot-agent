@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text, delete, func
 
 from database.db_manager import db_manager
-from database.models import (
+from database.db_models import (
     DeviceStatusHistory,
     AuditLog,
 )
@@ -92,7 +92,7 @@ async def vacuum_analyze():
 
 async def get_database_stats():
     """获取数据库统计信息"""
-    from database.models import (
+    from database.db_models import (
         Device,
         CommandHistory,
         ScriptHistory,

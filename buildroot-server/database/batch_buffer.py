@@ -9,7 +9,7 @@ import logging
 from typing import List, Any, Optional
 from dataclasses import dataclass, field
 
-from database.models import DeviceStatusHistory, AuditLog, PingHistory
+from database.db_models import DeviceStatusHistory, AuditLog, PingHistory
 from database.db_manager import db_manager
 
 logger = logging.getLogger(__name__)

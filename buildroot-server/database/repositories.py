@@ -10,7 +10,7 @@ from datetime import datetime
 
 from sqlmodel import select, and_, or_
 
-from database.models import (
+from database.db_models import (
     Device,
     DeviceStatusHistory,
     PingHistory,
