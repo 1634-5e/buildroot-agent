@@ -155,9 +155,9 @@ def server_process():
 
     # 设置测试环境变量
     env = os.environ.copy()
-    env["BR_SERVER_DATABASE__URL"] = "sqlite+aiosqlite:///test_integration.db"
-    env["BR_SERVER_SERVER__AGENT_PORT"] = "18766"
-    env["BR_SERVER_SERVER__WEB_PORT"] = "18765"
+    env["BR_SERVER_DATABASE_URL"] = "sqlite+aiosqlite:///test_integration.db"
+    env["BR_SERVER_SOCKET_PORT"] = "18766"
+    env["BR_SERVER_WS_PORT"] = "18765"
     env["BR_SERVER_LOG__LEVEL"] = "ERROR"  # 减少日志输出
 
     # 启动服务器进程
