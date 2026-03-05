@@ -129,6 +129,7 @@ class MockAgent:
     async def send_message(self, msg_type: int, data: dict = None):
         """发送消息。"""
         await self.send(msg_type, data or {})
+        return True  # 返回 True 表示发送成功
 
     async def send_status(self, status: dict = None):
         """发送状态请求。"""
@@ -138,6 +139,7 @@ class MockAgent:
             await self.send(
                 3, {"timestamp": int(time.time() * 1000)}
             )  # MessageType.STATUS_REQUEST = 3
+        return True  # 返回 True 表示发送成功
 
     async def send_register(self):
         """发送注册消息。"""

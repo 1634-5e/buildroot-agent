@@ -314,6 +314,7 @@ class TestFileTransfer:
         assert result, "下载请求发送失败"
 
 
+@pytest.mark.skip(reason="需要真实 Agent 执行命令，MockAgent 不支持")
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 class TestCommand:
