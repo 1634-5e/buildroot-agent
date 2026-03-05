@@ -92,6 +92,22 @@ class MockAgent:
         """发送心跳。"""
         await self.send(MessageType.HEARTBEAT, {"timestamp": int(time.time() * 1000)})
 
+    def clear_messages(self):
+        """清空接收到的消息。"""
+        self.received_messages.clear()
+
+    async def send_message(self, msg_type: int, data: dict = None):
+        """发送消息。"""
+        await self.send(msg_type, data or {})
+
+    async def send_status(self):
+        """发送状态请求。"""
+        await self.send(3, {"timestamp": int(time.time() * 1000)})  # MessageType.STATUS_REQUEST = 3
+
+    async def send_register(self):
+        """发送注册消息。"""
+        await self.register()
+
     async def disconnect(self):
         """断开连接。"""
         self.connected = False
@@ -114,6 +130,22 @@ class MockAgent:
                     return msg
             time.sleep(0.05)
         return None
+
+    def get_messages(self, msg_type: int = None, timeout: float = 2.0) -> list:
+        """获取多个接收到的消息。"""
+        start = time.time()
+        messages = []
+        while time.time() - start < timeout:
+            messages = [
+                msg for msg in self.received_messages
+                if msg_type is None or msg["type"] == msg_type
+            ]
+            if messages:
+                for msg in messages:
+                    self.received_messages.remove(msg)
+                return messages
+            time.sleep(0.05)
+        return messages
 
 
 @pytest_asyncio.fixture
@@ -158,7 +190,7 @@ def server_process():
     env["BR_SERVER_DATABASE_URL"] = "sqlite+aiosqlite:///test_integration.db"
     env["BR_SERVER_SOCKET_PORT"] = "18766"
     env["BR_SERVER_WS_PORT"] = "18765"
-    env["BR_SERVER_LOG__LEVEL"] = "ERROR"  # 减少日志输出
+    env["BR_SERVER_LOG_LEVEL"] = "ERROR"  # 减少日志输出
 
     # 启动服务器进程
     proc = subprocess.Popen(
@@ -201,3 +233,20 @@ def server_process():
     # 清理测试数据库
     if os.path.exists("test_integration.db"):
         os.unlink("test_integration.db")
+
+
+@pytest.fixture
+def test_config():
+    """集成测试配置"""
+    return {
+        "server_host": "127.0.0.1",
+        "socket_port": 18766,
+        "ws_port": 18765,
+    }
+
+
+@pytest_asyncio.fixture
+async def connected_agent(mock_agent):
+    """创建已连接的 MockAgent 实例。"""
+    await mock_agent.connect()
+    yield mock_agent
