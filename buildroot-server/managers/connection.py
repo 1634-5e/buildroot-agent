@@ -29,7 +29,17 @@ class ConnectionManager:
     async def add_device(
         self, device_id: str, connection: Any, conn_type: str = "websocket"
     ) -> None:
+        logger.info(
+            f"[ADD_DEVICE] 开始添加设备 - device_id={device_id}, conn_type={conn_type}"
+        )
+
         async with self._lock:
+            # 如果设备已存在，先记录日志
+            if device_id in self.connected_devices:
+                logger.warning(
+                    f"[ADD_DEVICE] 设备已存在，将覆盖 - device_id={device_id}"
+                )
+
             self.connected_devices[device_id] = {
                 "type": conn_type,
                 "connection": connection,
@@ -37,11 +47,24 @@ class ConnectionManager:
             self.pty_sessions[device_id] = {}
 
             logger.info(
-                f"[ADD_DEVICE] 设备已添加 - device_id={device_id}, "
+                f"[ADD_DEVICE] 设备添加成功 - device_id={device_id}, "
                 f"conn_type={conn_type}, "
                 f"当前设备数={len(self.connected_devices)}, "
                 f"所有设备={list(self.connected_devices.keys())}"
             )
+
+        # 在锁外检查连接是否立即可用
+        try:
+            if hasattr(connection, "send") and callable(
+                getattr(connection, "send", None)
+            ):
+                logger.info(
+                    f"[ADD_DEVICE] 连接对象验证通过，send方法可用 - {device_id}"
+                )
+            else:
+                logger.error(f"[ADD_DEVICE] 连接对象没有send方法 - {device_id}")
+        except Exception as e:
+            logger.error(f"[ADD_DEVICE] 检查连接对象时出错 - {device_id}: {e}")
 
     async def remove_device(self, device_id: str) -> None:
         async with self._lock:

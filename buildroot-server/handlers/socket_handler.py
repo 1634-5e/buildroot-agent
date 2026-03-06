@@ -45,42 +45,82 @@ class SocketHandler:
 
                     # 注册模式：处理 REGISTER 消息（首次连接或重新注册）
                     if msg_type == MessageType.REGISTER:
-                        logger.info("[SOCKET] 收到REGISTER注册消息 - 尝试注册设备")
+                        logger.info(
+                            f"[SOCKET] 收到REGISTER注册消息 from {addr} - 尝试注册设备"
+                        )
+                        logger.info(
+                            f"[SOCKET] 当前registered={registered}, device_id={device_id}"
+                        )
                         try:
                             json_str = data.decode("utf-8")
                             json_data = json.loads(json_str)
                             new_device_id = json_data.get("device_id", "unknown")
                             version = json_data.get("version", "unknown")
 
+                            logger.info(
+                                f"[SOCKET] 解析注册消息成功: device_id={new_device_id}, version={version}"
+                            )
+
                             # 如果device_id发生变化，先移除旧设备
                             if device_id and device_id != new_device_id:
-                                await self.conn_mgr.remove_device(device_id)
                                 logger.info(
-                                    f"设备ID变更: {device_id} -> {new_device_id}"
+                                    f"[SOCKET] 设备ID变更: {device_id} -> {new_device_id}"
                                 )
+                                await self.conn_mgr.remove_device(device_id)
 
                             device_id = new_device_id
 
+                            # 创建 socket wrapper
+                            socket_wrapper = self._create_socket_writer_wrapper(
+                                writer, device_id
+                            )
+                            logger.info(
+                                f"[SOCKET] 创建socket wrapper完成 for {device_id}"
+                            )
+
                             # 注册或更新连接
-                            await self.msg_handler.handle_device_connect(
-                                self._create_socket_writer_wrapper(writer),
+                            logger.info(
+                                f"[SOCKET] 调用handle_device_connect for {device_id}"
+                            )
+                            result = await self.msg_handler.handle_device_connect(
+                                socket_wrapper,
                                 device_id,
                                 version,
                                 "socket",
                             )
-                            registered = True
+                            logger.info(
+                                f"[SOCKET] handle_device_connect返回: {result} for {device_id}"
+                            )
+
+                            if result:
+                                registered = True
+                                logger.info(
+                                    f"[SOCKET] 注册成功，设置registered=True for {device_id}"
+                                )
+                            else:
+                                logger.error(
+                                    f"[SOCKET] 注册失败，返回False for {device_id}"
+                                )
+                                # 注册失败不关闭连接，让Agent重试
                             continue
                         except json.JSONDecodeError as e:
-                            logger.error(f"解析注册消息失败: {e}")
-                            logger.debug(f"原始JSON数据（前200字节）: {json_str[:200]}")
+                            logger.error(f"[SOCKET] 解析注册消息失败: {e}")
+                            try:
+                                logger.debug(
+                                    f"[SOCKET] 原始JSON数据（前200字节）: {data[:200]}"
+                                )
+                            except:
+                                pass
                             writer.close()
                             await writer.wait_closed()
                             return
                         except Exception as e:
-                            logger.error(f"处理注册消息异常: {e}")
-                            writer.close()
-                            await writer.wait_closed()
-                            return
+                            import traceback
+
+                            logger.error(f"[SOCKET] 处理注册消息异常: {e}")
+                            logger.error(f"[SOCKET] 异常堆栈: {traceback.format_exc()}")
+                            # 不关闭连接，让Agent有机会重试
+                            continue
 
                     elif registered and device_id:
                         logger.info(
@@ -88,7 +128,7 @@ class SocketHandler:
                         )
                         full_message = bytes([msg_type]) + length_bytes + data
                         await self.msg_handler.handle_message(
-                            self._create_socket_writer_wrapper(writer),
+                            self._create_socket_writer_wrapper(writer, device_id),
                             device_id,
                             full_message,
                             is_socket=True,
@@ -108,20 +148,53 @@ class SocketHandler:
             writer.close()
             await writer.wait_closed()
 
-    def _create_socket_writer_wrapper(self, writer: asyncio.StreamWriter):
+    def _create_socket_writer_wrapper(
+        self, writer: asyncio.StreamWriter, device_id: str = None
+    ):
         class SocketWriterWrapper:
-            def __init__(self, w):
+            def __init__(self, w, did):
                 self.writer = w
+                self.device_id = did
+                self._send_count = 0
 
             async def send(self, message: bytes):
-                self.writer.write(message)
-                await self.writer.drain()
+                try:
+                    self._send_count += 1
+                    count = self._send_count
+                    msg_len = len(message)
+                    device = self.device_id or "unknown"
+                    logger.info(
+                        f"[SOCKET_WRAPPER] 开始发送消息 #{count} 给 {device}, 大小={msg_len} bytes"
+                    )
+
+                    self.writer.write(message)
+                    await self.writer.drain()
+
+                    logger.info(f"[SOCKET_WRAPPER] 消息 #{count} 发送完成 给 {device}")
+                    return True
+                except Exception as e:
+                    import traceback
+
+                    device = self.device_id or "unknown"
+                    logger.error(f"[SOCKET_WRAPPER] 发送消息失败 给 {device}: {e}")
+                    logger.error(f"[SOCKET_WRAPPER] 异常堆栈: {traceback.format_exc()}")
+                    raise
 
             async def close(self):
-                self.writer.close()
-                await self.writer.wait_closed()
+                try:
+                    device = self.device_id or "unknown"
+                    logger.info(f"[SOCKET_WRAPPER] 关闭连接 - {device}")
+                    self.writer.close()
+                    await self.writer.wait_closed()
+                    logger.info(f"[SOCKET_WRAPPER] 连接已关闭 - {device}")
+                except Exception as e:
+                    device = self.device_id or "unknown"
+                    logger.error(f"[SOCKET_WRAPPER] 关闭连接失败 - {device}: {e}")
 
-        return SocketWriterWrapper(writer)
+            def get_extra_info(self, name):
+                return self.writer.get_extra_info(name)
+
+        return SocketWriterWrapper(writer, device_id)
 
     async def _notify_device_list_update(self):
         device_list = await self.conn_mgr.get_all_devices()
