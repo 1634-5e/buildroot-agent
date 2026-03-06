@@ -4,11 +4,9 @@ RegisterHandler 单元测试
 """
 
 import pytest
-from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 
 from handlers.register_handler import RegisterHandler
-from protocol.constants import MessageType
 
 
 class TestRegisterHandler:
@@ -18,10 +16,10 @@ class TestRegisterHandler:
     def mock_conn_mgr(self):
         """创建模拟连接管理器"""
         mock = Mock()
-        mock.add_device = Mock()
-        mock.remove_device = Mock()
-        mock.get_device = Mock(return_value=None)
-        mock.is_device_connected = Mock(return_value=False)
+        mock.add_device = AsyncMock()
+        mock.remove_device = AsyncMock()
+        mock.get_device = AsyncMock(return_value=None)
+        mock.is_device_connected = AsyncMock(return_value=False)
         return mock
 
     @pytest.fixture

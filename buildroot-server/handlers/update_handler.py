@@ -82,17 +82,19 @@ class UpdateHandler(BaseHandler):
             )
 
             # 记录审计日志（异步）
-            asyncio.create_task(AuditLogRepository.insert(
-                event_type="update_operation",
-                action="check_update",
-                actor_type="device",
-                actor_id=device_id,
-                device_id=device_id,
-                resource_type="update",
-                resource_id=latest_version,
-                status="failure",
-                result_message=str(e),
-            ))
+            asyncio.create_task(
+                AuditLogRepository.insert(
+                    event_type="update_operation",
+                    action="check_update",
+                    actor_type="device",
+                    actor_id=device_id,
+                    device_id=device_id,
+                    resource_type="update",
+                    resource_id=latest_version,
+                    status="failure",
+                    result_message=str(e),
+                )
+            )
 
     async def handle_update_download(
         self, device_id: str, json_data: Dict[str, Any]
@@ -171,7 +173,7 @@ class UpdateHandler(BaseHandler):
         """处理更新进度"""
         request_id = json_data.get("request_id", "")
         progress_percent = json_data.get("progress", 0)
-        status = json_data.get("status", "downloading")
+        json_data.get("status", "downloading")
 
         try:
             await self.update_manager.handle_update_progress(device_id, json_data)
@@ -452,7 +454,7 @@ class UpdateHandler(BaseHandler):
         try:
             logger.info(f"[{device_id}] 收到Web下载批准，转发到Agent")
             # 从版本信息获取下载URL和校验信息
-            version_info = json_data.get("version", "")
+            json_data.get("version", "")
             latest_yaml_data = self.update_manager._load_latest_yaml()
 
             if not latest_yaml_data:

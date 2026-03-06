@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     max_retries: int = 5
     retry_delay_base: float = 1.0
 
+    database_url: str | None = Field(
+        default=None, description="数据库连接URL（优先级最高）"
+    )
     db_type: str = Field(default="postgresql", description="数据库类型")
     db_host: str = Field(default="localhost", description="数据库主机")
     db_port: int = Field(default=5432, description="数据库端口")
@@ -87,6 +90,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         env_prefix="BR_SERVER_",
         extra="allow",
+        env_nested_delimiter="__",
     )
 
     def __init__(self, **kwargs):

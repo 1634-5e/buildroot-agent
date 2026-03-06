@@ -45,7 +45,7 @@ class MockAgent:
             self.writer.close()
             try:
                 await self.writer.wait_closed()
-            except:
+            except Exception:
                 pass
         self.reader = None
         self.writer = None

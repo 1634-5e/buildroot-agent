@@ -3,7 +3,7 @@ Handler 测试的共享 fixtures
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock, MagicMock
+from unittest.mock import Mock, AsyncMock
 
 
 @pytest.fixture

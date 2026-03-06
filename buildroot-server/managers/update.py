@@ -5,7 +5,6 @@ Buildroot Agent 更新管理模块
 使用 Electron 风格的 YAML 版本格式
 """
 
-import os
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -94,7 +93,7 @@ class UpdateManager:
         """处理更新检查请求"""
         try:
             current_version = json_data.get("current_version", "1.0.0")
-            device_id_request = json_data.get("device_id", device_id)
+            json_data.get("device_id", device_id)
 
             logger.info(f"[{device_id}] 检查更新: 当前版本={current_version}")
 

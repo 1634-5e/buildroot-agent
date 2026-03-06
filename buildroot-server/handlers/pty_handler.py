@@ -1,12 +1,10 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Optional
 
 from database.repositories import PtySessionRepository, AuditLogRepository
 from handlers.base import BaseHandler
 from protocol.constants import MessageType
-from protocol.models import PtyCreate, PtyData, PtyResize, PtyClose
 
 logger = logging.getLogger(__name__)
 
