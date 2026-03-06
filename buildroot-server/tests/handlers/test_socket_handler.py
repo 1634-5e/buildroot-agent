@@ -20,9 +20,9 @@ class TestSocketHandler:
     def mock_conn_mgr(self):
         """创建模拟连接管理器"""
         mock = Mock()
-        mock.add_device = Mock()
-        mock.remove_device = Mock()
-        mock.get_all_devices = Mock(return_value=[])
+        mock.add_device = AsyncMock()
+        mock.remove_device = AsyncMock()
+        mock.get_all_devices = AsyncMock(return_value=[])
         return mock
 
     @pytest.fixture
