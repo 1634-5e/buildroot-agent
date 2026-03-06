@@ -38,6 +38,8 @@ class MockAgent:
         await asyncio.get_event_loop().sock_connect(self.socket, (host, port))
         self.connected = True
         self._read_task = asyncio.create_task(self._read_loop())
+        # 等待读取循环启动，确保能接收消息
+        await asyncio.sleep(0.1)
         return self
 
     async def _read_loop(self):
@@ -46,7 +48,7 @@ class MockAgent:
         while self.connected:
             try:
                 chunk = await asyncio.wait_for(
-                    asyncio.get_event_loop().sock_recv(self.socket, 4096), timeout=1.0
+                    asyncio.get_event_loop().sock_recv(self.socket, 4096), timeout=0.1
                 )
                 if not chunk:
                     break
@@ -64,6 +66,8 @@ class MockAgent:
                     )
                     buffer = buffer[3 + msg_len :]
             except asyncio.TimeoutError:
+                # 超时后继续循环，让出控制权
+                await asyncio.sleep(0.01)
                 continue
             except Exception:
                 break
@@ -87,7 +91,8 @@ class MockAgent:
                 "ip": "127.0.0.1",
             },
         )
-        await asyncio.sleep(0.1)
+        # 给Server更多时间处理并发注册请求
+        await asyncio.sleep(0.2)
 
     async def heartbeat(self):
         """发送心跳。"""

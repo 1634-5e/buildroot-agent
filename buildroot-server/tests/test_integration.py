@@ -427,26 +427,40 @@ class TestMultipleAgents:
     @pytest.mark.timeout(60)
     async def test_multiple_agents(self, server_process, test_config):
         """TC-CONN-007: 多 Agent 连接"""
+        import logging
         from tests.conftest import MockAgent
 
+        logger = logging.getLogger(__name__)
         agents = []
+
         try:
-            # 创建 3 个 Agent
+            # 串行创建和连接 Agent，避免并发连接问题
             for i in range(3):
+                logger.info(f"创建 Agent {i}...")
                 agent = MockAgent(f"test-device-{i:03d}")
+
+                # 连接
                 connected = await agent.connect(
                     test_config["server_host"], test_config["socket_port"]
                 )
                 assert connected, f"Agent {i} 连接失败"
+                logger.info(f"Agent {i} 连接成功")
 
+                # 发送注册
                 await agent.send_register()
+                logger.info(f"Agent {i} 已发送注册请求")
                 agents.append(agent)
 
+                # 每个 Agent 连接后等待一段时间，避免并发注册
+                await asyncio.sleep(0.3)
+
             # 等待注册完成（轮询方式，最多等待 10 秒）
-            # 等待注册完成（轮询方式，最多等待 10 秒）
+            logger.info("等待所有 Agent 注册完成...")
             for attempt in range(50):  # 50 * 0.2s = 10s max
                 all_registered = True
-                for agent in agents:
+                pending_agents = []
+
+                for idx, agent in enumerate(agents):
                     # 直接检查 received_messages，避免 get_messages 移除消息
                     has_result = any(
                         msg["type"] == MessageType.REGISTER_RESULT
@@ -454,17 +468,39 @@ class TestMultipleAgents:
                     )
                     if not has_result:
                         all_registered = False
-                        break
+                        pending_agents.append(idx)
+
                 if all_registered:
+                    logger.info("所有 Agent 注册成功")
                     break
+                else:
+                    logger.debug(f"等待中，尚未收到响应的 Agent: {pending_agents}")
+
                 await asyncio.sleep(0.2)
+            else:
+                # 超时，记录调试信息
+                logger.error("注册等待超时")
+                for idx, agent in enumerate(agents):
+                    msg_types = [msg["type"] for msg in agent.received_messages]
+                    logger.error(f"Agent {idx} 收到的消息类型: {msg_types}")
 
             # 验证都注册成功
             for i, agent in enumerate(agents):
                 results = agent.get_messages(MessageType.REGISTER_RESULT)
-                assert len(results) > 0, f"Agent {i} 未收到注册响应"
+                assert len(results) > 0, f"Agent {i} 未收到注册响应，已等待超时"
+
+                # 验证注册结果
+                msg = results[0]
+                assert msg["data"].get("success") is True, f"Agent {i} 注册失败"
+
+            logger.info("所有 Agent 注册验证通过")
 
         finally:
             # 清理
-            for agent in agents:
-                await agent.disconnect()
+            logger.info("清理 Agent 连接...")
+            for i, agent in enumerate(agents):
+                try:
+                    await agent.disconnect()
+                    logger.info(f"Agent {i} 已断开")
+                except Exception as e:
+                    logger.warning(f"Agent {i} 断开时出错: {e}")
