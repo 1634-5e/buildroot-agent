@@ -442,8 +442,22 @@ class TestMultipleAgents:
                 await agent.send_register()
                 agents.append(agent)
 
-            # 等待注册完成
-            await asyncio.sleep(1.0)
+            # 等待注册完成（轮询方式，最多等待 10 秒）
+            # 等待注册完成（轮询方式，最多等待 10 秒）
+            for attempt in range(50):  # 50 * 0.2s = 10s max
+                all_registered = True
+                for agent in agents:
+                    # 直接检查 received_messages，避免 get_messages 移除消息
+                    has_result = any(
+                        msg["type"] == MessageType.REGISTER_RESULT
+                        for msg in agent.received_messages
+                    )
+                    if not has_result:
+                        all_registered = False
+                        break
+                if all_registered:
+                    break
+                await asyncio.sleep(0.2)
 
             # 验证都注册成功
             for i, agent in enumerate(agents):
