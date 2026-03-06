@@ -109,7 +109,7 @@ class SocketHandler:
                                 logger.debug(
                                     f"[SOCKET] 原始JSON数据（前200字节）: {data[:200]}"
                                 )
-                            except:
+                            except Exception:
                                 pass
                             writer.close()
                             await writer.wait_closed()
