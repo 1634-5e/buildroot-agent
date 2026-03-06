@@ -55,7 +55,7 @@ class CommandHandler(BaseHandler):
             )
 
         # 转发命令到设备
-        if device_id and self.conn_mgr.is_device_connected(device_id):
+        if device_id and await self.conn_mgr.is_device_connected(device_id):
             await self.send_to_device(device_id, MessageType.CMD_REQUEST, data)
         else:
             logger.warning(f"设备未连接，无法执行命令: {device_id}")

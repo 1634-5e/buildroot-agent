@@ -50,12 +50,12 @@ class MessageRouter:
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
         """发送消息到指定设备"""
-        if not self.conn_mgr.is_device_connected(device_id):
+        if not await self.conn_mgr.is_device_connected(device_id):
             logger.warning(f"设备未连接: {device_id}")
             return False
 
         try:
-            dev_info = self.conn_mgr.get_device(device_id)
+            dev_info = await self.conn_mgr.get_device(device_id)
             if not dev_info:
                 logger.error(f"设备连接为空: {device_id}")
                 return False
@@ -71,7 +71,7 @@ class MessageRouter:
             if conn_type == "websocket":
                 if hasattr(connection, "state") and connection.state.name != "OPEN":
                     logger.warning(f"设备WebSocket连接未开启: {device_id}")
-                    self.conn_mgr.remove_device(device_id)
+                    await self.conn_mgr.remove_device(device_id)
                     return False
 
                 if not hasattr(connection, "send") or not callable(
@@ -101,7 +101,7 @@ class MessageRouter:
             logger.warning(
                 f"设备连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
             )
-            self.conn_mgr.remove_device(device_id)
+            await self.conn_mgr.remove_device(device_id)
             return False
         except Exception as e:
             logger.error(f"发送失败: {e}")
@@ -261,11 +261,11 @@ class MessageRouter:
             return
 
         if msg_type == MessageType.FILE_LIST_REQUEST:
-            if device_id and self.conn_mgr.is_device_connected(device_id):
+            if device_id and await self.conn_mgr.is_device_connected(device_id):
                 await self.send_to_device(device_id, msg_type, json_data)
             return
         elif msg_type == MessageType.FILE_REQUEST:
-            if device_id and self.conn_mgr.is_device_connected(device_id):
+            if device_id and await self.conn_mgr.is_device_connected(device_id):
                 await self.send_to_device(device_id, msg_type, json_data)
             return
         elif msg_type == MessageType.FILE_DOWNLOAD_REQUEST:
@@ -289,7 +289,7 @@ class MessageRouter:
                     await self.handle_pty_close(device_id, json_data)
                 return
             else:
-                if device_id and self.conn_mgr.is_device_connected(device_id):
+                if device_id and await self.conn_mgr.is_device_connected(device_id):
                     await self.send_to_device(device_id, msg_type, json_data)
                 return
 
@@ -332,7 +332,7 @@ class MessageRouter:
                 f"search_keyword='{search_keyword}', sort_by={sort_by}, sort_order={sort_order}"
             )
 
-            all_devices = self.conn_mgr.get_all_devices()
+            all_devices = await self.conn_mgr.get_all_devices()
 
             logger.info(
                 f"[DEVICE_LIST] 当前连接设备数={len(all_devices)}, "

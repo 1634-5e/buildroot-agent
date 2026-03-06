@@ -24,7 +24,7 @@ class RegisterHandler(BaseHandler):
         logger.info(f"设备已连接: {device_id} (版本: {version}, 类型: {conn_type})")
 
         # 添加到连接管理器（内存）
-        self.conn_mgr.add_device(device_id, connection, conn_type)
+        await self.conn_mgr.add_device(device_id, connection, conn_type)
 
         # 数据库操作：创建或更新设备信息
         try:

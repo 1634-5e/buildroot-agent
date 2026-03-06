@@ -54,7 +54,7 @@ class SocketHandler:
 
                             # 如果device_id发生变化，先移除旧设备
                             if device_id and device_id != new_device_id:
-                                self.conn_mgr.remove_device(device_id)
+                                await self.conn_mgr.remove_device(device_id)
                                 logger.info(
                                     f"设备ID变更: {device_id} -> {new_device_id}"
                                 )
@@ -103,7 +103,7 @@ class SocketHandler:
 
         finally:
             if device_id:
-                self.conn_mgr.remove_device(device_id)
+                await self.conn_mgr.remove_device(device_id)
                 await self._notify_device_disconnect(device_id)
             writer.close()
             await writer.wait_closed()
@@ -124,7 +124,7 @@ class SocketHandler:
         return SocketWriterWrapper(writer)
 
     async def _notify_device_list_update(self):
-        device_list = self.conn_mgr.get_all_devices()
+        device_list = await self.conn_mgr.get_all_devices()
         await self.msg_handler.broadcast_to_web_consoles(
             MessageType.DEVICE_LIST, {"devices": device_list, "count": len(device_list)}
         )

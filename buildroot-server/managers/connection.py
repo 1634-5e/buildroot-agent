@@ -24,38 +24,41 @@ class ConnectionManager:
         self.pty_sessions: Dict[str, Dict[int, asyncio.Queue]] = {}
         self.request_sessions: Dict[str, Dict[str, Any]] = {}
         self.file_transfer = file_transfer_manager
+        self._lock = asyncio.Lock()
 
-    def add_device(
+    async def add_device(
         self, device_id: str, connection: Any, conn_type: str = "websocket"
     ) -> None:
-        self.connected_devices[device_id] = {
-            "type": conn_type,
-            "connection": connection,
-        }
-        self.pty_sessions[device_id] = {}
+        async with self._lock:
+            self.connected_devices[device_id] = {
+                "type": conn_type,
+                "connection": connection,
+            }
+            self.pty_sessions[device_id] = {}
 
-        logger.info(
-            f"[ADD_DEVICE] 设备已添加 - device_id={device_id}, "
-            f"conn_type={conn_type}, "
-            f"当前设备数={len(self.connected_devices)}, "
-            f"所有设备={list(self.connected_devices.keys())}"
-        )
-
-    def remove_device(self, device_id: str) -> None:
-        existed = device_id in self.connected_devices
-        self.connected_devices.pop(device_id, None)
-        self.pty_sessions.pop(device_id, None)
-
-        if existed:
             logger.info(
-                f"[REMOVE_DEVICE] 设备已移除 - device_id={device_id}, "
-                f"剩余设备数={len(self.connected_devices)}, "
+                f"[ADD_DEVICE] 设备已添加 - device_id={device_id}, "
+                f"conn_type={conn_type}, "
+                f"当前设备数={len(self.connected_devices)}, "
                 f"所有设备={list(self.connected_devices.keys())}"
             )
-        else:
-            logger.warning(
-                f"[REMOVE_DEVICE] 尝试移除不存在的设备 - device_id={device_id}"
-            )
+
+    async def remove_device(self, device_id: str) -> None:
+        async with self._lock:
+            existed = device_id in self.connected_devices
+            self.connected_devices.pop(device_id, None)
+            self.pty_sessions.pop(device_id, None)
+
+            if existed:
+                logger.info(
+                    f"[REMOVE_DEVICE] 设备已移除 - device_id={device_id}, "
+                    f"剩余设备数={len(self.connected_devices)}, "
+                    f"所有设备={list(self.connected_devices.keys())}"
+                )
+            else:
+                logger.warning(
+                    f"[REMOVE_DEVICE] 尝试移除不存在的设备 - device_id={device_id}"
+                )
 
     def add_console(self, websocket: WebSocketServerProtocol) -> None:
         console_id = str(uuid.uuid4())[:8]
@@ -78,7 +81,7 @@ class ConnectionManager:
         )
         logger.debug(f"[DB] Web控制台会话已记录: console_id={console_id}")
 
-    def remove_console(
+    async def remove_console(
         self, websocket: WebSocketServerProtocol
     ) -> tuple[Optional[str], Set[int]]:
         console_id = self.console_info.get(websocket, {}).get("console_id", "unknown")
@@ -92,23 +95,27 @@ class ConnectionManager:
             self.console_info.pop(websocket, None)
 
             # 清理 pty_sessions 中对应的 session
-            if device_id and session_ids:
-                for session_id in session_ids:
+            async with self._lock:
+                if device_id and session_ids:
+                    for session_id in session_ids:
+                        if (
+                            device_id in self.pty_sessions
+                            and session_id in self.pty_sessions[device_id]
+                        ):
+                            del self.pty_sessions[device_id][session_id]
+                            logger.debug(
+                                f"[REMOVE_CONSOLE] 清理 pty_sessions: "
+                                f"device_id={device_id}, session_id={session_id}"
+                            )
+                    # 如果设备没有任何 pty session 了，清理设备条目
                     if (
                         device_id in self.pty_sessions
-                        and session_id in self.pty_sessions[device_id]
+                        and not self.pty_sessions[device_id]
                     ):
-                        del self.pty_sessions[device_id][session_id]
+                        del self.pty_sessions[device_id]
                         logger.debug(
-                            f"[REMOVE_CONSOLE] 清理 pty_sessions: "
-                            f"device_id={device_id}, session_id={session_id}"
+                            f"[REMOVE_CONSOLE] 清理空 pty_sessions 设备条目: {device_id}"
                         )
-                # 如果设备没有任何 pty session 了，清理设备条目
-                if device_id in self.pty_sessions and not self.pty_sessions[device_id]:
-                    del self.pty_sessions[device_id]
-                    logger.debug(
-                        f"[REMOVE_CONSOLE] 清理空 pty_sessions 设备条目: {device_id}"
-                    )
 
         logger.info(
             f"Web控制台断开: console_id={console_id}, device_id={device_id}, sessions={session_ids}"
@@ -208,40 +215,43 @@ class ConnectionManager:
     ) -> Optional[Dict[str, Any]]:
         return self.console_info.get(websocket)
 
-    def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
-        return self.connected_devices.get(device_id)
+    async def get_device(self, device_id: str) -> Optional[Dict[str, Any]]:
+        async with self._lock:
+            return self.connected_devices.get(device_id)
 
-    def is_device_connected(self, device_id: str) -> bool:
-        return device_id in self.connected_devices
+    async def is_device_connected(self, device_id: str) -> bool:
+        async with self._lock:
+            return device_id in self.connected_devices
 
-    def get_all_devices(self) -> list[Dict[str, Any]]:
-        logger.debug(
-            f"[GET_ALL_DEVICES] 查询设备列表 - "
-            f"connected_devices数量={len(self.connected_devices)}, "
-            f"设备IDs={list(self.connected_devices.keys())}"
-        )
-
-        devices = []
-        for device_id, dev_info in self.connected_devices.items():
-            conn = dev_info["connection"]
-            conn_type = dev_info["type"]
-            remote_addr = self._get_remote_address(conn, conn_type)
-            devices.append(
-                {
-                    "device_id": device_id,
-                    "connected_time": datetime.now().isoformat(),
-                    "status": "online",
-                    "connection_type": conn_type,
-                    "remote_addr": remote_addr,
-                }
+    async def get_all_devices(self) -> list[Dict[str, Any]]:
+        async with self._lock:
+            logger.debug(
+                f"[GET_ALL_DEVICES] 查询设备列表 - "
+                f"connected_devices数量={len(self.connected_devices)}, "
+                f"设备IDs={list(self.connected_devices.keys())}"
             )
 
-        logger.debug(
-            f"[GET_ALL_DEVICES] 返回设备列表 - 数量={len(devices)}, "
-            f"设备IDs={[d['device_id'] for d in devices]}"
-        )
+            devices = []
+            for device_id, dev_info in self.connected_devices.items():
+                conn = dev_info["connection"]
+                conn_type = dev_info["type"]
+                remote_addr = self._get_remote_address(conn, conn_type)
+                devices.append(
+                    {
+                        "device_id": device_id,
+                        "connected_time": datetime.now().isoformat(),
+                        "status": "online",
+                        "connection_type": conn_type,
+                        "remote_addr": remote_addr,
+                    }
+                )
 
-        return devices
+            logger.debug(
+                f"[GET_ALL_DEVICES] 返回设备列表 - 数量={len(devices)}, "
+                f"设备IDs={[d['device_id'] for d in devices]}"
+            )
+
+            return devices
 
     def _get_remote_address(self, connection: Any, conn_type: str) -> str:
         try:

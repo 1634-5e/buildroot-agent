@@ -44,12 +44,12 @@ class BaseHandler:
             return False
 
     async def send_to_device(self, device_id: str, msg_type: int, data: dict) -> bool:
-        if not self.conn_mgr.is_device_connected(device_id):
+        if not await self.conn_mgr.is_device_connected(device_id):
             logger.warning(f"设备未连接: {device_id}")
             return False
 
         try:
-            dev_info = self.conn_mgr.get_device(device_id)
+            dev_info = await self.conn_mgr.get_device(device_id)
             if not dev_info:
                 logger.error(f"设备连接为空: {device_id}")
                 return False
@@ -65,7 +65,7 @@ class BaseHandler:
             if conn_type == "websocket":
                 if hasattr(connection, "state") and connection.state.name != "OPEN":
                     logger.warning(f"设备WebSocket连接未开启: {device_id}")
-                    self.conn_mgr.remove_device(device_id)
+                    await self.conn_mgr.remove_device(device_id)
                     return False
 
                 if not hasattr(connection, "send") or not callable(
@@ -95,7 +95,7 @@ class BaseHandler:
             logger.warning(
                 f"设备连接已关闭: {device_id}, code={e.code}, reason={e.reason}"
             )
-            self.conn_mgr.remove_device(device_id)
+            await self.conn_mgr.remove_device(device_id)
             return False
         except Exception as e:
             logger.error(f"发送失败: {e}")
@@ -157,7 +157,7 @@ class BaseHandler:
                     to_remove.append(console)
 
             for console in to_remove:
-                self.conn_mgr.remove_console(console)
+                await self.conn_mgr.remove_console(console)
         except Exception as e:
             logger.error(f"发送消息失败: {e}")
 
@@ -183,7 +183,7 @@ class BaseHandler:
             logger.warning(f"未找到request_id对应的console: request_id={request_id}")
 
     async def notify_device_list_update(self) -> None:
-        device_list = self.conn_mgr.get_all_devices()
+        device_list = await self.conn_mgr.get_all_devices()
         await self.broadcast_to_web_consoles(
             MessageType.DEVICE_LIST,
             DeviceList(devices=device_list, count=len(device_list)).model_dump(),

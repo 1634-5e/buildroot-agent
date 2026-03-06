@@ -383,11 +383,11 @@ class WebSocketHandler:
 
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"Web控制台断开: {remote}, code: {e.code}, reason: {e.reason}")
-            device_id, session_ids = self.conn_mgr.remove_console(websocket)
+            device_id, session_ids = await self.conn_mgr.remove_console(websocket)
             if (
                 device_id
                 and session_ids
-                and self.conn_mgr.is_device_connected(device_id)
+                and await self.conn_mgr.is_device_connected(device_id)
             ):
                 for session_id in session_ids:
                     await self.msg_handler.send_to_device(
@@ -401,11 +401,11 @@ class WebSocketHandler:
         except Exception as e:
             logger.error(f"连接处理错误: {e}")
         finally:
-            device_id, session_ids = self.conn_mgr.remove_console(websocket)
+            device_id, session_ids = await self.conn_mgr.remove_console(websocket)
             if (
                 device_id
                 and session_ids
-                and self.conn_mgr.is_device_connected(device_id)
+                and await self.conn_mgr.is_device_connected(device_id)
             ):
                 for session_id in session_ids:
                     await self.msg_handler.send_to_device(
