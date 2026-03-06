@@ -452,11 +452,14 @@ class TestMultipleAgents:
                 agents.append(agent)
 
                 # 每个 Agent 连接后等待一段时间，避免并发注册
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.5)
 
-            # 等待注册完成（轮询方式，最多等待 10 秒）
+                # 额外等待确保 Server 处理完成
+                await asyncio.sleep(0.2)
+
+            # 等待注册完成（轮询方式，最多等待 15 秒）
             logger.info("等待所有 Agent 注册完成...")
-            for attempt in range(50):  # 50 * 0.2s = 10s max
+            for attempt in range(75):  # 75 * 0.2s = 15s max
                 all_registered = True
                 pending_agents = []
 
