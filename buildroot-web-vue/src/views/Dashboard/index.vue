@@ -41,70 +41,46 @@
           </div>
 
           <div class="resource-list">
-            <div class="resource-item">
-              <div class="resource-header">
-                <span class="resource-name">CPU USAGE</span>
-                <span class="resource-value">{{ systemStore.stats.resources.avg_cpu.toFixed(1) }}%</span>
+            <div
+              v-for="resource in resourceCards"
+              :key="resource.key"
+              class="resource-item"
+              :class="resource.level"
+            >
+              <div class="resource-topline">
+                <span class="resource-name">{{ resource.name }}</span>
+                <span class="resource-trend" :class="resource.trendDirection">
+                  <span class="trend-arrow">{{ resource.trendArrow }}</span>
+                  <span>{{ resource.trendText }}</span>
+                </span>
               </div>
-              <div class="resource-bar">
+
+              <div class="resource-header">
+                <span class="resource-value">{{ resource.value }}</span>
+                <span v-if="resource.context" class="resource-context">{{ resource.context }}</span>
+              </div>
+
+              <div v-if="resource.barValue !== null" class="resource-bar">
                 <div
                   class="bar-fill"
-                  :style="{ width: systemStore.stats.resources.avg_cpu + '%' }"
-                  :class="getBarClass(systemStore.stats.resources.avg_cpu)"
+                  :class="[resource.barTone, resource.level]"
+                  :style="{ width: `${resource.barValue}%` }"
                 ></div>
               </div>
-              <div class="resource-meta">
-                <span>Average across {{ systemStore.stats.agents.online }} devices</span>
-              </div>
-            </div>
 
-            <div class="resource-item">
-              <div class="resource-header">
-                <span class="resource-name">MEMORY USAGE</span>
-                <span class="resource-value">{{ systemStore.stats.resources.avg_memory.toFixed(1) }}%</span>
-              </div>
-              <div class="resource-bar">
+              <div v-if="resource.networkStats" class="network-stats">
                 <div
-                  class="bar-fill memory"
-                  :style="{ width: systemStore.stats.resources.avg_memory + '%' }"
-                  :class="getBarClass(systemStore.stats.resources.avg_memory)"
-                ></div>
-              </div>
-              <div class="resource-meta">
-                <span>{{ formatBytes(systemStore.stats.resources.total_memory_used) }} / {{ formatBytes(systemStore.stats.resources.total_memory_total) }}</span>
-              </div>
-            </div>
-
-            <div class="resource-item">
-              <div class="resource-header">
-                <span class="resource-name">NETWORK I/O</span>
-              </div>
-              <div class="network-stats">
-                <div class="net-stat">
-                  <span class="net-label">TX</span>
-                  <span class="net-value">{{ formatBytes(systemStore.stats.resources.total_net_tx) }}/s</span>
-                </div>
-                <div class="net-stat">
-                  <span class="net-label">RX</span>
-                  <span class="net-value">{{ formatBytes(systemStore.stats.resources.total_net_rx) }}/s</span>
+                  v-for="stat in resource.networkStats"
+                  :key="stat.label"
+                  class="net-stat"
+                >
+                  <span class="net-label">{{ stat.label }}</span>
+                  <span class="net-value">{{ stat.value }}</span>
                 </div>
               </div>
-            </div>
 
-            <div class="resource-item">
-              <div class="resource-header">
-                <span class="resource-name">DISK USAGE</span>
-                <span class="resource-value">{{ diskPercent.toFixed(1) }}%</span>
-              </div>
-              <div class="resource-bar">
-                <div
-                  class="bar-fill disk"
-                  :style="{ width: diskPercent + '%' }"
-                  :class="getBarClass(diskPercent)"
-                ></div>
-              </div>
               <div class="resource-meta">
-                <span>{{ formatBytes(systemStore.stats.resources.total_disk_used) }} / {{ formatBytes(systemStore.stats.resources.total_disk_total) }}</span>
+                <span>{{ resource.meta }}</span>
               </div>
             </div>
           </div>
@@ -149,13 +125,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDeviceStore } from '@/stores/device'
-import { useSystemStore } from '@/stores/system'
-import SystemStatusCard from '@/components/SystemStatusCard.vue'
 import AlertPanel from '@/components/AlertPanel.vue'
 import DeviceMiniCard from '@/components/DeviceMiniCard.vue'
+import SystemStatusCard from '@/components/SystemStatusCard.vue'
+import { useDeviceStore } from '@/stores/device'
+import { useSystemStore } from '@/stores/system'
+
+interface ResourceSnapshot {
+  avg_cpu: number
+  avg_memory: number
+  total_memory_used: number
+  total_memory_total: number
+  total_net_tx: number
+  total_net_rx: number
+  total_disk_used: number
+  total_disk_total: number
+}
+
+interface ResourceCard {
+  key: string
+  name: string
+  value: string
+  context?: string
+  meta: string
+  trendArrow: string
+  trendText: string
+  trendDirection: 'up' | 'down' | 'flat'
+  level: 'normal' | 'warning' | 'critical'
+  barTone?: 'cpu' | 'memory' | 'disk'
+  barValue: number | null
+  networkStats?: Array<{ label: string; value: string }>
+}
 
 const router = useRouter()
 const deviceStore = useDeviceStore()
@@ -164,6 +166,7 @@ const systemStore = useSystemStore()
 const loading = ref(false)
 const selectedDevice = ref('')
 const refreshInterval = ref<NodeJS.Timeout | null>(null)
+const previousResources = ref<ResourceSnapshot | null>(null)
 
 const sortedDevices = computed(() => {
   const online = deviceStore.devices.filter(d => d.is_online).sort((a, b) => {
@@ -175,25 +178,12 @@ const sortedDevices = computed(() => {
   return [...online, ...offline]
 })
 
+const resources = computed(() => systemStore.stats.resources)
+
 const diskPercent = computed(() => {
-  const { total_disk_used, total_disk_total } = systemStore.stats.resources
-  if (total_disk_total === 0) return 0
-  return (total_disk_used / total_disk_total) * 100
+  if (resources.value.total_disk_total === 0) return 0
+  return (resources.value.total_disk_used / resources.value.total_disk_total) * 100
 })
-
-const refresh = async () => {
-  loading.value = true
-  await Promise.all([
-    deviceStore.fetchDevices(),
-    systemStore.refreshAll(),
-  ])
-  setTimeout(() => loading.value = false, 500)
-}
-
-const selectDevice = (deviceId: string) => {
-  selectedDevice.value = deviceId
-  router.push(`/devicedetail/${deviceId}`)
-}
 
 const getBarClass = (value: number) => {
   if (value > 80) return 'critical'
@@ -206,7 +196,115 @@ const formatBytes = (bytes: number) => {
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i]
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
+}
+
+const getTrend = (current: number, previous: number | undefined) => {
+  const delta = current - (previous || 0)
+  if (!previous && previous !== 0) {
+    return { direction: 'flat' as const, arrow: '→', text: 'stable' }
+  }
+  if (Math.abs(delta) < 0.1) {
+    return { direction: 'flat' as const, arrow: '→', text: 'flat' }
+  }
+
+  const direction = delta > 0 ? 'up' : 'down'
+  const prefix = delta > 0 ? '+' : ''
+  return {
+    direction,
+    arrow: delta > 0 ? '↗' : '↘',
+    text: `${prefix}${delta.toFixed(1)}`
+  }
+}
+
+const resourceCards = computed<ResourceCard[]>(() => {
+  const current = resources.value
+  const previous = previousResources.value
+  const cpuTrend = getTrend(current.avg_cpu, previous?.avg_cpu)
+  const memoryTrend = getTrend(current.avg_memory, previous?.avg_memory)
+  const diskTrend = getTrend(diskPercent.value, previous && previous.total_disk_total
+    ? (previous.total_disk_used / previous.total_disk_total) * 100
+    : undefined)
+  const throughput = current.total_net_tx + current.total_net_rx
+  const previousThroughput = previous ? previous.total_net_tx + previous.total_net_rx : undefined
+  const networkTrend = getTrend(throughput, previousThroughput)
+
+  return [
+    {
+      key: 'cpu',
+      name: 'CPU USAGE',
+      value: `${current.avg_cpu.toFixed(1)}%`,
+      context: `${systemStore.stats.agents.online} devices`,
+      meta: `Average load across ${systemStore.stats.agents.online} online agents`,
+      trendArrow: cpuTrend.arrow,
+      trendText: `${cpuTrend.text}%`,
+      trendDirection: cpuTrend.direction,
+      level: getBarClass(current.avg_cpu),
+      barTone: 'cpu',
+      barValue: current.avg_cpu
+    },
+    {
+      key: 'memory',
+      name: 'MEMORY USAGE',
+      value: `${current.avg_memory.toFixed(1)}%`,
+      context: `${formatBytes(current.total_memory_used)} used`,
+      meta: `${formatBytes(current.total_memory_used)} / ${formatBytes(current.total_memory_total)}`,
+      trendArrow: memoryTrend.arrow,
+      trendText: `${memoryTrend.text}%`,
+      trendDirection: memoryTrend.direction,
+      level: getBarClass(current.avg_memory),
+      barTone: 'memory',
+      barValue: current.avg_memory
+    },
+    {
+      key: 'network',
+      name: 'NETWORK I/O',
+      value: `${formatBytes(throughput)}/s`,
+      context: 'aggregate',
+      meta: 'Total uplink and downlink throughput',
+      trendArrow: networkTrend.arrow,
+      trendText: `${networkTrend.text} B/s`,
+      trendDirection: networkTrend.direction,
+      level: 'normal',
+      barValue: null,
+      networkStats: [
+        { label: 'TX', value: `${formatBytes(current.total_net_tx)}/s` },
+        { label: 'RX', value: `${formatBytes(current.total_net_rx)}/s` }
+      ]
+    },
+    {
+      key: 'disk',
+      name: 'DISK USAGE',
+      value: `${diskPercent.value.toFixed(1)}%`,
+      context: `${formatBytes(current.total_disk_used)} used`,
+      meta: `${formatBytes(current.total_disk_used)} / ${formatBytes(current.total_disk_total)}`,
+      trendArrow: diskTrend.arrow,
+      trendText: `${diskTrend.text}%`,
+      trendDirection: diskTrend.direction,
+      level: getBarClass(diskPercent.value),
+      barTone: 'disk',
+      barValue: diskPercent.value
+    }
+  ]
+})
+
+const refresh = async () => {
+  loading.value = true
+  previousResources.value = { ...resources.value }
+
+  await Promise.all([
+    deviceStore.fetchDevices(),
+    systemStore.refreshAll()
+  ])
+
+  setTimeout(() => {
+    loading.value = false
+  }, 500)
+}
+
+const selectDevice = (deviceId: string) => {
+  selectedDevice.value = deviceId
+  router.push(`/devicedetail/${deviceId}`)
 }
 
 onMounted(() => {
@@ -215,33 +313,39 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (refreshInterval.value) clearInterval(refreshInterval.value)
+  if (refreshInterval.value) {
+    clearInterval(refreshInterval.value)
+  }
 })
 </script>
 
 <style scoped>
 .dashboard-container {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #111118;
-  --bg-tertiary: #16161f;
-  --bg-elevated: #1a1a25;
-  --border-color: #252530;
-  --border-accent: #2f2f3a;
-  --text-primary: #e4e4ec;
-  --text-secondary: #9898a8;
-  --text-muted: #606075;
-  --accent-green: #00ff88;
-  --accent-green-dim: #00cc6a;
-  --accent-red: #ff3366;
-  --accent-yellow: #ffcc00;
-  --accent-blue: #0099ff;
+  --bg-primary: #05070d;
+  --bg-secondary: #0b1018;
+  --bg-tertiary: #111823;
+  --bg-elevated: #172130;
+  --border-color: #1e2a3d;
+  --border-accent: #2b3b55;
+  --panel-shadow: 0 18px 32px rgba(0, 0, 0, 0.25);
+  --text-primary: #edf3ff;
+  --text-secondary: #9fb0c9;
+  --text-muted: #607089;
+  --accent-green: #33d17a;
+  --accent-green-dim: #1f9a59;
+  --accent-red: #ff5c7c;
+  --accent-yellow: #f6c945;
+  --accent-blue: #39a0ff;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-  --font-sans: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
 
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-primary);
+  background:
+    radial-gradient(circle at top right, rgba(57, 160, 255, 0.09), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(51, 209, 122, 0.07), transparent 26%),
+    linear-gradient(180deg, #06090f 0%, #05070d 100%);
   color: var(--text-primary);
   font-family: var(--font-sans);
   overflow: hidden;
@@ -253,7 +357,8 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  background: linear-gradient(180deg, rgba(11, 16, 24, 0.98), rgba(11, 16, 24, 0.88));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .header-title {
@@ -266,14 +371,14 @@ onUnmounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.24em;
   color: var(--text-primary);
   font-family: var(--font-mono);
 }
 
 .header-subtitle {
   font-size: 10px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.18em;
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
@@ -283,25 +388,26 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: var(--bg-tertiary);
+  background: linear-gradient(180deg, rgba(17, 24, 35, 0.92), rgba(10, 15, 22, 0.92));
   border: 1px solid var(--border-accent);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  border-color: var(--accent-green);
+  background: linear-gradient(180deg, rgba(23, 33, 48, 0.96), rgba(14, 20, 31, 0.96));
+  border-color: rgba(51, 209, 122, 0.65);
+  box-shadow: 0 0 0 1px rgba(51, 209, 122, 0.1);
   color: var(--accent-green);
 }
 
 .refresh-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
@@ -319,6 +425,11 @@ onUnmounted(() => {
   to { transform: rotate(360deg); }
 }
 
+@keyframes alertPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 92, 124, 0.2); }
+  50% { box-shadow: 0 0 0 10px rgba(255, 92, 124, 0); }
+}
+
 .dashboard-content {
   flex: 1;
   display: flex;
@@ -328,26 +439,32 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.top-section,
+.devices-section,
+.resource-panel,
+.alert-panel-wrapper {
+  background: rgba(11, 16, 24, 0.96);
+  backdrop-filter: blur(12px);
+}
+
 .top-section {
-  background: var(--bg-secondary);
   padding: 20px 24px;
 }
 
 .status-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
 .middle-section {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 340px 1fr;
   background: var(--bg-primary);
-  min-height: 300px;
+  min-height: 340px;
 }
 
 .resource-panel {
-  background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -362,23 +479,25 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-color);
 }
 
-.panel-header h2 {
+.panel-header h2,
+.section-header h2 {
   margin: 0;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.18em;
   color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 .panel-badge {
   font-size: 9px;
   padding: 3px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-accent);
-  border-radius: 3px;
-  color: var(--text-muted);
+  background: rgba(57, 160, 255, 0.08);
+  border: 1px solid rgba(57, 160, 255, 0.35);
+  border-radius: 999px;
+  color: var(--accent-blue);
   font-family: var(--font-mono);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
 }
 
 .resource-list {
@@ -387,77 +506,143 @@ onUnmounted(() => {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
 }
 
 .resource-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(43, 59, 85, 0.75);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(17, 24, 35, 0.98), rgba(10, 14, 21, 0.98)),
+    linear-gradient(120deg, rgba(57, 160, 255, 0.08), transparent 40%);
+  box-shadow: var(--panel-shadow);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.resource-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(57, 160, 255, 0.45);
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.28);
+}
+
+.resource-item.warning {
+  border-color: rgba(246, 201, 69, 0.45);
+}
+
+.resource-item.critical {
+  border-color: rgba(255, 92, 124, 0.65);
+  animation: alertPulse 2.4s infinite;
+}
+
+.resource-topline,
 .resource-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 12px;
+}
+
+.resource-name,
+.resource-meta,
+.resource-context,
+.net-label,
+.stat-badge {
+  font-family: var(--font-mono);
 }
 
 .resource-name {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   color: var(--text-muted);
+}
+
+.resource-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
   font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.resource-trend.up {
+  color: var(--accent-red);
+}
+
+.resource-trend.down {
+  color: var(--accent-green);
+}
+
+.resource-trend.flat {
+  color: var(--text-secondary);
+}
+
+.trend-arrow {
+  font-size: 12px;
 }
 
 .resource-value {
-  font-size: 20px;
-  font-weight: 300;
+  font-size: 26px;
+  font-weight: 350;
   font-family: var(--font-mono);
   color: var(--text-primary);
 }
 
+.resource-context {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
 .resource-bar {
-  height: 4px;
-  background: var(--bg-tertiary);
-  border-radius: 2px;
+  height: 8px;
+  background: rgba(6, 9, 15, 0.95);
+  border-radius: 999px;
   overflow: hidden;
+  border: 1px solid rgba(43, 59, 85, 0.6);
 }
 
 .bar-fill {
   height: 100%;
-  background: var(--accent-green);
-  border-radius: 2px;
-  transition: width 0.3s ease;
+  border-radius: 999px;
+  transition: width 0.45s ease, filter 0.3s ease;
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.08);
+}
+
+.bar-fill.cpu {
+  background: linear-gradient(90deg, #1fbf75 0%, #33d17a 45%, #82f7b7 100%);
 }
 
 .bar-fill.memory {
-  background: var(--accent-blue);
+  background: linear-gradient(90deg, #2368b5 0%, #39a0ff 45%, #8ed0ff 100%);
 }
 
 .bar-fill.disk {
-  background: var(--accent-yellow);
-}
-
-.bar-fill.critical {
-  background: var(--accent-red);
+  background: linear-gradient(90deg, #9d7a18 0%, #f6c945 50%, #ffe38a 100%);
 }
 
 .bar-fill.warning {
-  background: var(--accent-yellow);
+  filter: saturate(1.2);
+}
+
+.bar-fill.critical {
+  background: linear-gradient(90deg, #7f1830 0%, #ff5c7c 55%, #ff95a9 100%);
 }
 
 .resource-meta {
   font-size: 10px;
   color: var(--text-muted);
-  font-family: var(--font-mono);
 }
 
 .network-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 8px;
 }
 
 .net-stat {
@@ -465,15 +650,14 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   padding: 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(23, 33, 48, 0.9), rgba(12, 18, 27, 0.9));
+  border: 1px solid rgba(43, 59, 85, 0.68);
+  border-radius: 8px;
 }
 
 .net-label {
   font-size: 9px;
   color: var(--text-muted);
-  font-family: var(--font-mono);
   letter-spacing: 0.1em;
 }
 
@@ -484,7 +668,6 @@ onUnmounted(() => {
 }
 
 .alert-panel-wrapper {
-  background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -492,7 +675,6 @@ onUnmounted(() => {
 
 .devices-section {
   flex: 1;
-  background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -506,14 +688,6 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-color);
 }
 
-.section-header h2 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  color: var(--text-secondary);
-}
-
 .device-stats {
   display: flex;
   gap: 8px;
@@ -521,23 +695,23 @@ onUnmounted(() => {
 
 .stat-badge {
   font-size: 9px;
-  padding: 4px 8px;
-  background: var(--bg-tertiary);
+  padding: 4px 9px;
+  background: rgba(17, 24, 35, 0.92);
   border: 1px solid var(--border-accent);
-  border-radius: 3px;
+  border-radius: 999px;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }
 
 .stat-badge.online {
   color: var(--accent-green);
-  border-color: var(--accent-green);
-  background: rgba(0, 255, 136, 0.1);
+  border-color: rgba(51, 209, 122, 0.45);
+  background: rgba(51, 209, 122, 0.08);
 }
 
 .stat-badge.offline {
-  color: var(--text-muted);
+  color: #c39aa8;
+  border-color: rgba(255, 92, 124, 0.18);
 }
 
 .devices-grid {
@@ -545,8 +719,8 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 16px 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
   align-content: start;
 }
 
@@ -597,5 +771,44 @@ onUnmounted(() => {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+@media (max-width: 1100px) {
+  .status-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .middle-section {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-header,
+  .top-section,
+  .section-header,
+  .devices-grid {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .status-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-list {
+    padding: 12px;
+  }
+
+  .resource-header,
+  .resource-topline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
