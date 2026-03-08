@@ -108,14 +108,14 @@ class DatabaseManager:
             return f"mysql+aiomysql://{settings.db_user}:{encoded_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 
         else:
-            logger.info(f"Using PostgreSQL database driver")
+            logger.info("Using PostgreSQL database driver")
             encoded_password = quote_plus(settings.db_password)
             return f"postgresql+asyncpg://{settings.db_user}:{encoded_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 
     async def _test_connection(self):
         """测试数据库连接"""
         async with self.get_session() as session:
-            result = await session.execute(select(func.now()))
+            await session.execute(select(func.now()))
             logger.debug("Database test query succeeded")
 
     @asynccontextmanager

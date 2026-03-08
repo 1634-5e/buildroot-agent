@@ -165,7 +165,7 @@ class TestDeviceRepository:
                 )
             )
 
-            result = await DeviceRepository.update_connection_status(
+            await DeviceRepository.update_connection_status(
                 device_id=device_id, status="offline", is_online=False
             )
 
@@ -196,9 +196,7 @@ class TestDeviceRepository:
                 )
             )
 
-            result = await DeviceRepository.update_current_status(
-                device_id, status_data
-            )
+            await DeviceRepository.update_current_status(device_id, status_data)
 
             # 简化测试：只验证函数被调用
             assert mock_session.execute.called

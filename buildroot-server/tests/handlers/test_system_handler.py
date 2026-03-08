@@ -4,11 +4,9 @@ SystemHandler 单元测试
 """
 
 import pytest
-from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from handlers.system_handler import SystemHandler
-from protocol.constants import MessageType
 
 
 @pytest.mark.asyncio

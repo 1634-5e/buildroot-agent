@@ -1,6 +1,14 @@
 from .base import BaseMessage
 from .register import RegisterRequest, RegisterResult
-from .system import Heartbeat, SystemStatus, LogUpload, ScriptRecv, ScriptResult, PingStatus, PingResult
+from .system import (
+    Heartbeat,
+    SystemStatus,
+    LogUpload,
+    ScriptRecv,
+    ScriptResult,
+    PingStatus,
+    PingResult,
+)
 from .pty import PtyCreate, PtyData, PtyResize, PtyClose
 from .file import (
     FileRequest,

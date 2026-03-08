@@ -5,7 +5,7 @@ import os
 import time
 from typing import Dict, List, Optional, Tuple
 
-from models.file_transfer import FileTransferSession
+from models.file_transfer_models import FileTransferSession
 from config.settings import settings
 
 logger = logging.getLogger(__name__)

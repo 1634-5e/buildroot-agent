@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime
 from typing import Any, Optional
@@ -22,12 +21,42 @@ class RegisterHandler(BaseHandler):
         conn_type: str = "websocket",
     ) -> bool:
         """处理设备连接（注册模式）"""
-        logger.info(f"设备已连接: {device_id} (版本: {version}, 类型: {conn_type})")
+        logger.info(
+            f"[REGISTER] 开始处理设备连接: {device_id} (版本: {version}, 类型: {conn_type})"
+        )
 
-        # 添加到连接管理器（内存）
-        self.conn_mgr.add_device(device_id, connection, conn_type)
+        # 步骤1: 首先添加到连接管理器（必须在发送响应前完成）
+        logger.info(f"[REGISTER] 步骤1: 添加到连接管理器 - {device_id}")
+        await self.conn_mgr.add_device(device_id, connection, conn_type)
+        logger.info(f"[REGISTER] 步骤1完成: 设备已添加到连接管理器 - {device_id}")
 
-        # 数据库操作：创建或更新设备信息
+        # 步骤2: 立即发送注册响应（避免数据库操作延迟影响）
+        logger.info(f"[REGISTER] 步骤2: 准备发送注册响应 - {device_id}")
+        response = MessageCodec.encode(
+            MessageType.REGISTER_RESULT, {"success": True, "message": "注册成功"}
+        )
+
+        try:
+            if hasattr(connection, "send") and callable(
+                getattr(connection, "send", None)
+            ):
+                logger.info(
+                    f"[REGISTER] 正在发送注册响应给 {device_id}, 响应大小={len(response)} bytes"
+                )
+                await connection.send(response)
+                logger.info(f"[REGISTER] 注册响应发送完成: {device_id}")
+            else:
+                logger.error(f"[REGISTER] 连接对象没有send方法: {device_id}")
+                return False
+        except Exception as e:
+            import traceback
+
+            logger.error(f"[REGISTER] 发送注册响应失败: {device_id}, {e}")
+            logger.error(f"[REGISTER] 异常堆栈: {traceback.format_exc()}")
+            return False
+
+        # 步骤3: 异步执行数据库操作（不阻塞响应发送）
+        logger.info(f"[REGISTER] 步骤3: 开始数据库操作 - {device_id}")
         try:
             await DeviceRepository.create_or_update(
                 device_id=device_id,
@@ -59,30 +88,15 @@ class RegisterHandler(BaseHandler):
                 },
             )
 
-            logger.info(f"[DB] 设备信息已保存: {device_id}")
+            logger.info(f"[REGISTER] 步骤3完成: 数据库操作成功 - {device_id}")
         except Exception as e:
             import traceback
 
-            logger.error(f"[DB] 保存设备信息失败: {e}\n{traceback.format_exc()}")
+            logger.error(f"[REGISTER] 数据库操作失败: {device_id}, {e}")
+            logger.error(f"[REGISTER] 异常堆栈: {traceback.format_exc()}")
+            # 数据库操作失败不影响注册成功，因为连接已经建立
 
-        # 发送注册结果响应
-        response = MessageCodec.encode(
-            MessageType.REGISTER_RESULT, {"success": True, "message": "注册成功"}
-        )
-
-        try:
-            if hasattr(connection, "send") and callable(
-                getattr(connection, "send", None)
-            ):
-                await connection.send(response)
-                logger.info(f"注册结果已发送: {device_id}")
-            else:
-                logger.error(f"连接对象没有send方法: {device_id}")
-                return False
-        except Exception as e:
-            logger.error(f"发送注册结果失败: {device_id}, {e}")
-            return False
-
+        logger.info(f"[REGISTER] 设备连接处理完成: {device_id}")
         return True
 
     def _get_remote_address(self, connection: Any, conn_type: str) -> Optional[str]:

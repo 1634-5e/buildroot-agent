@@ -34,8 +34,6 @@ class ScriptResult(BaseModel):
     output: str = ""
 
 
-
-
 class PingResult(BaseModel):
     ip: str = ""
     status: int = 0
