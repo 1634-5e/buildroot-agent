@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import websockets
+import secrets
 from websockets.server import WebSocketServerProtocol
+from typing import Optional
 
 from protocol.constants import MessageType
 from protocol.codec import MessageCodec
@@ -11,6 +13,7 @@ from database.repositories import (
     WebConsoleSessionRepository,
     AuditLogRepository,
 )
+from server.auth import validate_token
 from datetime import datetime
 
 
@@ -24,12 +27,67 @@ class WebSocketHandler:
         self.conn_mgr = conn_mgr
         self.msg_handler = msg_handler
 
+    @staticmethod
+    def generate_token(user_id: str = "anonymous") -> str:
+        """生成认证 token"""
+        token = secrets.token_urlsafe(32)
+        VALID_TOKENS[token] = (user_id, asyncio.get_event_loop().time())
+        logger.info(f"[AUTH] 生成 token: {token[:8]}... for user: {user_id}")
+        return token
+
+    @staticmethod
+    def validate_token(token: str) -> Optional[str]:
+        """验证 token，返回 user_id 或 None"""
+        if not token:
+            return None
+        
+        # 清理过期 token
+        current_time = asyncio.get_event_loop().time()
+        expired = [t for t, (_, created) in VALID_TOKENS.items() 
+                   if current_time - created > TOKEN_EXPIRY]
+        for t in expired:
+            del VALID_TOKENS[t]
+        
+        if token in VALID_TOKENS:
+            user_id, _ = VALID_TOKENS[token]
+            return user_id
+        return None
+
     async def agent_handler(self, websocket: WebSocketServerProtocol) -> None:
         try:
             remote = getattr(websocket, "remote_address", "unknown")
         except Exception:
             remote = "unknown"
         logger.info(f"新连接: {remote}")
+
+        # === 认证检查 ===
+        auth_token = None
+        try:
+            # 从 URL query 参数获取 token
+            path = getattr(websocket, "path", "")
+            if "?" in path:
+                query = path.split("?", 1)[1]
+                params = dict(p.split("=") for p in query.split("&") if "=" in p)
+                auth_token = params.get("token")
+            
+            # 从 headers 获取 token
+            if not auth_token:
+                request_headers = getattr(websocket, "request_headers", {})
+                if request_headers:
+                    auth_token = request_headers.get("x-auth-token", "")
+        except Exception as e:
+            logger.debug(f"获取认证信息失败: {e}")
+
+        # 验证 token（开发模式可选）
+        # 生产环境应该强制验证
+        user_id = self.validate_token(auth_token) if auth_token else None
+        
+        if not user_id:
+            # 开发模式：允许无认证连接，但记录警告
+            logger.warning(f"[AUTH] 未认证连接: {remote} (开发模式允许)")
+            user_id = f"anonymous_{secrets.token_hex(4)}"
+        else:
+            logger.info(f"[AUTH] 认证成功: {user_id}")
 
         self.conn_mgr.add_console(websocket)
 
@@ -40,7 +98,6 @@ class WebSocketHandler:
 
         device_id: str | None = None
 
-        user_id = None
         user_agent = None
         try:
             request_headers = getattr(websocket, "request_headers", {})
@@ -138,12 +195,10 @@ class WebSocketHandler:
                         )
 
                         try:
-                            # 跳过缓存，直接从数据库获取最新状态
                             device = await DeviceRepository.get_by_device_id(
                                 device_id, use_cache=False
                             )
                             if device and device.get("current_status"):
-                                # Return cached status from database
                                 response = MessageCodec.encode(
                                     MessageType.CMD_RESPONSE,
                                     {
@@ -168,7 +223,6 @@ class WebSocketHandler:
                                         f"设备状态已从数据库发送到web控制台: {device_id}"
                                     )
                             else:
-                                # No cached status, forward to agent
                                 logger.warning(
                                     f"设备[{device_id}]没有缓存的status数据，转发到agent"
                                 )
@@ -181,7 +235,6 @@ class WebSocketHandler:
                                     logger.warning(f"转发消息到设备失败: {device_id}")
                         except Exception as e:
                             logger.error(f"查询设备状态失败: {e}, 转发到agent")
-                            # Fallback: forward to agent on error
                             success = await self.msg_handler.send_to_device(
                                 device_id, msg_type, json_data
                             )
@@ -189,9 +242,9 @@ class WebSocketHandler:
                                 logger.info(f"消息已转发到设备 {device_id}")
                             else:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
-                        continue  # Skip the normal forwarding logic
+                        continue
 
-                    # Special handling for ping command: query from database instead of forwarding to agent
+                    # Special handling for ping command
                     if (
                         msg_type == MessageType.CMD_REQUEST
                         and json_data.get("cmd") == "ping"
@@ -211,7 +264,6 @@ class WebSocketHandler:
                                 and device["current_status"].get("ping_status")
                             ):
                                 ping_status = device["current_status"]["ping_status"]
-                                # Return ping status from database as CMD_RESPONSE
                                 response = MessageCodec.encode(
                                     MessageType.CMD_RESPONSE,
                                     {
@@ -231,7 +283,6 @@ class WebSocketHandler:
                                         f"Ping状态已从数据库发送到web控制台: {device_id}"
                                     )
                             else:
-                                # No cached ping status, forward to agent
                                 logger.warning(
                                     f"设备[{device_id}]没有缓存的ping数据，转发到agent"
                                 )
@@ -251,8 +302,9 @@ class WebSocketHandler:
                                 logger.info(f"消息已转发到设备 {device_id}")
                             else:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
-                        continue  # Skip the normal forwarding logic
-                    # 服务端本地处理的消息类型，不转发给 Agent
+                        continue
+                    
+                    # 服务端本地处理的消息类型
                     SERVER_HANDLED_TYPES = (
                         MessageType.DEVICE_LIST,
                         MessageType.DEVICE_DISCONNECT,
@@ -263,7 +315,6 @@ class WebSocketHandler:
                         logger.info(
                             f"Web控制台消息 [0x{msg_type:02X}] 转发到设备: {device_id}"
                         )
-
                         success = await self.msg_handler.send_to_device(
                             device_id, msg_type, json_data
                         )

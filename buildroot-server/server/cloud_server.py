@@ -448,9 +448,14 @@ class MessageRouter:
 class CloudServer:
     """云端服务器主类"""
 
+    # 类变量，用于共享连接管理器
+    conn_mgr: ConnectionManager = None
+
     def __init__(self):
         self.file_transfer = FileTransferManager()
         self.conn_mgr = ConnectionManager(self.file_transfer)
+        # 设置类变量，使其可以被其他模块访问
+        CloudServer.conn_mgr = self.conn_mgr
         self.msg_handler = MessageRouter(self.conn_mgr)
         self.socket_handler = SocketHandler(self.conn_mgr, self.msg_handler)
         self.ws_handler = WebSocketHandler(self.conn_mgr, self.msg_handler)

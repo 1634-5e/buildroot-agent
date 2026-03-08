@@ -30,7 +30,7 @@ class Device(SQLModel, table=True):
     __tablename__ = "devices"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(
         sa_column=Column(String(64), unique=True, nullable=False, index=True)
@@ -91,7 +91,7 @@ class DeviceStatusHistory(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
     reported_at: datetime = Field(
@@ -143,7 +143,7 @@ class PingHistory(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
     reported_at: datetime = Field(
@@ -169,7 +169,7 @@ class CommandHistory(SQLModel, table=True):
     __tablename__ = "command_history"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
     console_id: Optional[str] = Field(
@@ -224,7 +224,7 @@ class ScriptHistory(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     script_id: str = Field(sa_column=Column(String(50), nullable=False, index=True))
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
@@ -268,7 +268,7 @@ class FileTransfer(SQLModel, table=True):
     __tablename__ = "file_transfers"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     transfer_id: str = Field(sa_column=Column(String(50), unique=True, nullable=False))
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
@@ -317,7 +317,7 @@ class UpdateHistory(SQLModel, table=True):
     __tablename__ = "update_history"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
 
@@ -397,7 +397,7 @@ class UpdateApproval(SQLModel, table=True):
     __tablename__ = "update_approvals"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
     update_history_id: Optional[int] = Field(
@@ -434,7 +434,7 @@ class WebConsoleSession(SQLModel, table=True):
     __tablename__ = "web_console_sessions"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     console_id: str = Field(
         sa_column=Column(String(50), unique=True, nullable=False, index=True)
@@ -476,7 +476,7 @@ class PtySession(SQLModel, table=True):
     __tablename__ = "pty_sessions"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
     session_id: int = Field(sa_column=Column(Integer, nullable=False))
     device_id: str = Field(sa_column=Column(String(64), nullable=False, index=True))
@@ -517,7 +517,7 @@ class AuditLog(SQLModel, table=True):
     __tablename__ = "audit_logs"
 
     id: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger, primary_key=True, autoincrement=True)
+        default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True)
     )
 
     event_type: str = Field(sa_column=Column(String(50), nullable=False, index=True))
