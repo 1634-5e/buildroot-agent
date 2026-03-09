@@ -101,7 +101,6 @@ char *http_get_string(const char *url, int timeout)
     /* 使用内存缓冲区接收数据 */
     char *response_buf = NULL;
     size_t response_size = 0;
-    size_t response_capacity = 0;
     
     curl_easy_setopt(g_curl_handle, CURLOPT_URL, url);
     curl_easy_setopt(g_curl_handle, CURLOPT_WRITEFUNCTION, write_data_callback);

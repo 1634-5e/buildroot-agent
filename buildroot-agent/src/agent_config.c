@@ -185,7 +185,7 @@ int config_validate(agent_config_t *config)
     }
     
     if (config->device_id[0] == '\0') {
-        char *device_id = get_device_id();
+        const char *device_id = get_device_id();
         if (device_id) {
             set_string_field(config->device_id, sizeof(config->device_id), device_id);
         }
@@ -405,7 +405,6 @@ int config_save(agent_config_t *config, const char *path)
 int config_save_example(agent_config_t *config, const char *path)
 {
     FILE *fp;
-    int i;
     const char *level_str;
     
     if (!config || !path) return -1;
@@ -486,6 +485,7 @@ int config_save_example(agent_config_t *config, const char *path)
     fprintf(fp, "    count = %d\n", config->ping_count);
     
     if (config->ping_target_count > 0) {
+        int i;
         fprintf(fp, "    targets = (\n");
         for (i = 0; i < config->ping_target_count; i++) {
             fprintf(fp, "        {\n");
