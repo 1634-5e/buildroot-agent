@@ -397,7 +397,7 @@ int ping_execute(const char *ip, int timeout, int count, ping_result_t *result);
 int ping_execute_all(agent_context_t *ctx);
 char *ping_status_to_json(ping_status_t *status);
 void *ping_thread(void *arg);
-int ping_init_from_config(agent_config_t *config);
+int ping_init_from_config(const agent_config_t *config);
 int ping_save_config(agent_config_t *config, const char *path);
 
 /* agent_pty.c */

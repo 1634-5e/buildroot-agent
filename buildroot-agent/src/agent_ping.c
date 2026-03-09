@@ -117,7 +117,6 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
         icmp_packet_t packet;
         struct timeval tv_start, tv_end, tv_diff;
         int ret;
-        ssize_t len;
 
         memset(&packet, 0, sizeof(packet));
         packet.hdr.type = ICMP_ECHO;
@@ -143,19 +142,17 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
             char recv_buf[256];
             struct sockaddr_in from;
             socklen_t from_len = sizeof(from);
-            struct iphdr *ip_hdr;
-            struct icmphdr *icmp_hdr;
-            size_t ip_hdr_len;
+            ssize_t len;
 
             len = recvfrom(sock, recv_buf, sizeof(recv_buf), 0,
                         (struct sockaddr *)&from, &from_len);
             if (len > 0) {
                 /* 解析 IP 头 */
-                ip_hdr = (struct iphdr *)recv_buf;
-                ip_hdr_len = ip_hdr->ihl * 4;
+                struct iphdr *ip_hdr = (struct iphdr *)recv_buf;
+                size_t ip_hdr_len = ip_hdr->ihl * 4;
 
                 /* 防止 ip_hdr_len 下溢：确保缓冲区至少有 IP 头 */
-                if (len < ip_hdr_len) {
+                if (len < (ssize_t)ip_hdr_len) {
                     LOG_WARN("接收到的包太短: len=%zd, ip_hdr_len=%zu", len, ip_hdr_len);
                     continue;
                 }
@@ -180,7 +177,7 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
 
 
                 /* 获取 ICMP 头（跳过 IP 头） */
-                icmp_hdr = (struct icmphdr *)(recv_buf + ip_hdr_len);
+                const struct icmphdr *icmp_hdr = (const struct icmphdr *)(recv_buf + ip_hdr_len);
 
                 /* 验证是否是 ICMP Echo Reply */
                 if (icmp_hdr->type != ICMP_ECHOREPLY) {
@@ -357,7 +354,7 @@ void *ping_thread(void *arg)
     return NULL;
 }
 
-int ping_init_from_config(agent_config_t *config)
+int ping_init_from_config(const agent_config_t *config)
 {
     /* Ping配置已由YAML解析完成，此函数保留为兼容接口 */
     if (!config) {
