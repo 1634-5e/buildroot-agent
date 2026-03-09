@@ -77,9 +77,6 @@ static float get_cpu_usage(float *cpu_user, float *cpu_system)
         
         if (total_diff > 0) {
             cpu_usage = 100.0 * (1.0 - (float)idle_diff / (float)total_diff);
-        }
-        
-        if (total_diff > 0) {
             cpu_user_usage = 100.0 * (float)user_diff / (float)total_diff;
             cpu_system_usage = 100.0 * (float)system_diff / (float)total_diff;
         }
@@ -200,7 +197,7 @@ static void get_network_info(char *ip_addr, char *mac_addr, long *rx_bytes, long
                 struct ifreq ifr;
                 strncpy(ifr.ifr_name, ifa->ifa_name, IFNAMSIZ - 1);
                 if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
-                    unsigned char *mac = (unsigned char *)ifr.ifr_hwaddr.sa_data;
+                    const unsigned char *mac = (const unsigned char *)ifr.ifr_hwaddr.sa_data;
                     snprintf(mac_addr, 20, "%02X:%02X:%02X:%02X:%02X:%02X",
                              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                 }
@@ -382,7 +379,7 @@ static int get_process_list(proc_info_t *procs, int max_procs)
 
     int count = 0;
 
-    struct dirent *entry;
+    const struct dirent *entry;
 
 
 
@@ -426,7 +423,7 @@ static int get_process_list(proc_info_t *procs, int max_procs)
 
         /* 格式: pid (comm) state ppid ... utime stime ... starttime ... rss ... */
 
-        char *comm_start = strchr(line, '(');
+        const char *comm_start = strchr(line, '(');
 
         char *comm_end = strrchr(line, ')');
 
@@ -454,7 +451,7 @@ static int get_process_list(proc_info_t *procs, int max_procs)
 
         /* 解析comm后面的字段 */
 
-        char *rest = comm_end + 2; /* 跳过 ") " */
+        const char *rest = comm_end + 2; /* 跳过 ") " */
 
         char state;
 
@@ -660,7 +657,7 @@ int status_collect(system_status_t *status)
 
 /* 将状态转换为JSON (含进程列表) */
 
-char *status_to_json(system_status_t *status)
+char *status_to_json(const system_status_t *status)
 
 {
 

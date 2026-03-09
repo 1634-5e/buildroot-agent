@@ -811,21 +811,15 @@ static void handle_download_package(agent_context_t *ctx, const char *data)
                 goto cleanup;
             }
 
-            /* 提取相对路径进行压缩（去掉前导/) */
-            const char *rel_path = normalized_check;
-            if (rel_path[0] == '/' && rel_path[1] != '\0') {
-                rel_path = normalized_check + 1;
-            }
-            
             // For both files and directories, change to the parent directory first to preserve structure
             char parent_dir[2048];
-            char item_name[512];
             strncpy(parent_dir, normalized_check, sizeof(parent_dir) - 1);
             parent_dir[sizeof(parent_dir) - 1] = '\0';
             
             // Extract the item name (last component)
             char *last_slash = strrchr(parent_dir, '/');
             if (last_slash && *(last_slash + 1) != '\0') {
+                char item_name[512];
                 strcpy(item_name, last_slash + 1);
                 *last_slash = '\0';  // Split parent dir
                 // If parent_dir is empty after split, it was an absolute path like /filename
@@ -1505,7 +1499,7 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
 }
 
 /* 创建心跳消息 */
-char *protocol_create_heartbeat(agent_context_t *ctx)
+char *protocol_create_heartbeat(const agent_context_t *ctx)
 {
     if (!ctx) return NULL;
     

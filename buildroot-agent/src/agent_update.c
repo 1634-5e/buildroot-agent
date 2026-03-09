@@ -39,7 +39,7 @@ void download_progress_callback(const char *url, int progress, int64_t downloade
     if (!ctx) return;
     
     /* 只在关键进度点上报: 0%, 25%, 50%, 75%, 100% */
-    int report_points[] = {0, 25, 50, 75, 100};
+    const int report_points[] = {0, 25, 50, 75, 100};
     
     for (int i = 0; i < 5; i++) {
         if (progress >= report_points[i] && g_last_reported_progress < report_points[i]) {

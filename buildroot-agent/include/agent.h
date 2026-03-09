@@ -373,7 +373,7 @@ void socket_registration_complete(agent_context_t *ctx, bool success);
 
 /* agent_status.c */
 int status_collect(system_status_t *status);
-char *status_to_json(system_status_t *status);
+char *status_to_json(const system_status_t *status);
 void *status_thread(void *arg);
 
 /* agent_log.c */
@@ -413,7 +413,7 @@ void *pty_timeout_thread(void *arg);
 
 /* agent_protocol.c */
 int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len);
-char *protocol_create_heartbeat(agent_context_t *ctx);
+char *protocol_create_heartbeat(const agent_context_t *ctx);
 
 /* agent_http.c */
 int http_init(void);
