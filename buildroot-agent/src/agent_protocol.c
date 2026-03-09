@@ -123,7 +123,7 @@ char *json_get_string(const char *json, const char *key)
     if (*pos != '"') return NULL;
     pos++;
     
-    char *end = strchr(pos, '"');
+    const char *end = strchr(pos, '"');
     if (!end) return NULL;
     
     size_t len = end - pos;
@@ -608,7 +608,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
         goto cleanup;
     }
 
-    struct dirent *entry;
+    const struct dirent *entry;
     int count = 0;
     struct stat st;
     char filepath[2048];

@@ -601,7 +601,7 @@ int log_list_files(agent_context_t *ctx, const char *log_dir, const char *reques
     
     int count = 0;
     
-    struct dirent *entry;
+    const struct dirent *entry;
     while ((entry = readdir(dp)) != NULL) {
         if (entry->d_type == DT_REG) {  /* 只列出普通文件 */
             char filepath[512];

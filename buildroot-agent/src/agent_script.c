@@ -383,9 +383,9 @@ int script_list(agent_context_t *ctx)
     char json[4096];
     int offset = snprintf(json, sizeof(json), "{\"scripts\":[");
     
-    struct dirent *entry;
     int count = 0;
     
+    const struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type != DT_REG) continue;
         
