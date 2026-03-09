@@ -263,8 +263,8 @@ int http_download_file(
     
     /* 打开输出文件 */
     if (default_config.enable_resume) {
-        /* 断点续传：追加模式 */
-        fp = fopen(default_config.output_path, "ab");
+        /* 断点续传：读写模式（需要读取当前文件大小） */
+        fp = fopen(default_config.output_path, "r+b");
         if (fp) {
             /* 获取已下载大小 */
             fseek(fp, 0, SEEK_END);

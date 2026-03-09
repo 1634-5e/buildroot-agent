@@ -700,7 +700,6 @@ int update_rollback_to_backup(const char *backup_path)
     pthread_mutex_unlock(&g_update_lock);
     
     LOG_INFO("回滚成功");
-    free(current_binary);
     
     /* 启动回滚后的进程 */
     pid_t pid = fork();
