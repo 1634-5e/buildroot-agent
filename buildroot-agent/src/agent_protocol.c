@@ -1375,7 +1375,6 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
         /* 更新错误通知 */
         {
             char *error = json_get_string(json_data, "error");
-            char *status = json_get_string(json_data, "status");
             
             LOG_ERROR("更新错误: %s", error);
             
@@ -1445,10 +1444,7 @@ int protocol_handle_message(agent_context_t *ctx, const char *data, size_t len)
             LOG_INFO("收到Web下载批准");
             
             char *download_url = json_get_string(json_data, "download_url");
-            char *version = json_get_string(json_data, "version");
             char *file_size_str = json_get_string(json_data, "file_size");
-            char *md5_checksum = json_get_string(json_data, "md5_checksum");
-            char *sha512_checksum = json_get_string(json_data, "sha512_checksum");
             
             if (!download_url) {
                 LOG_ERROR("下载URL为空");

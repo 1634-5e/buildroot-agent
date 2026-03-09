@@ -227,16 +227,12 @@ int ping_execute(const char *ip, int timeout_sec, int count, ping_result_t *resu
     } else if (packets_received < count) {
         result->status = PING_STATUS_UNREACHABLE;
         result->avg_time = (float)(total_time / packets_received);
-        result->min_time = (float)min_time;
-        result->max_time = (float)max_time;
         result->min_time = min_time;
         result->max_time = max_time;
         result->packet_loss = (float)(count - packets_received) / count * 100.0;
     } else {
         result->status = PING_STATUS_REACHABLE;
         result->avg_time = (float)(total_time / packets_received);
-        result->min_time = (float)min_time;
-        result->max_time = (float)max_time;
         result->min_time = min_time;
         result->max_time = max_time;
         result->packet_loss = 0.0;
