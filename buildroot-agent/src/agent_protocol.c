@@ -549,6 +549,7 @@ static void normalize_path(const char *src, char *dst, size_t dstlen)
     
     /* 确保以/ 开头 */
     if (src[0] != '/') {
+        // cppcheck-suppress knownConditionTrueFalse
         if (j < (int)dstlen - 1) dst[j++] = '/';
     }
     
@@ -708,7 +709,7 @@ static void handle_file_list_request(agent_context_t *ctx, const char *data)
 
             // cppcheck-suppress identicalInnerCondition
             if (esc_name) free(esc_name);
-            // cppcheck-suppress identicalInnerCondition
+            // cppcheck-suppress knownConditionTrueFalse
             if (esc_path) free(esc_path);
         }
 
