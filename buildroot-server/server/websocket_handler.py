@@ -13,7 +13,6 @@ from database.repositories import (
     WebConsoleSessionRepository,
     AuditLogRepository,
 )
-from server.auth import validate_token
 from datetime import datetime
 
 

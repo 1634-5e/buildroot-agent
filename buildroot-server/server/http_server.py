@@ -16,10 +16,8 @@ from database.repositories import (
     DeviceRepository,
     CommandHistoryRepository,
     FileTransferRepository,
-    AuditLogRepository,
 )
 from server.cloud_server import CloudServer
-from protocol.codec import MessageCodec
 from protocol.constants import MessageType
 
 logger = logging.getLogger(__name__)
@@ -426,7 +424,6 @@ async def download_file(
     path: str = Query(..., description="文件路径"),
 ):
     """下载文件（HTTP，适用于小文件 <10MB）"""
-    conn_mgr = get_conn_mgr()
     try:
         # 检查设备是否在线
         device = await DeviceRepository.get_by_device_id(device_id, use_cache=False)
