@@ -299,7 +299,7 @@ static void *socket_send_thread(void *arg)
 static int do_connect(socket_client_t *client, const char *host, int port)
 {
     struct sockaddr_in server_addr;
-    struct addrinfo hints, *res, *rp;
+    struct addrinfo hints, *res;
     int retry = 0;
     int gai_ret;
     char port_str[16];
