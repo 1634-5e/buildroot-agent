@@ -13,7 +13,7 @@ from database.repositories import (
     WebConsoleSessionRepository,
     AuditLogRepository,
 )
-from server.auth import validate_token
+from server.auth import VALID_TOKENS, TOKEN_EXPIRY
 from datetime import datetime
 
 
@@ -40,14 +40,17 @@ class WebSocketHandler:
         """验证 token，返回 user_id 或 None"""
         if not token:
             return None
-        
+
         # 清理过期 token
         current_time = asyncio.get_event_loop().time()
-        expired = [t for t, (_, created) in VALID_TOKENS.items() 
-                   if current_time - created > TOKEN_EXPIRY]
+        expired = [
+            t
+            for t, (_, created) in VALID_TOKENS.items()
+            if current_time - created > TOKEN_EXPIRY
+        ]
         for t in expired:
             del VALID_TOKENS[t]
-        
+
         if token in VALID_TOKENS:
             user_id, _ = VALID_TOKENS[token]
             return user_id
@@ -69,7 +72,7 @@ class WebSocketHandler:
                 query = path.split("?", 1)[1]
                 params = dict(p.split("=") for p in query.split("&") if "=" in p)
                 auth_token = params.get("token")
-            
+
             # 从 headers 获取 token
             if not auth_token:
                 request_headers = getattr(websocket, "request_headers", {})
@@ -81,7 +84,7 @@ class WebSocketHandler:
         # 验证 token（开发模式可选）
         # 生产环境应该强制验证
         user_id = self.validate_token(auth_token) if auth_token else None
-        
+
         if not user_id:
             # 开发模式：允许无认证连接，但记录警告
             logger.warning(f"[AUTH] 未认证连接: {remote} (开发模式允许)")
@@ -303,7 +306,7 @@ class WebSocketHandler:
                             else:
                                 logger.warning(f"转发消息到设备失败: {device_id}")
                         continue
-                    
+
                     # 服务端本地处理的消息类型
                     SERVER_HANDLED_TYPES = (
                         MessageType.DEVICE_LIST,

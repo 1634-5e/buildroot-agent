@@ -138,7 +138,6 @@ static int execute_script_internal(const char *script_path, char **output, int *
     }
     
     size_t total_read = 0;
-    ssize_t n;
     
     /* 设置非阻塞 */
     int flags = fcntl(pipefd[0], F_GETFL, 0);
@@ -147,7 +146,7 @@ static int execute_script_internal(const char *script_path, char **output, int *
     time_t start_time = time(NULL);
     
     while (1) {
-        n = read(pipefd[0], *output + total_read, SCRIPT_OUTPUT_MAX - total_read - 1);
+        ssize_t n = read(pipefd[0], *output + total_read, SCRIPT_OUTPUT_MAX - total_read - 1);
         
         if (n > 0) {
             total_read += n;
@@ -384,9 +383,9 @@ int script_list(agent_context_t *ctx)
     char json[4096];
     int offset = snprintf(json, sizeof(json), "{\"scripts\":[");
     
-    struct dirent *entry;
     int count = 0;
     
+    const struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type != DT_REG) continue;
         

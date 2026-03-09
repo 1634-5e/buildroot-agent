@@ -122,7 +122,7 @@ int agent_init(const char *config_path, const config_override_t *overrides)
     const char *conf_path = config_path;
     
     if (!conf_path) {
-        char *exe_dir = get_exe_dir();
+        const char *exe_dir = get_exe_dir();
         if (exe_dir) {
             snprintf(default_conf_path, sizeof(default_conf_path),
                      "%s/agent.cfg", exe_dir);

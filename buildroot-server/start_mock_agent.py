@@ -77,7 +77,7 @@ async def main():
             heartbeat_count += 1
             print(f"[{heartbeat_count}] 发送心跳...")
             await agent.send_heartbeat()
-            print(f"✅ 心跳已发送")
+            print("✅ 心跳已发送")
 
     except KeyboardInterrupt:
         print("\n\n正在断开连接...")

@@ -347,6 +347,96 @@ logger.info(f"设备连接: {device_id}")
 每个公开函数/类必须写清晰文档：
 - **Python** → Google/Numpy 风格 docstring
 - **JS/TS** → 完整 JSDoc
+
+---
+
+## CI/CD 门槛与代码质量
+
+### 自动化检查（必须全部通过）
+
+| 检查项 | 工具 | 要求 |
+|--------|------|------|
+| **C 代码编译** | gcc/cmake | 零警告，静态链接通过 |
+| **C 单元测试** | CMocka | 所有测试通过 |
+| **Python 代码检查** | ruff | 无 F401/F841 等错误 |
+| **Python 单元测试** | pytest | 覆盖率 ≥40%，全部通过 |
+| **Web 代码检查** | npm test | vitest 全部通过 |
+| **统一测试** | test.sh | Server/Agent/Web 三端通过 |
+
+### 代码提交前必做
+
+```bash
+# 1. 本地完整测试
+./scripts/test.sh
+
+# 2. C 代码静态分析（可选但推荐）
+cppcheck --enable=all buildroot-agent/src/*.c
+
+# 3. Python 代码检查
+cd buildroot-server && uv run ruff check . && uv run ruff format --check .
+```
+
+### 分支策略
+
+- **main**: 保护分支，只能通过 PR 合并
+- **feature/***: 功能分支
+- **fix/***: 修复分支
+- **PR 要求**: 必须通过所有 CI 检查才能合并
+
+### 版本管理
+
+- 版本号记录在 `buildroot-agent/VERSION`
+- 格式: `主版本.次版本.修订版本` (如 1.1.1)
+- 修订版本: bug 修复
+- 次版本: 功能添加
+- 主版本: 重大变更
+
+---
+
+## 常见陷阱与注意事项
+
+### C 代码
+
+1. **内存管理**
+   - 禁止重复释放（double free）
+   - malloc 后必须检查返回值
+   - 使用 `safe_strncpy` 替代 `strcpy`
+
+2. **文件操作**
+   - 追加模式 (`"ab"`) 中 `fseek` 无效，需用 `"r+b"`
+   - 始终检查文件打开是否成功
+
+3. **多线程安全**
+   - 共享变量访问必须加锁
+   - 条件检查在循环内外都要做（防御性编程）
+
+4. **静态分析误报**
+   - cppcheck 可能误报 "条件永远为 true"
+   - 这些通常是防御性编程，添加 `// cppcheck-suppress` 注释
+
+### Python 代码
+
+1. **导入管理**
+   - 删除未使用的导入（ruff F401）
+   - 删除未使用的变量（ruff F841）
+
+2. **类型注解**
+   - 公开 API 必须添加类型注解
+   - 使用 `const` 修饰只读参数
+
+### 测试
+
+1. **必须全部通过**
+   - Server: 66 个测试
+   - Agent: 2 个测试（CMocka）
+   - Web: 20 个测试
+
+2. **覆盖率要求**
+   - Python: ≥40%
+   - C: 核心功能覆盖
+- 修订版本: bug 修复
+- 次版本: 功能添加
+- 主版本: 重大变更
 - **C** → 块注释说明参数、返回值、错误码
 
 ### 7. 交付标准

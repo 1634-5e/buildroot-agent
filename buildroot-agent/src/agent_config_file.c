@@ -55,9 +55,7 @@ static int get_group_bool(config_setting_t *group, const char *name, int default
 config_load_result_t config_load_yaml(agent_config_t *config, const char *path)
 {
     config_t cfg;
-    config_setting_t *root, *setting;
-    int int_val;
-    const char *str_val;
+    config_setting_t *root;
     
     if (!config || !path) return CONFIG_LOAD_PARSE_ERROR;
     
@@ -75,7 +73,7 @@ config_load_result_t config_load_yaml(agent_config_t *config, const char *path)
     root = config_root_setting(&cfg);
     
     /* server 配置 */
-    setting = config_setting_get_member(root, "server");
+    config_setting_t *setting = config_setting_get_member(root, "server");
     if (setting) {
         get_group_string(setting, "addr", config->server_addr, 
                         sizeof(config->server_addr), DEFAULT_SERVER_ADDR);
@@ -187,8 +185,7 @@ config_load_result_t config_load_yaml(agent_config_t *config, const char *path)
 int config_save_yaml(agent_config_t *config, const char *path)
 {
     config_t cfg;
-    config_setting_t *root, *setting, *group, *arr;
-    int i;
+    config_setting_t *root, *group;
     
     if (!config || !path) return -1;
     
@@ -266,9 +263,10 @@ int config_save_yaml(agent_config_t *config, const char *path)
     
     /* ping targets */
     if (config->ping_target_count > 0) {
-        arr = config_setting_add(group, "targets", CONFIG_TYPE_LIST);
+        config_setting_t *arr = config_setting_add(group, "targets", CONFIG_TYPE_LIST);
+        int i;
         for (i = 0; i < config->ping_target_count; i++) {
-            setting = config_setting_add(arr, NULL, CONFIG_TYPE_GROUP);
+            config_setting_t *setting = config_setting_add(arr, NULL, CONFIG_TYPE_GROUP);
             config_setting_set_string(config_setting_add(setting, "ip", CONFIG_TYPE_STRING), 
                                       config->ping_targets[i].ip);
             if (config->ping_targets[i].name[0] != '\0') {

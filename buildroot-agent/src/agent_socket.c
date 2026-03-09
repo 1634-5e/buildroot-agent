@@ -183,7 +183,6 @@ static void *socket_recv_thread(void *arg)
         /* 解析缓冲区中的消息 */
         while (client->recv_buf_pos >= 3) {
             /* 消息格式: 类型(1B) + 长度(2B, Big Endian) + JSON数据 */
-            unsigned char msg_type = client->recv_buf[0];
             uint16_t json_len = ((uint16_t)client->recv_buf[1] << 8) | (uint16_t)client->recv_buf[2];
             size_t total_msg_len = 3 + json_len;
 
@@ -299,9 +298,8 @@ static void *socket_send_thread(void *arg)
 static int do_connect(socket_client_t *client, const char *host, int port)
 {
     struct sockaddr_in server_addr;
-    struct addrinfo hints, *res, *rp;
+    struct addrinfo hints, *res;
     int retry = 0;
-    int gai_ret;
     char port_str[16];
     
     client->sock_fd = -1;
@@ -324,6 +322,7 @@ static int do_connect(socket_client_t *client, const char *host, int port)
         }
         
         /* 使用 getaddrinfo 替代废弃的 gethostbyname */
+        int gai_ret;
         memset(&hints, 0, sizeof(hints));
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
@@ -613,7 +612,7 @@ static void socket_client_cleanup(socket_client_t *client)
 /* 解析服务器地址 (host:port) */
 static int parse_server_addr(const char *addr, char *host, size_t host_size, int *port)
 {
-    char *colon = strrchr(addr, ':');
+    const char *colon = strrchr(addr, ':');
     if (!colon) {
         LOG_ERROR("无效的服务器地址格式: %s", addr);
         return -1;

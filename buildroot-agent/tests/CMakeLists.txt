@@ -10,7 +10,6 @@ if(PKG_CONFIG_FOUND)
 endif()
 
 if(NOT CMOCKA_FOUND)
-    # 如果没有找到 cmocka，尝试直接查找库
     find_library(CMOCKA_LIBRARY cmocka)
     find_path(CMOCKA_INCLUDE_DIR cmocka.h)
     if(CMOCKA_LIBRARY AND CMOCKA_INCLUDE_DIR)
@@ -24,38 +23,17 @@ if(CMOCKA_FOUND)
     message(STATUS "CMocka found: ${CMOCKA_LIBRARIES}")
     include_directories(${CMOCKA_INCLUDE_DIRS})
     
-    # 获取所有源文件（排除 main 函数所在的文件）
-    file(GLOB_RECURSE SRC_FILES "${PROJECT_SOURCE_DIR}/src/*.c")
-    list(REMOVE_ITEM SRC_FILES "${PROJECT_SOURCE_DIR}/src/agent_main.c")
-    list(REMOVE_ITEM SRC_FILES "${PROJECT_SOURCE_DIR}/src/agent_http.c")
-    list(REMOVE_ITEM SRC_FILES "${PROJECT_SOURCE_DIR}/src/agent_yaml.c")
-    
-    # 只添加存在的测试文件
+    # 测试文件列表
     set(TEST_SOURCES "")
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_protocol.c")
-        list(APPEND TEST_SOURCES test_protocol.c)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_json_standalone.c")
+        list(APPEND TEST_SOURCES test_json_standalone.c)
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_socket.c")
         list(APPEND TEST_SOURCES test_socket.c)
     endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_json.c")
-        list(APPEND TEST_SOURCES test_json.c)
-    endif()
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_util.c")
-        list(APPEND TEST_SOURCES test_util.c)
-    endif()
-    
-    # 创建测试库（包含所有被测函数）
-    add_library(agent_test_lib STATIC ${SRC_FILES})
-    target_include_directories(agent_test_lib PUBLIC 
-        ${PROJECT_SOURCE_DIR}/include
-        ${PROJECT_SOURCE_DIR}/third_party/libconfig/lib
-    )
-    target_link_libraries(agent_test_lib 
-        pthread util dl config
-    )
     
     # 为每个测试文件创建可执行文件
+    # 测试文件自己包含需要的函数实现
     foreach(TEST_FILE ${TEST_SOURCES})
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_executable(${TEST_NAME} ${TEST_FILE})
@@ -64,7 +42,6 @@ if(CMOCKA_FOUND)
             ${PROJECT_SOURCE_DIR}/third_party/libconfig/lib
         )
         target_link_libraries(${TEST_NAME} 
-            agent_test_lib
             ${CMOCKA_LIBRARIES}
             pthread util dl config
         )

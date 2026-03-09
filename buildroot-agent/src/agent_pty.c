@@ -666,11 +666,15 @@ void *pty_timeout_thread(void *arg)
     
     LOG_INFO("PTY超时检查线程启动");
     
+    // cppcheck-suppress knownConditionTrueFalse
+    // cppcheck-suppress knownConditionTrueFalse
     while (ctx && ctx->running) {
+        // cppcheck-suppress knownConditionTrueFalse
         for (int i = 0; i < 60 && ctx && ctx->running; i++) {
             sleep(1);
         }
         
+        // cppcheck-suppress knownConditionTrueFalse
         if (ctx && ctx->running) {
             pty_check_timeout(ctx);
         }

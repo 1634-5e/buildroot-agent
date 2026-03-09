@@ -330,7 +330,7 @@ int tcp_handle_download_response(agent_context_t *ctx, const char *data, size_t 
     if (strcmp(action, "file_data") == 0) {
         /* 处理文件数据块 */
         char *session_id = json_get_string(data, "request_id");
-        char *file_path = json_get_string(data, "file_path");
+        const char *file_path = json_get_string(data, "file_path");
         long long offset = json_get_int64(data, "offset");
         char *data_b64 = json_get_string(data, "data");
         int data_size = json_get_int(data, "size", 0);

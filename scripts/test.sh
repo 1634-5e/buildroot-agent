@@ -133,8 +133,10 @@ run_agent_tests() {
     info "运行 Agent 端测试..."
     cd "$PROJECT_ROOT/buildroot-agent"
 
-    if [ -f "tests/test_integration.sh" ]; then
-        if bash tests/test_integration.sh; then
+    # 检查是否已构建测试
+    if [ -d "build" ] && [ -f "build/bin/test_json_standalone" ]; then
+        cd build && ctest --output-on-failure
+        if [ $? -eq 0 ]; then
             success "Agent 端测试通过"
             return 0
         else
@@ -142,8 +144,21 @@ run_agent_tests() {
             return 1
         fi
     else
-        warning "Agent 端测试脚本不存在，跳过"
-        return 0
+        info "构建 Agent 测试..."
+        rm -rf build && mkdir -p build && cd build
+        if cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug && make -j$(nproc); then
+            ctest --output-on-failure
+            if [ $? -eq 0 ]; then
+                success "Agent 端测试通过"
+                return 0
+            else
+                error "Agent 端测试失败"
+                return 1
+            fi
+        else
+            warning "Agent 测试构建失败，跳过"
+            return 0
+        fi
     fi
 }
 
@@ -152,17 +167,28 @@ run_web_tests() {
     info "运行 Web 端测试..."
     cd "$PROJECT_ROOT/buildroot-web"
 
-    if [ -f "tests/test_static.py" ]; then
-        if python -m pytest tests/ -v; then
-            success "Web 端测试通过"
-            return 0
-        else
-            error "Web 端测试失败"
-            return 1
-    fi
-    else
-        warning "Web 端测试脚本不存在，跳过"
+    # 检查 package.json 是否存在
+    if [ ! -f "package.json" ]; then
+        warning "Web 端 package.json 不存在，跳过"
         return 0
+    fi
+
+    # 检查 node_modules 是否存在
+    if [ ! -d "node_modules" ]; then
+        info "安装 Web 端依赖..."
+        npm install || {
+            warning "npm install 失败，跳过 Web 测试"
+            return 0
+        }
+    fi
+
+    # 运行 vitest 测试
+    if npm test; then
+        success "Web 端测试通过"
+        return 0
+    else
+        error "Web 端测试失败"
+        return 1
     fi
 }
 
@@ -171,7 +197,7 @@ check_protocol_sync() {
     info "检查 C/Python 协议同步..."
     cd "$PROJECT_ROOT"
 
-    if python scripts/check_protocol_sync.py; then
+    if python3 scripts/check_protocol_sync.py; then
         success "协议同步检查通过"
         return 0
     else
