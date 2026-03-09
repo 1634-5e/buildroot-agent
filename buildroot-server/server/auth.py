@@ -23,6 +23,7 @@ def generate_token(user_id: str = "anonymous") -> str:
         current_time = asyncio.get_event_loop().time()
     except RuntimeError:
         import time
+
         current_time = time.time()
     VALID_TOKENS[token] = (user_id, current_time)
     logger.info(f"[AUTH] 生成 token: {token[:8]}... for user: {user_id}")
@@ -33,19 +34,23 @@ def validate_token(token: str) -> Optional[str]:
     """验证 token，返回 user_id 或 None"""
     if not token:
         return None
-    
+
     # 清理过期 token
     try:
         current_time = asyncio.get_event_loop().time()
     except RuntimeError:
         import time
+
         current_time = time.time()
-    
-    expired = [t for t, (_, created) in VALID_TOKENS.items() 
-               if current_time - created > TOKEN_EXPIRY]
+
+    expired = [
+        t
+        for t, (_, created) in VALID_TOKENS.items()
+        if current_time - created > TOKEN_EXPIRY
+    ]
     for t in expired:
         del VALID_TOKENS[t]
-    
+
     if token in VALID_TOKENS:
         user_id, _ = VALID_TOKENS[token]
         return user_id

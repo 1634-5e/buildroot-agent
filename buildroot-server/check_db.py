@@ -27,7 +27,9 @@ async def check_tables():
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = cursor.fetchall()
         for col in columns:
-            print(f"  - {col[1]} ({col[2]}) {'NOT NULL' if col[3] else ''} {'PRIMARY KEY' if col[5] else ''}")
+            print(
+                f"  - {col[1]} ({col[2]}) {'NOT NULL' if col[3] else ''} {'PRIMARY KEY' if col[5] else ''}"
+            )
 
     conn.close()
 
