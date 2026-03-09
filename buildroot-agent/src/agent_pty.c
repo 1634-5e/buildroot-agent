@@ -671,6 +671,7 @@ void *pty_timeout_thread(void *arg)
             sleep(1);
         }
         
+        // cppcheck-suppress knownConditionTrueFalse
         if (ctx && ctx->running) {
             pty_check_timeout(ctx);
         }
