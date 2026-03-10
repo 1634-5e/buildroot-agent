@@ -29,6 +29,7 @@ jobs:
           BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
         with:
           model: bailian/qwen-coder-plus
+          use_github_token: true
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
