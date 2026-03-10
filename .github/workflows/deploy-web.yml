@@ -42,9 +42,8 @@ jobs:
         working-directory: ./buildroot-web
         run: npm run build
         env:
-          # 配置后端 API 地址
-          VITE_API_URL: https://buildroot-server.onrender.com
-          VITE_WS_URL: wss://buildroot-server.onrender.com
+          # GitHub Pages 使用 Mock API
+          VITE_USE_MOCK: true
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
