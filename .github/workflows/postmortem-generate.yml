@@ -1,4 +1,4 @@
-# Release 后自动生成 postmortem 报告
+# Release 后自动生成 postmortem 报告 (AI 增强版)
 # 在 Release 发布时自动运行
 
 name: Postmortem Generator
@@ -14,6 +14,10 @@ on:
       to_tag:
         description: 'To tag (current release)'
         required: false
+
+env:
+  BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+  BAILIAN_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
 
 permissions:
   contents: write
@@ -36,183 +40,135 @@ jobs:
             FROM_TAG="${{ inputs.from_tag }}"
             TO_TAG="${{ inputs.to_tag || github.sha }}"
           else
-            # 获取当前 release tag
             TO_TAG="${{ github.event.release.tag_name }}"
-            
-            # 获取上一个 release tag
             FROM_TAG=$(git tag --sort=-version:refname | grep -v "$TO_TAG" | head -1)
           fi
           
           echo "from_tag=$FROM_TAG" >> $GITHUB_OUTPUT
           echo "to_tag=$TO_TAG" >> $GITHUB_OUTPUT
-          
-          if [ -n "$FROM_TAG" ]; then
-            echo "range=$FROM_TAG...$TO_TAG" >> $GITHUB_OUTPUT
-          else
-            # 如果没有上一个 tag，取最近 50 个 commit
-            echo "range=HEAD~50...$TO_TAG" >> $GITHUB_OUTPUT
-          fi
+          echo "range=$FROM_TAG...$TO_TAG" >> $GITHUB_OUTPUT
 
-      - name: Analyze fix commits
-        id: analyze
+      - name: Collect fix commits
+        id: commits
         run: |
           RANGE="${{ steps.range.outputs.range }}"
           TODAY=$(date +%Y-%m-%d)
           
-          # 获取所有 fix commits
-          echo "### Fix Commits in this Release" > /tmp/fix_commits.md
-          echo "" >> /tmp/fix_commits.md
-          
           FIX_COMMITS=$(git log $RANGE --oneline --grep="fix" 2>/dev/null || echo "")
           
           if [ -z "$FIX_COMMITS" ]; then
-            echo "No fix commits found in this release." >> /tmp/fix_commits.md
             echo "has_fixes=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_fixes=true" >> $GITHUB_OUTPUT
-            echo "\`\`\`" >> /tmp/fix_commits.md
-            echo "$FIX_COMMITS" >> /tmp/fix_commits.md
-            echo "\`\`\`" >> /tmp/fix_commits.md
-            
-            # 分析每个 fix commit
-            echo "" > /tmp/analysis.md
-            echo "# Postmortem: Release ${{ steps.range.outputs.to_tag }}" >> /tmp/analysis.md
-            echo "" >> /tmp/analysis.md
-            echo "**生成日期**: $TODAY" >> /tmp/analysis.md
-            echo "**版本范围**: $RANGE" >> /tmp/analysis.md
-            echo "" >> /tmp/analysis.md
-            
-            # 按类别分组
-            echo "## 问题分类" >> /tmp/analysis.md
-            echo "" >> /tmp/analysis.md
-            
-            # 安全相关
-            SECURITY=$(echo "$FIX_COMMITS" | grep -iE "security|xss|vulnerability|free|overflow" || echo "")
-            if [ -n "$SECURITY" ]; then
-              echo "### 🔴 安全问题" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$SECURITY" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            fi
-            
-            # 并发相关
-            CONCURRENCY=$(echo "$FIX_COMMITS" | grep -iE "race|concurrent|lock|async|await" || echo "")
-            if [ -n "$CONCURRENCY" ]; then
-              echo "### 🔴 并发问题" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$CONCURRENCY" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            fi
-            
-            # CI/测试相关
-            CI=$(echo "$FIX_COMMITS" | grep -iE "ci|test|timeout|pytest" || echo "")
-            if [ -n "$CI" ]; then
-              echo "### 🟡 CI/测试问题" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$CI" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            fi
-            
-            # 前端相关
-            FRONTEND=$(echo "$FIX_COMMITS" | grep -iE "web|ui|frontend|js|html" || echo "")
-            if [ -n "$FRONTEND" ]; then
-              echo "### 🟢 前端问题" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$FRONTEND" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            fi
-            
-            # 其他
-            OTHER=$(echo "$FIX_COMMITS" | grep -viE "security|xss|vulnerability|free|overflow|race|concurrent|lock|async|await|ci|test|timeout|pytest|web|ui|frontend|js|html" || echo "")
-            if [ -n "$OTHER" ]; then
-              echo "### 🔵 其他修复" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$OTHER" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            fi
-            
-            # 获取详细 diff
-            echo "" >> /tmp/analysis.md
-            echo "## 详细分析" >> /tmp/analysis.md
-            echo "" >> /tmp/analysis.md
-            
-            # 获取每个 fix commit 的文件变更统计
-            while IFS= read -r commit; do
-              COMMIT_HASH=$(echo "$commit" | awk '{print $1}')
-              COMMIT_MSG=$(echo "$commit" | cut -d' ' -f2-)
-              
-              echo "### $COMMIT_MSG" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-              
-              STATS=$(git show --stat $COMMIT_HASH | tail -n +2 | head -n -1)
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "$STATS" >> /tmp/analysis.md
-              echo "\`\`\`" >> /tmp/analysis.md
-              echo "" >> /tmp/analysis.md
-            done <<< "$(echo "$FIX_COMMITS" | head -10)"  # 限制为最近 10 个
+            exit 0
           fi
           
-          echo "analysis<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/analysis.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
+          echo "has_fixes=true" >> $GITHUB_OUTPUT
           echo "date=$TODAY" >> $GITHUB_OUTPUT
+          echo "$FIX_COMMITS" > /tmp/fix_commits.txt
+          
+          # 获取详细 diff
+          git log $RANGE -p --grep="fix" > /tmp/fix_diff.txt 2>/dev/null || true
+          
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/fix_commits.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create postmortem file
-        if: steps.analyze.outputs.has_fixes == 'true'
+      - name: Load existing postmortems
+        if: steps.commits.outputs.has_fixes == 'true'
         run: |
-          mkdir -p postmortem
-          FILENAME="postmortem/${{ steps.analyze.outputs.date }}-release-${{ steps.range.outputs.to_tag }}.md"
-          cat /tmp/analysis.md > "$FILENAME"
-          
-          # 更新索引
-          if [ -f postmortem/README.md ]; then
-            # 在表格中添加新行
-            sed -i "/^| 日期/a | ${{ steps.analyze.outputs.date }} | [Release ${{ steps.range.outputs.to_tag }}](./$(basename $FILENAME)) | 自动生成 | ${{ steps.range.outputs.range }} |" postmortem/README.md
+          mkdir -p /tmp/context
+          if [ -d "postmortem" ]; then
+            cp postmortem/*.md /tmp/context/ 2>/dev/null || true
           fi
-          
-          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
 
-      - name: Create Pull Request
-        if: steps.analyze.outputs.has_fixes == 'true'
+      - name: AI Generate Postmortem
+        id: ai
+        if: steps.commits.outputs.has_fixes == 'true' && env.BAILIAN_API_KEY != ''
+        run: |
+          RANGE="${{ steps.range.outputs.range }}"
+          TO_TAG="${{ steps.range.outputs.to_tag }}"
+          TODAY="${{ steps.commits.outputs.date }}"
+          
+          # 构建 prompt
+          cat > /tmp/prompt.json << EOF
+          {
+            "model": "$BAILIAN_MODEL",
+            "messages": [
+              {
+                "role": "system",
+                "content": "你是专业的软件工程 postmortem 分析专家。根据 git fix commits 生成结构化的复盘报告。"
+              },
+              {
+                "role": "user",
+                "content": "请分析以下 fix commits 并生成 postmortem 报告:\n\n版本: $TO_TAG\n日期: $TODAY\n\nCommits:\n$(cat /tmp/fix_commits.txt | head -20)\n\nDiff (前 3000 行):\n$(head -3000 /tmp/fix_diff.txt)\n\n要求:\n1. 问题概述\n2. 根因分析\n3. 修复方案\n4. 预防措施\n5. 检测模式\n6. 严重程度 (P0/P1/P2)\n\n使用 Markdown 格式输出。"
+              }
+            ],
+            "temperature": 0.3,
+            "max_tokens": 3000
+          }
+          EOF
+          
+          RESPONSE=$(curl -s -X POST "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" \
+            -H "Authorization: Bearer $BAILIAN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/prompt.json)
+          
+          AI_REPORT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "生成失败"')
+          
+          cat > /tmp/postmortem.md << EOF
+          # Postmortem: Release $TO_TAG
+
+          **生成日期**: $TODAY  
+          **版本范围**: \`$RANGE\`  
+          **生成方式**: 🤖 AI 自动分析
+
+          ---
+
+          $AI_REPORT
+          EOF
+
+      - name: Fallback generation
+        if: steps.commits.outputs.has_fixes == 'true' && env.BAILIAN_API_KEY == ''
+        run: |
+          TODAY="${{ steps.commits.outputs.date }}"
+          TO_TAG="${{ steps.range.outputs.to_tag }}"
+          
+          cat > /tmp/postmortem.md << EOF
+          # Postmortem: Release $TO_TAG
+
+          **生成日期**: $TODAY  
+          **版本范围**: \`${{ steps.range.outputs.range }}\`  
+          **生成方式**: 📋 规则匹配
+
+          ---
+
+          ## Fix Commits
+
+          \`\`\`
+          $(cat /tmp/fix_commits.txt)
+          \`\`\`
+
+          ## 问题分类
+
+          $(grep -iE "security|xss" /tmp/fix_commits.txt && echo "### 🔴 安全相关" || true)
+          $(grep -iE "race|lock|concurrent" /tmp/fix_commits.txt && echo "### 🔴 并发相关" || true)
+          $(grep -iE "ci|test|timeout" /tmp/fix_commits.txt && echo "### 🟡 CI/测试相关" || true)
+          EOF
+
+      - name: Create file and PR
+        if: steps.commits.outputs.has_fixes == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           title: "docs: Add postmortem for release ${{ steps.range.outputs.to_tag }}"
           body: |
             ## 📋 Postmortem 自动生成
             
-            本 PR 由 Release ${{ steps.range.outputs.to_tag }} 触发，自动分析 fix commits 并生成 postmortem 报告。
+            Release: ${{ steps.range.outputs.to_tag }}
+            范围: ${{ steps.range.outputs.range }}
             
-            ### 分析范围
-            `${{ steps.range.outputs.range }}`
-            
-            ### 文件变更
-            - 新增: `postmortem/${{ steps.analyze.outputs.date }}-release-${{ steps.range.outputs.to_tag }}.md`
-            - 更新: `postmortem/README.md` (索引)
-            
-            ---
-            
-            请审核报告内容，补充详细分析后合并。
+            请审核后合并。
           branch: postmortem/${{ steps.range.outputs.to_tag }}
           commit-message: "docs: add postmortem for release ${{ steps.range.outputs.to_tag }}"
           labels: documentation,postmortem
-          reviewers: 1634-5e
-
-      - name: Summary
-        run: |
-          echo "## 📊 Postmortem Generation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Release**: ${{ steps.range.outputs.to_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Range**: ${{ steps.range.outputs.range }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Has fixes**: ${{ steps.analyze.outputs.has_fixes }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.analyze.outputs.has_fixes }}" = "true" ]; then
-            echo "### Generated Report" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            cat /tmp/analysis.md >> $GITHUB_STEP_SUMMARY
-          fi
+          files: |
+            postmortem/${{ steps.commits.outputs.date }}-release-${{ steps.range.outputs.to_tag }}.md
+            postmortem/README.md
