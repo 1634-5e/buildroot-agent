@@ -28,7 +28,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
           OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+          MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
         with:
           prompt: |
             你是代码安全审查专家。请执行以下任务：
