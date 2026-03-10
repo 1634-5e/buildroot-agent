@@ -16,6 +16,7 @@ permissions:
 jobs:
   check-postmortem-triggers:
     runs-on: ubuntu-latest
+    environment: ci
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
