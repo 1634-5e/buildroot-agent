@@ -29,15 +29,14 @@ jobs:
           BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
-          cat > ~/.config/opencode/opencode.json << 'JSONEOF'
-          {
+          echo '{
             "provider": {
               "bailian": {
                 "npm": "@ai-sdk/openai-compatible",
                 "name": "百炼",
                 "options": {
                   "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                  "apiKey": "BAILIAN_API_KEY_PLACEHOLDER"
+                  "apiKey": "'"$BAILIAN_API_KEY"'"
                 },
                 "models": {
                   "glm-5": {
@@ -47,10 +46,9 @@ jobs:
               }
             },
             "model": "bailian/glm-5"
-          }
-          JSONEOF
-          # Replace placeholder with actual key
-          sed -i "s/BAILIAN_API_KEY_PLACEHOLDER/$BAILIAN_API_KEY/g" ~/.config/opencode/opencode.json
+          }' > ~/.config/opencode/opencode.json
+          echo "Config file created:"
+          cat ~/.config/opencode/opencode.json
 
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
