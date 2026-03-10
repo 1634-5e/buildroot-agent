@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "bailian": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Bailian (DashScope)",
+      "options": {
+        "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "{env:BAILIAN_API_KEY}"
+      },
+      "models": {
+        "qwen-coder-plus": {
+          "name": "Qwen Coder Plus"
+        },
+        "qwen-coder-turbo": {
+          "name": "Qwen Coder Turbo"
+        },
+        "qwen-plus": {
+          "name": "Qwen Plus"
+        },
+        "qwen-turbo": {
+          "name": "Qwen Turbo"
+        }
+      }
+    }
+  },
+  "model": "bailian/qwen-coder-plus"
+}
