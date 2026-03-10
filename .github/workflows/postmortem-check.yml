@@ -12,7 +12,6 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
 
 jobs:
   check-postmortem-triggers:
@@ -24,36 +23,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure OpenCode for Z.AI
-        env:
-          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
-        run: |
-          mkdir -p ~/.config/opencode
-          echo '{
-            "provider": {
-              "zai": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "Z.AI",
-                "options": {
-                  "baseURL": "https://api.z.ai/api/coding/paas/v4",
-                  "apiKey": "'"$ZAI_API_KEY"'"
-                },
-                "models": {
-                  "glm-4.7": {
-                    "name": "GLM-4.7"
-                  }
-                }
-              }
-            },
-            "model": "zai/glm-4.7"
-          }' > ~/.config/opencode/opencode.json
-          echo "Config file created"
-          cat ~/.config/opencode/opencode.json
-
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
         with:
-          model: zai/glm-4.7
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
