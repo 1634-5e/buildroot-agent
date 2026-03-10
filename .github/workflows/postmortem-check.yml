@@ -1,5 +1,5 @@
-# Postmortem Check - 使用 OpenCode 进行 AI 代码审查
-# 在 PR 时检查是否触发历史 postmortem 问题
+# Postmortem Check - 自动检测 + 修复闭环
+# 在 PR 时检查是否触发历史 postmortem，并可自动修复
 
 name: Postmortem Check
 
@@ -7,69 +7,23 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize]
-  issue_comment:
-    types: [created]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
 jobs:
-  # 方式1: 自动触发 - 每个 PR 都会检查
-  check-postmortem:
-    if: github.event_name == 'pull_request'
+  check-postmortem-triggers:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run OpenCode Postmortem Check
-        uses: anomalyco/opencode/github@latest
-        env:
-          # 使用百炼或其他 OpenAI 兼容 API
-          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
-        with:
-          prompt: |
-            你是代码审查专家。请分析这个 PR 的代码变更是否会触发历史问题。
-            
-            ## 任务
-            1. 读取 ./postmortem/ 目录下的所有报告
-            2. 分析本次 PR 的代码变更 (git diff)
-            3. 检查是否触发了历史问题模式
-            4. 在 PR 中评论分析结果
-            
-            ## 输出格式
-            使用 Markdown 格式输出：
-            - 🔴 高风险问题
-            - 🟡 中风险问题  
-            - 🟢 低风险/无问题
-            
-            每个问题要说明：
-            - 问题类型
-            - 触发的 postmortem 报告
-            - 具体代码位置
-            - 修复建议
-
-  # 方式2: 手动触发 - 评论 /opencode review-postmortem
-  review-on-comment:
-    if: |
-      github.event_name == 'issue_comment' && 
-      github.event.issue.pull_request && 
-      contains(github.event.comment.body, '/opencode') &&
-      contains(github.event.comment.body, 'postmortem')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run OpenCode Analysis
+      - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
         env:
           OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
@@ -77,12 +31,32 @@ jobs:
           OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
         with:
           prompt: |
-            用户请求: ${{ github.event.comment.body }}
+            你是代码安全审查专家。请执行以下任务：
             
-            请执行以下任务：
-            1. 分析当前 PR 的代码变更
-            2. 对照 ./postmortem/ 目录下的历史问题报告
-            3. 检查是否有代码触发了历史问题模式
-            4. 提供详细的分析报告和修复建议
+            ## 任务1: 检测问题
+            1. 读取 ./postmortem/ 目录下的所有历史问题报告
+            2. 获取本次 PR 的代码变更: `git diff origin/${{ github.base_ref }}...HEAD`
+            3. 分析是否有代码触发了历史问题模式（XSS、并发、内存安全、SQL注入等）
             
-            输出 Markdown 格式的分析结果。
+            ## 任务2: 如果发现问题，自动修复
+            如果检测到问题：
+            1. 直接修改代码修复问题
+            2. 运行测试验证修复
+            3. 提交修复到当前分支
+            
+            ## 任务3: 输出报告
+            在 PR 中评论：
+            - 是否检测到问题
+            - 问题详情和位置
+            - 修复状态（已自动修复 / 需要人工处理）
+            
+            如果需要人工处理，明确说明问题和建议的修复方案。
+            
+            关键原则：优先自动修复，如果无法自动修复则清晰说明。
+
+      - name: Create Fix PR if needed
+        if: failure()
+        run: |
+          # 如果 OpenCode 失败，通知人工处理
+          echo "OpenCode analysis failed, need manual review"
+          echo "::warning::Postmortem check failed, please review manually"
