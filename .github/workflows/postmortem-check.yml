@@ -25,11 +25,8 @@ jobs:
 
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
-        env:
-          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          MODEL: glm-5
         with:
+          model: glm-5
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
@@ -53,6 +50,9 @@ jobs:
             如果需要人工处理，明确说明问题和建议的修复方案。
             
             关键原则：优先自动修复，如果无法自动修复则清晰说明。
+        env:
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
 
       - name: Create Fix PR if needed
         if: failure()
