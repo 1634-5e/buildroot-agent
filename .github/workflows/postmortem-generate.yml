@@ -1,11 +1,13 @@
-# Release 后自动生成 postmortem 报告 (AI 增强版)
-# 在 Release 发布时自动运行
+# Postmortem Generator - 使用 OpenCode 自动生成复盘报告
+# 在 Release 发布后自动运行
 
 name: Postmortem Generator
 
 on:
   release:
     types: [published]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       from_tag:
@@ -15,160 +17,80 @@ on:
         description: 'To tag (current release)'
         required: false
 
-env:
-  BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-  BAILIAN_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
-
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  generate-postmortem:
+  # 方式1: Release 后自动生成
+  generate-on-release:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine release range
-        id: range
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            FROM_TAG="${{ inputs.from_tag }}"
-            TO_TAG="${{ inputs.to_tag || github.sha }}"
-          else
-            TO_TAG="${{ github.event.release.tag_name }}"
-            FROM_TAG=$(git tag --sort=-version:refname | grep -v "$TO_TAG" | head -1)
-          fi
-          
-          echo "from_tag=$FROM_TAG" >> $GITHUB_OUTPUT
-          echo "to_tag=$TO_TAG" >> $GITHUB_OUTPUT
-          echo "range=$FROM_TAG...$TO_TAG" >> $GITHUB_OUTPUT
-
-      - name: Collect fix commits
-        id: commits
-        run: |
-          RANGE="${{ steps.range.outputs.range }}"
-          TODAY=$(date +%Y-%m-%d)
-          
-          FIX_COMMITS=$(git log $RANGE --oneline --grep="fix" 2>/dev/null || echo "")
-          
-          if [ -z "$FIX_COMMITS" ]; then
-            echo "has_fixes=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "has_fixes=true" >> $GITHUB_OUTPUT
-          echo "date=$TODAY" >> $GITHUB_OUTPUT
-          echo "$FIX_COMMITS" > /tmp/fix_commits.txt
-          
-          # 获取详细 diff
-          git log $RANGE -p --grep="fix" > /tmp/fix_diff.txt 2>/dev/null || true
-          
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/fix_commits.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Load existing postmortems
-        if: steps.commits.outputs.has_fixes == 'true'
-        run: |
-          mkdir -p /tmp/context
-          if [ -d "postmortem" ]; then
-            cp postmortem/*.md /tmp/context/ 2>/dev/null || true
-          fi
-
-      - name: AI Generate Postmortem
-        id: ai
-        if: steps.commits.outputs.has_fixes == 'true' && env.BAILIAN_API_KEY != ''
-        run: |
-          RANGE="${{ steps.range.outputs.range }}"
-          TO_TAG="${{ steps.range.outputs.to_tag }}"
-          TODAY="${{ steps.commits.outputs.date }}"
-          
-          # 构建 prompt
-          cat > /tmp/prompt.json << EOF
-          {
-            "model": "$BAILIAN_MODEL",
-            "messages": [
-              {
-                "role": "system",
-                "content": "你是专业的软件工程 postmortem 分析专家。根据 git fix commits 生成结构化的复盘报告。"
-              },
-              {
-                "role": "user",
-                "content": "请分析以下 fix commits 并生成 postmortem 报告:\n\n版本: $TO_TAG\n日期: $TODAY\n\nCommits:\n$(cat /tmp/fix_commits.txt | head -20)\n\nDiff (前 3000 行):\n$(head -3000 /tmp/fix_diff.txt)\n\n要求:\n1. 问题概述\n2. 根因分析\n3. 修复方案\n4. 预防措施\n5. 检测模式\n6. 严重程度 (P0/P1/P2)\n\n使用 Markdown 格式输出。"
-              }
-            ],
-            "temperature": 0.3,
-            "max_tokens": 3000
-          }
-          EOF
-          
-          RESPONSE=$(curl -s -X POST "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" \
-            -H "Authorization: Bearer $BAILIAN_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @/tmp/prompt.json)
-          
-          AI_REPORT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "生成失败"')
-          
-          cat > /tmp/postmortem.md << EOF
-          # Postmortem: Release $TO_TAG
-
-          **生成日期**: $TODAY  
-          **版本范围**: \`$RANGE\`  
-          **生成方式**: 🤖 AI 自动分析
-
-          ---
-
-          $AI_REPORT
-          EOF
-
-      - name: Fallback generation
-        if: steps.commits.outputs.has_fixes == 'true' && env.BAILIAN_API_KEY == ''
-        run: |
-          TODAY="${{ steps.commits.outputs.date }}"
-          TO_TAG="${{ steps.range.outputs.to_tag }}"
-          
-          cat > /tmp/postmortem.md << EOF
-          # Postmortem: Release $TO_TAG
-
-          **生成日期**: $TODAY  
-          **版本范围**: \`${{ steps.range.outputs.range }}\`  
-          **生成方式**: 📋 规则匹配
-
-          ---
-
-          ## Fix Commits
-
-          \`\`\`
-          $(cat /tmp/fix_commits.txt)
-          \`\`\`
-
-          ## 问题分类
-
-          $(grep -iE "security|xss" /tmp/fix_commits.txt && echo "### 🔴 安全相关" || true)
-          $(grep -iE "race|lock|concurrent" /tmp/fix_commits.txt && echo "### 🔴 并发相关" || true)
-          $(grep -iE "ci|test|timeout" /tmp/fix_commits.txt && echo "### 🟡 CI/测试相关" || true)
-          EOF
-
-      - name: Create file and PR
-        if: steps.commits.outputs.has_fixes == 'true'
-        uses: peter-evans/create-pull-request@v6
+      - name: Run OpenCode Postmortem Generator
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
         with:
-          title: "docs: Add postmortem for release ${{ steps.range.outputs.to_tag }}"
-          body: |
-            ## 📋 Postmortem 自动生成
+          prompt: |
+            你是软件工程 postmortem 分析专家。
             
-            Release: ${{ steps.range.outputs.to_tag }}
-            范围: ${{ steps.range.outputs.range }}
+            ## 任务
+            分析本次 Release 中的所有 fix commits，生成一份详尽的 postmortem 报告。
             
-            请审核后合并。
-          branch: postmortem/${{ steps.range.outputs.to_tag }}
-          commit-message: "docs: add postmortem for release ${{ steps.range.outputs.to_tag }}"
-          labels: documentation,postmortem
-          files: |
-            postmortem/${{ steps.commits.outputs.date }}-release-${{ steps.range.outputs.to_tag }}.md
-            postmortem/README.md
+            ## 步骤
+            1. 获取本次 Release 的版本号和范围
+               - 运行: `git describe --tags --abbrev=0` 获取当前 tag
+               - 运行: `git tag --sort=-version:refname | head -2` 获取上一个 tag
+               - 运行: `git log <prev-tag>..<curr-tag> --oneline --grep="fix"` 获取 fix commits
+            
+            2. 分析每个 fix commit
+               - 运行: `git show <commit-hash>` 查看详细变更
+               - 提取问题类型、根因、修复方案
+            
+            3. 生成 postmortem 报告
+               - 文件名: `postmortem/YYYY-MM-DD-release-<tag>.md`
+               - 包含: 问题概述、根因分析、修复方案、预防措施、检测模式
+            
+            4. 更新索引
+               - 更新 `postmortem/README.md` 中的报告列表
+            
+            5. 创建 PR
+               - 分支名: `postmortem/<tag>`
+               - 提交变更
+
+  # 方式2: 评论手动触发
+  generate-on-comment:
+    if: |
+      github.event_name == 'issue_comment' &&
+      contains(github.event.comment.body, '/opencode') &&
+      contains(github.event.comment.body, 'postmortem')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run OpenCode Analysis
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+        with:
+          prompt: |
+            用户请求: ${{ github.event.comment.body }}
+            
+            请分析仓库中的 fix commits 并生成 postmortem 报告。
+            
+            参考 ./postmortem/ 目录下已有的报告格式。

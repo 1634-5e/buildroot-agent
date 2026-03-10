@@ -1,5 +1,5 @@
-# Release 前检查：AI + 规则双重分析
-# 分析 commits 是否会触发历史 postmortem
+# Postmortem Check - 使用 OpenCode 进行 AI 代码审查
+# 在 PR 时检查是否触发历史 postmortem 问题
 
 name: Postmortem Check
 
@@ -7,343 +7,82 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize]
-  workflow_dispatch:
-    inputs:
-      base_ref:
-        description: 'Base ref (e.g., main)'
-        required: false
-        default: 'main'
-      head_ref:
-        description: 'Head ref (e.g., feature-branch)'
-        required: false
-
-env:
-  # 百炼 API 配置 (在 repo Settings -> Secrets 中配置)
-  BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-  BAILIAN_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
-  check-postmortem-triggers:
+  # 方式1: 自动触发 - 每个 PR 都会检查
+  check-postmortem:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Get changed files
-        id: changed
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BASE="${{ inputs.base_ref }}"
-            HEAD="${{ inputs.head_ref || github.sha }}"
-          else
-            BASE="${{ github.base_ref }}"
-            HEAD="${{ github.head_ref }}"
-          fi
-          
-          echo "base=$BASE" >> $GITHUB_OUTPUT
-          echo "head=$HEAD" >> $GITHUB_OUTPUT
-          
-          # 获取变更的文件
-          git diff --name-only origin/$BASE...$HEAD > /tmp/changed_files.txt
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/changed_files.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          # 获取 commits 信息
-          git log --oneline origin/$BASE...$HEAD > /tmp/commits.txt
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/commits.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          # 获取完整 diff (限制大小)
-          git diff origin/$BASE...$HEAD > /tmp/diff.txt
-          DIFF_SIZE=$(wc -c < /tmp/diff.txt)
-          echo "diff_size=$DIFF_SIZE" >> $GITHUB_OUTPUT
-
-      - name: Load postmortem knowledge base
-        id: knowledge
-        run: |
-          # 加载所有 postmortem 报告作为知识库
-          mkdir -p /tmp/postmortem
-          if [ -d "postmortem" ]; then
-            cp postmortem/*.md /tmp/postmortem/ 2>/dev/null || true
-            
-            # 构建知识库摘要
-            echo "## 历史问题知识库" > /tmp/knowledge.md
-            echo "" >> /tmp/knowledge.md
-            
-            for file in /tmp/postmortem/*.md; do
-              if [ -f "$file" ] && [ "$(basename $file)" != "README.md" ]; then
-                echo "### $(basename $file .md)" >> /tmp/knowledge.md
-                # 提取关键模式
-                grep -A 5 "检测模式\|危险模式\|问题代码\|```" "$file" 2>/dev/null | head -30 >> /tmp/knowledge.md
-                echo "" >> /tmp/knowledge.md
-              fi
-            done
-          fi
-          
-          echo "knowledge<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/knowledge.md 2>/dev/null || echo "无历史知识库" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      # ==================== 第一阶段：规则检测 ====================
-      - name: Rule-based pattern check
-        id: rules
-        run: |
-          CHANGED_FILES=$(cat /tmp/changed_files.txt)
-          DIFF=$(cat /tmp/diff.txt | head -3000)  # 限制大小
-          
-          WARNINGS=""
-          WARNING_COUNT=0
-          
-          echo "## 规则检测结果" > /tmp/rule_report.md
-          echo "" >> /tmp/rule_report.md
-          
-          # 检查模式 1: XSS 相关
-          if echo "$CHANGED_FILES" | grep -qE "(app\.js|utils\.js|.*\.html|.*\.vue)" && \
-             echo "$DIFF" | grep -q "innerHTML\|v-html"; then
-            WARNINGS="${WARNINGS}- ⚠️ **XSS Risk**: 检测到 \`innerHTML\` 或 \`v-html\` 使用\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 2: 并发相关
-          if echo "$CHANGED_FILES" | grep -qE "\.py$" && \
-             echo "$DIFF" | grep -qE "self\.[a-z_]+\s*=" && \
-             ! echo "$DIFF" | grep -q "asyncio.Lock\|_lock\|threading.Lock"; then
-            WARNINGS="${WARNINGS}- ⚠️ **Concurrency Risk**: 共享状态可能缺少锁保护\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 3: 资源泄漏
-          if echo "$DIFF" | grep -qE "except.*:" && \
-             ! echo "$DIFF" | grep -qE "finally:|cleanup|close\(\)|release"; then
-            WARNINGS="${WARNINGS}- ⚠️ **Resource Leak Risk**: 异常处理可能缺少资源清理\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 4: 固定延迟
-          if echo "$DIFF" | grep -qE "sleep\([0-9]+\)|setTimeout.*[0-9]{3,}"; then
-            WARNINGS="${WARNINGS}- ⚠️ **CI Risk**: 检测到固定延迟，可能导致测试不稳定\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 5: C 内存安全
-          if echo "$CHANGED_FILES" | grep -qE "\.c$" && \
-             echo "$DIFF" | grep -qE "free\(" && \
-             ! echo "$DIFF" | grep -qE "= NULL|= nullptr"; then
-            WARNINGS="${WARNINGS}- ⚠️ **Memory Safety**: \`free()\` 后可能未置空指针\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 6: SQL 注入
-          if echo "$DIFF" | grep -qE "f\".*SELECT|f\".*INSERT|f\".*UPDATE|f\".*DELETE"; then
-            WARNINGS="${WARNINGS}- ⚠️ **SQL Injection Risk**: 检测到 f-string SQL 语句\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          # 检查模式 7: 硬编码凭证
-          if echo "$DIFF" | grep -qE "password\s*=\s*[\"']|api_key\s*=\s*[\"']|secret\s*=\s*[\"']"; then
-            WARNINGS="${WARNINGS}- ⚠️ **Credential Leak**: 检测到可能的硬编码凭证\n"
-            WARNING_COUNT=$((WARNING_COUNT + 1))
-          fi
-          
-          if [ -n "$WARNINGS" ]; then
-            echo "has_warnings=true" >> $GITHUB_OUTPUT
-            echo "warning_count=$WARNING_COUNT" >> $GITHUB_OUTPUT
-            echo "$WARNINGS" >> /tmp/rule_report.md
-          else
-            echo "has_warnings=false" >> $GITHUB_OUTPUT
-            echo "warning_count=0" >> $GITHUB_OUTPUT
-            echo "✅ 未检测到明显的风险模式" >> /tmp/rule_report.md
-          fi
-          
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/rule_report.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      # ==================== 第二阶段：AI 深度分析 ====================
-      - name: AI-powered deep analysis
-        id: ai
-        if: env.BAILIAN_API_KEY != ''
-        run: |
-          # 准备 AI 分析的 prompt
-          cat > /tmp/ai_prompt.txt << 'PROMPT_EOF'
-          你是一个代码审查专家，专门分析代码变更是否会触发历史问题。
-
-          ## 历史问题知识库
-          PROMPT_EOF
-          
-          cat /tmp/knowledge.md >> /tmp/ai_prompt.txt 2>/dev/null || echo "暂无历史知识库" >> /tmp/ai_prompt.txt
-          
-          cat >> /tmp/ai_prompt.txt << 'PROMPT_EOF'
-
-          ## 本次变更的文件
-          PROMPT_EOF
-          
-          cat /tmp/changed_files.txt >> /tmp/ai_prompt.txt
-          
-          cat >> /tmp/ai_prompt.txt << 'PROMPT_EOF'
-
-          ## 代码变更内容
-          PROMPT_EOF
-          
-          # 限制 diff 大小，避免超出 token 限制
-          head -2000 /tmp/diff.txt >> /tmp/ai_prompt.txt
-          
-          cat >> /tmp/ai_prompt.txt << 'PROMPT_EOF'
-
-          ## 分析要求
-          请分析以上代码变更，回答以下问题：
-
-          1. **风险等级**: 高/中/低/无
-          2. **潜在问题**: 列出可能触发历史问题的代码模式
-          3. **具体位置**: 指出有问题的代码行
-          4. **修复建议**: 简要说明如何修复
-          5. **关联 postmortem**: 指出与哪个历史问题最相关
-
-          请以 Markdown 格式输出，简洁明了。
-          PROMPT_EOF
-          
-          # 调用百炼 API
-          echo "调用百炼 API 进行深度分析..."
-          
-          RESPONSE=$(curl -s -X POST "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" \
-            -H "Authorization: Bearer $BAILIAN_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"model\": \"$BAILIAN_MODEL\",
-              \"messages\": [
-                {\"role\": \"system\", \"content\": \"你是代码审查专家，专注于识别可能导致历史问题重演的代码模式。\"},
-                {\"role\": \"user\", \"content\": $(cat /tmp/ai_prompt.txt | jq -Rs .)}
-              ],
-              \"temperature\": 0.3,
-              \"max_tokens\": 2000
-            }")
-          
-          # 提取 AI 响应
-          AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // "AI 分析失败"')
-          
-          echo "## AI 深度分析" > /tmp/ai_report.md
-          echo "" >> /tmp/ai_report.md
-          echo "$AI_RESPONSE" >> /tmp/ai_report.md
-          
-          # 判断 AI 是否发现风险
-          if echo "$AI_RESPONSE" | grep -qiE "高风险|high risk|严重|critical"; then
-            echo "ai_risk=high" >> $GITHUB_OUTPUT
-          elif echo "$AI_RESPONSE" | grep -qiE "中风险|medium risk|中等|moderate"; then
-            echo "ai_risk=medium" >> $GITHUB_OUTPUT
-          elif echo "$AI_RESPONSE" | grep -qiE "低风险|low risk|轻微|minor"; then
-            echo "ai_risk=low" >> $GITHUB_OUTPUT
-          else
-            echo "ai_risk=none" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/ai_report.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      # ==================== 合并报告 ====================
-      - name: Generate final report
-        id: final
-        run: |
-          COMMITS=$(cat /tmp/commits.txt)
-          
-          cat > /tmp/final_report.md << EOF
-          ## 🔍 Postmortem Check Results
-          
-          ### 📋 变更统计
-          - **文件数**: $(wc -l < /tmp/changed_files.txt)
-          - **提交数**: $(wc -l < /tmp/commits.txt)
-          - **Diff 大小**: $(numfmt --to=iec ${{ steps.changed.outputs.diff_size }})
-          
-          ### 📝 提交列表
-          \`\`\`
-          $COMMITS
-          \`\`\`
-          
-          ---
-          
-          EOF
-          
-          # 添加规则检测报告
-          cat /tmp/rule_report.md >> /tmp/final_report.md
-          echo "" >> /tmp/final_report.md
-          
-          # 添加 AI 分析报告 (如果有)
-          if [ -f /tmp/ai_report.md ]; then
-            echo "---" >> /tmp/final_report.md
-            echo "" >> /tmp/final_report.md
-            cat /tmp/ai_report.md >> /tmp/final_report.md
-          fi
-          
-          # 汇总风险等级
-          RULE_WARNINGS=${{ steps.rules.outputs.warning_count || 0 }}
-          AI_RISK="${{ steps.ai.outputs.ai_risk || 'none' }}"
-          
-          echo "" >> /tmp/final_report.md
-          echo "---" >> /tmp/final_report.md
-          echo "" >> /tmp/final_report.md
-          echo "### 📊 风险汇总" >> /tmp/final_report.md
-          echo "" >> /tmp/final_report.md
-          echo "| 检测类型 | 结果 |" >> /tmp/final_report.md
-          echo "|----------|------|" >> /tmp/final_report.md
-          echo "| 规则检测 | $RULE_WARNINGS 个警告 |" >> /tmp/final_report.md
-          echo "| AI 分析 | $AI_RISK 风险 |" >> /tmp/final_report.md
-          
-          if [ "$RULE_WARNINGS" -gt 0 ] || [ "$AI_RISK" = "high" ]; then
-            echo "" >> /tmp/final_report.md
-            echo "⚠️ **建议**: 请仔细审查上述问题后再合并。" >> /tmp/final_report.md
-            echo "has_issues=true" >> $GITHUB_OUTPUT
-          else
-            echo "" >> /tmp/final_report.md
-            echo "✅ **结论**: 代码变更看起来安全，可以继续审查。" >> /tmp/final_report.md
-            echo "has_issues=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/final_report.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: Run OpenCode Postmortem Check
+        uses: anomalyco/opencode/github@latest
+        env:
+          # 使用百炼或其他 OpenAI 兼容 API
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
         with:
-          script: |
-            const report = `${{ steps.final.outputs.report }}`;
+          prompt: |
+            你是代码审查专家。请分析这个 PR 的代码变更是否会触发历史问题。
             
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
+            ## 任务
+            1. 读取 ./postmortem/ 目录下的所有报告
+            2. 分析本次 PR 的代码变更 (git diff)
+            3. 检查是否触发了历史问题模式
+            4. 在 PR 中评论分析结果
             
-            const botComment = comments.find(c => 
-              c.user.login === 'github-actions[bot]' && 
-              c.body.includes('Postmortem Check Results')
-            );
+            ## 输出格式
+            使用 Markdown 格式输出：
+            - 🔴 高风险问题
+            - 🟡 中风险问题  
+            - 🟢 低风险/无问题
             
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: report
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: report
-              });
-            }
+            每个问题要说明：
+            - 问题类型
+            - 触发的 postmortem 报告
+            - 具体代码位置
+            - 修复建议
 
-      - name: Summary
-        run: |
-          cat /tmp/final_report.md >> $GITHUB_STEP_SUMMARY
+  # 方式2: 手动触发 - 评论 /opencode review-postmortem
+  review-on-comment:
+    if: |
+      github.event_name == 'issue_comment' && 
+      github.event.issue.pull_request && 
+      contains(github.event.comment.body, '/opencode') &&
+      contains(github.event.comment.body, 'postmortem')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run OpenCode Analysis
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+        with:
+          prompt: |
+            用户请求: ${{ github.event.comment.body }}
+            
+            请执行以下任务：
+            1. 分析当前 PR 的代码变更
+            2. 对照 ./postmortem/ 目录下的历史问题报告
+            3. 检查是否有代码触发了历史问题模式
+            4. 提供详细的分析报告和修复建议
+            
+            输出 Markdown 格式的分析结果。
