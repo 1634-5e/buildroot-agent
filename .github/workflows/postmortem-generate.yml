@@ -35,7 +35,7 @@ jobs:
       - name: Run OpenCode Postmortem Generator
         uses: anomalyco/opencode/github@v1
         with:
-          model: openai/gpt-4
+          model: openai/glm-5
           prompt: |
             你是软件工程 postmortem 分析专家。
             
@@ -63,4 +63,5 @@ jobs:
                - 分支名: `postmortem/<tag>`
                - 提交变更
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
