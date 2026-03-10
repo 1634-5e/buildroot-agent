@@ -32,36 +32,36 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure OpenCode for 百炼
+      - name: Configure OpenCode for Z.AI
         env:
-          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
           echo '{
             "provider": {
-              "bailian": {
+              "zai": {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "百炼",
+                "name": "Z.AI",
                 "options": {
-                  "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                  "apiKey": "'"$BAILIAN_API_KEY"'"
+                  "baseURL": "https://api.z.ai/api/coding/paas/v4",
+                  "apiKey": "'"$ZAI_API_KEY"'"
                 },
                 "models": {
-                  "glm-5": {
-                    "name": "GLM-5"
+                  "glm-4.7": {
+                    "name": "GLM-4.7"
                   }
                 }
               }
             },
-            "model": "bailian/glm-5"
+            "model": "zai/glm-4.7"
           }' > ~/.config/opencode/opencode.json
-          echo "Config file created:"
+          echo "Config file created"
           cat ~/.config/opencode/opencode.json
 
       - name: Run OpenCode Postmortem Generator
         uses: anomalyco/opencode/github@latest
         with:
-          model: bailian/glm-5
+          model: zai/glm-4.7
           prompt: |
             你是软件工程 postmortem 分析专家。
             
