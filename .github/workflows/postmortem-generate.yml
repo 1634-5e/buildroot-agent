@@ -36,7 +36,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
           OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+          MODEL: qwen-coder-plus
         with:
           prompt: |
             你是软件工程 postmortem 分析专家。
