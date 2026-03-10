@@ -1,0 +1,200 @@
+# Release 前检查：分析 commits 是否会触发历史 postmortem
+# 在创建 Release 时自动运行
+
+name: Postmortem Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Base ref (e.g., main)'
+        required: false
+        default: 'main'
+      head_ref:
+        description: 'Head ref (e.g., feature-branch)'
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-postmortem-triggers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史
+
+      - name: Get changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BASE="${{ inputs.base_ref }}"
+            HEAD="${{ inputs.head_ref || github.sha }}"
+          else
+            BASE="${{ github.base_ref }}"
+            HEAD="${{ github.head_ref }}"
+          fi
+          
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+          echo "head=$HEAD" >> $GITHUB_OUTPUT
+          
+          # 获取变更的文件
+          git diff --name-only origin/$BASE...$HEAD > /tmp/changed_files.txt
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # 获取 commits 信息
+          git log --oneline origin/$BASE...$HEAD > /tmp/commits.txt
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/commits.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check for postmortem triggers
+        id: check
+        run: |
+          echo "## 🔍 Postmortem Trigger Analysis" > /tmp/report.md
+          echo "" >> /tmp/report.md
+          
+          # 读取变更文件
+          CHANGED_FILES=$(cat /tmp/changed_files.txt)
+          COMMITS=$(cat /tmp/commits.txt)
+          
+          WARNINGS=""
+          WARNING_COUNT=0
+          
+          # 检查模式 1: XSS 相关
+          if echo "$CHANGED_FILES" | grep -qE "(app\.js|utils\.js|.*\.html)" && \
+             git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "innerHTML"; then
+            WARNINGS="${WARNINGS}### ⚠️ XSS Risk Detected\n\n"
+            WARNINGS="${WARNINGS}- Files changed: \`$(echo "$CHANGED_FILES" | grep -E "(app\.js|utils\.js|.*\.html)" | tr '\n' ' ')\`\n"
+            WARNINGS="${WARNINGS}- Pattern: \`innerHTML\` usage detected\n"
+            WARNINGS="${WARNINGS}- Reference: [security-vulnerabilities.md](./postmortem/2026-03-10-security-vulnerabilities.md)\n\n"
+            WARNING_COUNT=$((WARNING_COUNT + 1))
+          fi
+          
+          # 检查模式 2: 并发相关
+          if echo "$CHANGED_FILES" | grep -qE "(connection\.py|manager.*\.py)" && \
+             git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -qE "self\.[a-z_]+\s*=" | \
+             ! git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "asyncio.Lock\|_lock"; then
+            WARNINGS="${WARNINGS}### ⚠️ Concurrency Risk Detected\n\n"
+            WARNINGS="${WARNINGS}- Files changed: \`$(echo "$CHANGED_FILES" | grep -E "(connection\.py|manager.*\.py)" | tr '\n' ' ')\`\n"
+            WARNINGS="${WARNINGS}- Pattern: Shared state modification without lock protection\n"
+            WARNINGS="${WARNINGS}- Reference: [concurrency-race-conditions.md](./postmortem/2026-03-10-concurrency-race-conditions.md)\n\n"
+            WARNING_COUNT=$((WARNING_COUNT + 1))
+          fi
+          
+          # 检查模式 3: 资源泄漏相关
+          if echo "$CHANGED_FILES" | grep -qE "(websocket.*\.py|pty.*\.py)" && \
+             git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "except.*:" && \
+             ! git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "remove_\|cleanup\|close"; then
+            WARNINGS="${WARNINGS}### ⚠️ Resource Leak Risk Detected\n\n"
+            WARNINGS="${WARNINGS}- Files changed: \`$(echo "$CHANGED_FILES" | grep -E "(websocket.*\.py|pty.*\.py)" | tr '\n' ' ')\`\n"
+            WARNINGS="${WARNINGS}- Pattern: Exception handling without resource cleanup\n"
+            WARNINGS="${WARNINGS}- Reference: [resource-leaks.md](./postmortem/2026-03-10-resource-leaks.md)\n\n"
+            WARNING_COUNT=$((WARNING_COUNT + 1))
+          fi
+          
+          # 检查模式 4: 固定延迟
+          if git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -qE "sleep\([0-9]+\)|setTimeout.*[0-9]{3,}"; then
+            WARNINGS="${WARNINGS}### ⚠️ Fixed Delay Detected\n\n"
+            WARNINGS="${WARNINGS}- Pattern: \`sleep()\` or \`setTimeout()\` with fixed delay\n"
+            WARNINGS="${WARNINGS}- Issue: May cause CI instability\n"
+            WARNINGS="${WARNINGS}- Reference: [ci-cd-issues.md](./postmortem/2026-03-10-ci-cd-issues.md)\n\n"
+            WARNING_COUNT=$((WARNING_COUNT + 1))
+          fi
+          
+          # 检查模式 5: C 内存安全
+          if echo "$CHANGED_FILES" | grep -qE "\.c$" && \
+             git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "free(" && \
+             ! git diff origin/${{ steps.changed.outputs.base }}...${{ steps.changed.outputs.head }} | grep -q "= NULL"; then
+            WARNINGS="${WARNINGS}### ⚠️ Memory Safety Risk Detected\n\n"
+            WARNINGS="${WARNINGS}- Pattern: \`free()\` without setting pointer to NULL\n"
+            WARNINGS="${WARNINGS}- Risk: Use-after-free or double-free\n"
+            WARNINGS="${WARNINGS}- Reference: [security-vulnerabilities.md](./postmortem/2026-03-10-security-vulnerabilities.md)\n\n"
+            WARNING_COUNT=$((WARNING_COUNT + 1))
+          fi
+          
+          # 生成报告
+          if [ -n "$WARNINGS" ]; then
+            echo "has_warnings=true" >> $GITHUB_OUTPUT
+            echo "warning_count=$WARNING_COUNT" >> $GITHUB_OUTPUT
+            
+            echo "### 📋 Changed Commits" >> /tmp/report.md
+            echo "\`\`\`" >> /tmp/report.md
+            echo "$COMMITS" >> /tmp/report.md
+            echo "\`\`\`" >> /tmp/report.md
+            echo "" >> /tmp/report.md
+            
+            echo "### ⚠️ Warnings ($WARNING_COUNT)" >> /tmp/report.md
+            echo "" >> /tmp/report.md
+            echo -e "$WARNINGS" >> /tmp/report.md
+            
+            echo "" >> /tmp/report.md
+            echo "---" >> /tmp/report.md
+            echo "💡 **Action Required**: Please review the above warnings and ensure proper handling." >> /tmp/report.md
+          else
+            echo "has_warnings=false" >> $GITHUB_OUTPUT
+            echo "warning_count=0" >> $GITHUB_OUTPUT
+            
+            echo "✅ **No postmortem triggers detected**" >> /tmp/report.md
+            echo "" >> /tmp/report.md
+            echo "All changes look safe based on historical postmortem analysis." >> /tmp/report.md
+          fi
+          
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/report.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ steps.check.outputs.report }}`;
+            const hasWarnings = '${{ steps.check.outputs.has_warnings }}' === 'true';
+            const warningCount = parseInt('${{ steps.check.outputs.warning_count }}') || 0;
+            
+            const body = `## 🔍 Postmortem Check Results\n\n${report}`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(c => 
+              c.user.type === 'Bot' && 
+              c.body.includes('Postmortem Check Results')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Fail if critical warnings
+        if: steps.check.outputs.has_warnings == 'true'
+        run: |
+          echo "::warning::Postmortem check found ${{ steps.check.outputs.warning_count }} potential issue(s)"
+          # 不阻止合并，只是警告
+          # 如果需要阻止，取消下面注释
+          # exit 1
