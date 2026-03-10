@@ -33,7 +33,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run OpenCode Postmortem Generator
-        uses: anomalyco/opencode/github@v1
+        uses: anomalyco/opencode/github@latest
         with:
           model: openai/glm-5
           prompt: |
