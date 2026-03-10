@@ -271,11 +271,13 @@ export function renderEditorTabs() {
         const icon = getFileIcon(tab.name)
         const displayName = tab.name.length > 25 ? tab.name.substring(0, 22) + '...' : tab.name
 
-        html += `<div class="editor-tab ${isActive ? 'active' : ''}" data-path="${path}" onclick="switchToTab('${path}')">
+        const safeName = escapeHtml(displayName)
+        const safePath = escapeHtml(path)
+        html += `<div class="editor-tab ${isActive ? 'active' : ''}" data-path="${safePath}" onclick="switchToTab('${safePath}')">
             <span>${icon}</span>
-            <span class="tab-name">${displayName}</span>
+            <span class="tab-name">${safeName}</span>
             ${tab.modified ? '<span class="tab-modified"></span>' : ''}
-            <span class="tab-close" onclick="event.stopPropagation(); closeEditorTab('${path}')">×</span>
+            <span class="tab-close" onclick="event.stopPropagation(); closeEditorTab('${safePath}')">×</span>
         </div>`
     })
 
@@ -542,13 +544,14 @@ export function showFileConflictDialog(error) {
         div.id = 'fileConflictDialog'
         div.className = 'modal-overlay'
         div.style.cssText = 'display: flex;'
+        const safeError = escapeHtml(error || '文件已被其他用户修改')
         div.innerHTML = `
             <div class="modal" style="max-width: 450px;">
                 <div class="modal-header">
                     <div class="modal-title">⚠️ 文件冲突</div>
                 </div>
                 <div class="modal-body">
-                    <p id="fileConflictError" style="color: var(--text-primary); margin-bottom: 16px;">${error || '文件已被其他用户修改'}</p>
+                    <p id="fileConflictError" style="color: var(--text-primary); margin-bottom: 16px;">${safeError}</p>
                     <p style="color: var(--text-muted); font-size: 13px;">选择是否覆盖服务器上的文件？</p>
                 </div>
                 <div class="modal-footer">
@@ -1379,11 +1382,12 @@ export function renderPingResults() {
         const statusIcon = getStatusIcon(result.status)
         const statusClass = getStatusClass(result.status)
         const statusText = getStatusText(result.status)
+        const safeIp = escapeHtml(ip)
 
         html += `
             <div class="ping-result-card">
                 <div class="ping-result-header">
-                    <span class="ping-result-ip">${ip}</span>
+                    <span class="ping-result-ip">${safeIp}</span>
                     <span class="ping-result-status ${statusClass}">${statusIcon} ${statusText}</span>
                 </div>
                 <div class="ping-result-details">
@@ -1557,16 +1561,18 @@ export function renderDeviceList() {
         return
     }
 
-    list.innerHTML = filtered.map(device => `
-        <div class="device-card ${currentDevice?.device_id === device.device_id ? 'active' : ''}"
-             onclick="selectDevice('${device.device_id}')">
+    list.innerHTML = filtered.map(device => {
+        const safeDeviceId = escapeHtml(device.device_id)
+        const safeDeviceName = escapeHtml(device.name || device.device_id)
+        return `<div class="device-card ${currentDevice?.device_id === device.device_id ? 'active' : ''}"
+             onclick="selectDevice('${safeDeviceId}')">
             <div class="device-card-header">
                 <div class="device-avatar">📱</div>
                 <div class="device-info">
-                    <h4>${device.name || device.device_id}</h4>
+                    <h4>${safeDeviceName}</h4>
                     <div class="device-status">在线</div>
                 </div>
-                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${device.device_id}')" title="编辑设备">✏️</button>
+                <button class="btn btn-icon" onclick="event.stopPropagation(); openDeviceEditModal('${safeDeviceId}')" title="编辑设备">✏️</button>
             </div>
             <div class="device-metrics">
                 <div class="device-metric">
@@ -1584,11 +1590,11 @@ export function renderDeviceList() {
             </div>
             ${device.tags && device.tags.length > 0 ? `
                 <div class="device-tags" style="margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
-                    ${device.tags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${tag}</span>`).join('')}
+                    ${device.tags.map(tag => `<span class="device-tag" style="font-size: 11px; padding: 2px 6px; background: var(--bg-tertiary); border-radius: 4px; color: var(--text-muted);">${escapeHtml(tag)}</span>`).join('')}
                 </div>
             ` : ''}
-        </div>
-    `).join('')
+        </div>`
+    }).join('')
 }
 
 export function filterDevices() {
@@ -1898,7 +1904,7 @@ export function renderTreeItem(item, parentPath, index) {
     div.innerHTML = `
         ${toggleHtml}
         <span class="tree-icon">${iconHtml}</span>
-        <span class="tree-label">${item.name}</span>
+        <span class="tree-label">${escapeHtml(item.name)}</span>
     `
 
     if (isDir) {
