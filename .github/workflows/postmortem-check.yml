@@ -24,10 +24,59 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Configure OpenCode for 百炼
+        run: |
+          mkdir -p ~/.config/opencode
+          cat > ~/.config/opencode/opencode.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "bailian": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "百炼",
+                "options": {
+                  "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+                },
+                "models": {
+                  "glm-5": {
+                    "name": "GLM-5"
+                  }
+                }
+              }
+            },
+            "model": "bailian/glm-5"
+          }
+          EOF
+
+      - name: Configure OpenCode for 百炼
+        run: |
+          mkdir -p ~/.config/opencode
+          cat > ~/.config/opencode/opencode.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "bailian": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "百炼",
+                "options": {
+                  "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                  "apiKey": "${{ secrets.BAILIAN_API_KEY }}"
+                },
+                "models": {
+                  "glm-5": {
+                    "name": "GLM-5"
+                  }
+                }
+              }
+            },
+            "model": "bailian/glm-5"
+          }
+          EOF
+
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
         with:
-          model: openai/glm-5
+          model: bailian/glm-5
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
@@ -52,8 +101,7 @@ jobs:
             
             关键原则：优先自动修复，如果无法自动修复则清晰说明。
         env:
-          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
 
       - name: Create Fix PR if needed
         if: failure()
