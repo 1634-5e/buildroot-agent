@@ -27,7 +27,7 @@ jobs:
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
         with:
-          model: bailian/qwen-coder-plus
+          model: bailian/glm-4
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
