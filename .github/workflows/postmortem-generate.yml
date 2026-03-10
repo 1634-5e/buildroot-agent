@@ -33,9 +33,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure OpenCode for 百炼
+        env:
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
         run: |
           mkdir -p ~/.config/opencode
-          cat > ~/.config/opencode/opencode.json << 'EOF'
+          cat > ~/.config/opencode/opencode.json << EOF
           {
             "$schema": "https://opencode.ai/config.json",
             "provider": {
@@ -44,7 +46,7 @@ jobs:
                 "name": "百炼",
                 "options": {
                   "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                  "apiKey": "{env:BAILIAN_API_KEY}"
+                  "apiKey": "$BAILIAN_API_KEY"
                 },
                 "models": {
                   "glm-5": {
@@ -87,5 +89,3 @@ jobs:
             5. 创建 PR
                - 分支名: `postmortem/<tag>`
                - 提交变更
-        env:
-          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
