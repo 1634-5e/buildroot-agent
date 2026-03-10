@@ -28,6 +28,7 @@ jobs:
         uses: anomalyco/opencode/github@latest
         with:
           model: bailian/glm-5
+          use_github_token: true
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             

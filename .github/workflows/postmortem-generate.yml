@@ -36,6 +36,7 @@ jobs:
         uses: anomalyco/opencode/github@latest
         with:
           model: bailian/glm-5
+          use_github_token: true
           prompt: |
             你是软件工程 postmortem 分析专家。
             
