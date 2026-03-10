@@ -34,7 +34,7 @@ jobs:
       - name: Run OpenCode Postmortem Generator
         uses: anomalyco/opencode/github@latest
         with:
-          model: glm-5
+          model: alibaba/qwen-coder-plus
           prompt: |
             你是软件工程 postmortem 分析专家。
             
