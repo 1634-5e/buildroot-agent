@@ -29,7 +29,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
           OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
         with:
-          model: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+          model: openai/${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             
