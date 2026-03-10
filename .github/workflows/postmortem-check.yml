@@ -35,7 +35,8 @@ jobs:
                 "npm": "@ai-sdk/openai-compatible",
                 "name": "百炼",
                 "options": {
-                  "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+                  "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                  "apiKey": "{env:BAILIAN_API_KEY}"
                 },
                 "models": {
                   "glm-5": {
