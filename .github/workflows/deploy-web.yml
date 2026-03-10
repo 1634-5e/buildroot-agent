@@ -1,0 +1,59 @@
+# 部署前端到 GitHub Pages
+
+name: Deploy Web to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['buildroot-web/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: buildroot-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./buildroot-web
+        run: npm ci
+
+      - name: Build
+        working-directory: ./buildroot-web
+        run: npm run build
+        env:
+          # 配置后端 API 地址
+          VITE_API_URL: https://buildroot-server.onrender.com
+          VITE_WS_URL: wss://buildroot-server.onrender.com
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./buildroot-web/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
