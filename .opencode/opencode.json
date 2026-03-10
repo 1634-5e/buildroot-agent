@@ -5,24 +5,15 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Bailian (DashScope)",
       "options": {
-        "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "baseURL": "https://coding.dashscope.aliyuncs.com/v1",
         "apiKey": "{env:BAILIAN_API_KEY}"
       },
       "models": {
-        "qwen-coder-plus": {
-          "name": "Qwen Coder Plus"
-        },
-        "qwen-coder-turbo": {
-          "name": "Qwen Coder Turbo"
-        },
-        "qwen-plus": {
-          "name": "Qwen Plus"
-        },
-        "qwen-turbo": {
-          "name": "Qwen Turbo"
+        "glm-5": {
+          "name": "GLM-5"
         }
       }
     }
   },
-  "model": "bailian/qwen-coder-plus"
+  "model": "bailian/glm-5"
 }
