@@ -24,9 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ci
     steps:
-      - name: Checkout
+      - name: Checkout main branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -50,7 +51,8 @@ jobs:
             ## 步骤
             1. 获取 PR 详情
                - 运行: `gh pr view <pr-number> --json title,body,commits,files`
-               - 运行: `git diff origin/main~1..origin/main` 查看合并后的变更
+               - 运行: `git log -1 --pretty=format:"%H %s"` 获取最新合并的 commit
+               - 运行: `git show HEAD --stat` 查看合并的变更
             
             2. 分析变更内容
                - 识别修复的问题类型
