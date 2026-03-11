@@ -1,5 +1,5 @@
 # Postmortem Trigger - PR 合并后触发 Postmortem Generator
-# 通过 repository_dispatch 解耦，避免 opencode checkout 已删除的 PR 分支
+# 通过 workflow_dispatch 触发，避免 opencode 不支持 repository_dispatch
 
 name: Postmortem Trigger
 
@@ -20,18 +20,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 构建完整的 dispatch 请求体，用 --input 传递 JSON 对象
-          jq -n \
-            --argjson pr_num "${{ github.event.pull_request.number }}" \
-            --arg pr_title "${{ github.event.pull_request.title }}" \
-            --arg pr_url "${{ github.event.pull_request.html_url }}" \
-            '{
-              event_type: "postmortem-generate",
-              client_payload: {
-                pr_number: $pr_num,
-                pr_title: $pr_title,
-                pr_url: $pr_url
-              }
-            }' | gh api repos/${{ github.repository }}/dispatches --input -
+          gh workflow run postmortem-generate.yml \
+            -f pr_number="${{ github.event.pull_request.number }}" \
+            -f pr_title="${{ github.event.pull_request.title }}" \
+            -f pr_url="${{ github.event.pull_request.html_url }}"
           
           echo "✅ Postmortem Generator triggered for PR #${{ github.event.pull_request.number }}"
