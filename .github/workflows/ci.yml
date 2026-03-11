@@ -177,22 +177,13 @@ jobs:
 
           ## 前置检查（必须先执行）
 
-          1. 获取 PR 已有评论:
+          1. 获取 PR 已有评论和当前 commit:
              ```bash
              gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json comments
-             ```
-          
-          2. 获取当前 commit SHA:
-             ```bash
              git rev-parse HEAD
              ```
           
-          3. 在评论中搜索 `<!-- CHECK_META: {...} -->`，解析 JSON：
-             - `commit`: 对应的 commit SHA
-             - `files_hash`: 变更文件的 hash
-          
-          4. 去重：同 commit 已存在检查结果 → 输出一行并退出 0:
-             `✅ 已审查 (commit abc123)`
+          2. 去重：如果 github-actions 已发过审查评论（"✅ 审查通过" 或 "⚠️"），跳过并退出 0
 
           ## 变更感知路由
 
@@ -239,46 +230,24 @@ jobs:
 
           ## 输出格式（一条评论）
 
-          **纯文档/配置变更：**
+**无需处理：**
           ```
-          ✅ 已审查 — 纯文档变更，无需深入检查
-
-          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:..."} -->
+          ✅ 审查通过
           ```
 
-          **代码变更，无问题：**
+          **发现需处理的问题：**
           ```
-          ✅ 已审查 — 变更文件已检查，未触发历史问题模式
-
-          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:..."} -->
-          ```
-
-          **发现安全问题：**
-          ```
-          ⚠️ 发现问题：[问题类型]
+          ⚠️ [问题类型]：[一句话描述]
 
           - 文件: xxx
-          - 问题: xxx  
           - 建议: xxx
-
-          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:...","issues":1} -->
-          ```
-
-          **修复类 PR（生成 postmortem）：**
-          ```
-          ✅ 已审查 — 安全检查通过，已生成 postmortem 报告
-
-          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:...","postmortem":"2026-03-11-xxx.md"} -->
           ```
 
           ## 禁止
 
-          - ❌ 通过时列废话清单（"无 C 代码变更"、"无 Python 变更"...）
-          - ❌ 每次重复历史问题表格
-          - ❌ 分多条评论输出
-          - ❌ 添加任何链接：opencode session、github run 等
-          - ❌ 添加任何图片：social card、banner 等
-          - ❌ 使用 HTML 标签：`<a>`, `<img>` 等
+          - ❌ 输出多余废话（审查通过就是通过，不需要解释为什么）
+          - ❌ 添加链接、图片、HTML
+          - ❌ 分多条评论
 
           ## 退出码
 
