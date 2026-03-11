@@ -1,8 +1,10 @@
+# Postmortem Generator - 通过 PR 评论触发
+
 name: Postmortem Generator
 
 on:
-  push:
-    branches: [main, refactor/postmortem-workflow]  # TODO: 合并前删掉测试分支
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -11,12 +13,14 @@ permissions:
 
 jobs:
   generate:
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
     environment: ci
     steps:
       - name: Checkout main branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Configure git
@@ -32,22 +36,3 @@ jobs:
         with:
           model: bailian/glm-5
           use_github_token: true
-          prompt: |
-            你是软件工程 postmortem 分析专家。
-            
-            ## 任务
-            分析刚刚合并到 main 的变更，生成复盘报告。
-            
-            ## 获取变更信息
-            1. 获取最新 commit: `git log -1 --pretty=format:"%H %s"`
-            2. 查看变更内容: `git show HEAD --stat`
-            3. 如果是 PR merge，尝试获取 PR 信息: `gh pr list --state merged --limit 1 --json number,title,url`
-            
-            ## 生成报告
-            - 文件名: `postmortem/YYYY-MM-DD-<short-sha>.md`
-            - 包含: 变更概述、影响分析、风险点、建议
-            - 如果是 bug fix，额外包含根因分析和预防措施
-            
-            4. 更新 `postmortem/README.md` 索引
-            
-            5. 创建 PR 分支并提交变更（main 有保护，不能直接 push）

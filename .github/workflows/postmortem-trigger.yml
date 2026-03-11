@@ -1,0 +1,22 @@
+# Postmortem Trigger - PR 合并后通过评论触发 opencode
+
+name: Postmortem Trigger
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  trigger:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment to trigger opencode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body "/opencode 分析这个 PR 的变更，生成 postmortem 报告到 postmortem/ 目录。报告文件名格式：YYYY-MM-DD-pr-${{ github.event.pull_request.number }}.md。包含：变更概述、影响分析、风险点、建议。如果是 bug fix，额外包含根因分析和预防措施。完成后创建 PR 提交报告。"
