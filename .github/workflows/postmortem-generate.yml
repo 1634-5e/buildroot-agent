@@ -2,7 +2,7 @@ name: Postmortem Generator
 
 on:
   push:
-    branches: [main]
+    branches: [main, refactor/postmortem-workflow]  # TODO: 合并前删掉测试分支
 
 permissions:
   contents: write
