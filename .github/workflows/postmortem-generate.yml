@@ -1,9 +1,8 @@
 name: Postmortem Generator
 
 on:
-  workflow_dispatch:  # 测试用，合并前改回 push: branches: [main]
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: write
