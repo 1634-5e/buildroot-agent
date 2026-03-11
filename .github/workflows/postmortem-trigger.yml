@@ -20,15 +20,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 使用 jq 安全构建 JSON，避免 JSON 注入风险
-          payload=$(jq -n \
+          # 构建完整的 dispatch 请求体，用 --input 传递 JSON 对象
+          jq -n \
             --argjson pr_num "${{ github.event.pull_request.number }}" \
             --arg pr_title "${{ github.event.pull_request.title }}" \
             --arg pr_url "${{ github.event.pull_request.html_url }}" \
-            '{pr_number: $pr_num, pr_title: $pr_title, pr_url: $pr_url}')
-          
-          gh api repos/${{ github.repository }}/dispatches \
-            -f event_type=postmortem-generate \
-            -F client_payload="$payload"
+            '{
+              event_type: "postmortem-generate",
+              client_payload: {
+                pr_number: $pr_num,
+                pr_title: $pr_title,
+                pr_url: $pr_url
+              }
+            }' | gh api repos/${{ github.repository }}/dispatches --input -
           
           echo "✅ Postmortem Generator triggered for PR #${{ github.event.pull_request.number }}"
