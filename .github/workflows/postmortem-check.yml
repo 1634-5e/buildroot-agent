@@ -21,11 +21,9 @@ jobs:
         fetch-depth: 0
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Configure git
-      run: 'git config user.name "github-actions[bot]"
-
+      run: |
+        git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        '
     - name: Run OpenCode Analysis & Auto-Fix
       id: analyze
       uses: anomalyco/opencode/github@latest
@@ -35,51 +33,85 @@ jobs:
       with:
         model: bailian/glm-5
         use_github_token: true
-        prompt: '你是代码安全审查专家。请执行以下任务：
+        prompt: |
+          你是代码安全审查专家。执行审查前必须完成前置检查。
 
+          ## 前置检查（必须先执行）
 
-          ## 任务1: 检测问题
+          1. 获取 PR 已有评论:
+             ```bash
+             gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json comments
+             ```
+          
+          2. 获取当前 commit SHA:
+             ```bash
+             git rev-parse HEAD
+             ```
+          
+          3. 在评论中搜索格式 `<!-- CHECK_META: {...} -->`，解析 JSON：
+             - `check`: 检查类型 (security/postmortem)
+             - `commit`: 对应的 commit SHA
+             - `files_hash`: 变更文件的 hash
+          
+          4. 去重逻辑：
+             - 同 commit + 同检查类型已存在 → 输出一行并退出 0:
+               `✅ 安全审查已有结果 (commit abc123)`
+             - 不同 commit → 继续执行
 
-          1. 读取 ./postmortem/ 目录下的所有历史问题报告
+          ## 变更感知路由
 
-          2. 获取本次 PR 的代码变更: `git diff origin/${{ github.base_ref }}...HEAD`
+          1. 获取本次变更:
+             ```bash
+             git diff origin/${{ github.base_ref }}...HEAD --name-only
+             ```
+          
+          2. 根据变更决定检查范围:
 
-          3. 分析是否有代码触发了历史问题模式（XSS、并发、内存安全、SQL注入等）
+             | 变更类型 | 需执行的检查 |
+             |---------|-------------|
+             | 纯 .md 文件 | 跳过安全审查，输出 `✅ 纯文档变更，无需安全审查` |
+             | 包含 C 代码 | 内存安全 + 并发检查 |
+             | 包含 Python | 并发安全 + 类型检查 |
+             | 包含 JS/TS | XSS + 前端安全 |
+             | 包含 workflow | CI 配置检查 |
 
+          3. 只针对变更文件执行检查，不要扫描整个项目。
 
-          ## 任务2: 如果发现问题，自动修复
+          ## 安全审查（仅当需要时执行）
 
-          如果检测到问题：
+          1. 读取 ./postmortem/ 目录下的历史问题报告
+          2. 检查变更代码是否触发历史问题模式
+          3. 如发现问题，自动修复并提交
 
-          1. 直接修改代码修复问题（但不要修改 .github/workflows/ 目录下的文件）
+          ## 评论格式
 
-          2. 运行测试验证修复
+          **通过时 - 一行搞定:**
+          `✅ 安全审查通过 — 纯文档变更`
 
-          3. 提交修复到当前分支
+          **或:**
+          `✅ 安全审查通过 — 变更文件已检查，未触发历史问题模式`
 
+          **发现问题时 - 简洁报告:**
+          ```
+          ⚠️ 发现问题：[问题类型]
+          
+          - 文件: xxx
+          - 问题: xxx
+          - 建议: xxx
+          
+          <!-- CHECK_META: {"check":"security","commit":"abc123","files_hash":"sha256:..."} -->
+          ```
 
-          ## 任务3: 输出报告并决定退出码
+          **禁止:**
+          - ❌ 通过时列出"无 C 代码变更"等废话
+          - ❌ 每次重复历史问题表格
+          - ❌ 粘贴完整检查清单
 
-          在 PR 中评论分析结果。
+          ## 退出码
 
+          - 无问题或已修复 → exit 0
+          - 需人工处理 → exit 1
 
-          **退出码规则**：
-
-          - 没发现问题，或所有问题已自动修复 -> exit 0
-
-          - 发现需要人工处理的问题 -> exit 1（workflow 将失败并阻止合并）
-
-
-          这确保了：检测到风险问题时，PR 无法合并，必须人工介入。
-
-
-          关键原则：
-
-          - 优先自动修复业务代码
-
-          - .github/workflows/ 文件禁止自动修改
-
-          - 需要人工处理时，明确说明问题并让 workflow 失败'
     - name: Generate Postmortem Report
       if: success()
       uses: anomalyco/opencode/github@latest
@@ -89,5 +121,42 @@ jobs:
       with:
         model: bailian/glm-5
         use_github_token: true
-        prompt: "你是资深 SRE 工程师，负责撰写专业的 postmortem 报告。\n\n## 任务\n1. 获取本次 PR 的所有变更:\n   - 运行 `git diff origin/${{ github.base_ref }}...HEAD` 查看 PR 变更\n   - 运行 `git log origin/${{ github.base_ref }}..HEAD --oneline` 查看所有提交\n2. 分析这些变更是否解决了某类问题（安全漏洞、并发问题、内存安全等）\n3. 如果是问题修复类的 PR，生成一份专业详尽的 postmortem 报告\n   如果是普通功能开发 PR，跳过不生成\n\n## Postmortem 报告格式\n保存到 `./postmortem/YYYY-MM-DD-<brief-title>.md`，内容包括：\n\n### 问题概述\n- 问题类型（安全漏洞/并发问题/内存安全等）\n- 影响范围\n- 触发条件\n\n### 根本原因分析\n- 代码层面的原因\n- 为什么历史检查没能发现\n\n### 修复方案\n- 具体修复代码和原理\n- 相关 commit hash\n\n### 预防措施\n- 代码规范建议\n- 测试覆盖建议\n- Code review 检查点\n\n### 相关链接\n- PR 链接\n- 相关 issue（如有）\n\n4. 将 postmortem 文件提交到当前分支"
+        prompt: |
+          你是 SRE 工程师，负责判断是否需要生成 postmortem 报告。
 
+          ## 前置检查
+
+          1. 获取已有评论，检查是否存在 `<!-- CHECK_META: {"check":"postmortem",...} -->`
+          2. 同 commit 已检查 → 输出 `✅ Postmortem 检查已完成` 并退出 0
+
+          ## 变更分析
+
+          ```bash
+          git diff origin/${{ github.base_ref }}...HEAD --name-only
+          git log origin/${{ github.base_ref }}..HEAD --oneline
+          ```
+
+          ## 快速判断
+
+          变更类型判断：
+          - 纯文档/配置变更 → 输出 `✅ 纯文档变更，无需 postmortem` 并退出 0
+          - 功能开发 PR → 输出 `✅ 功能开发类 PR，无需 postmortem` 并退出 0
+          - Bug 修复/安全修复 → 继续生成报告
+
+          ## Postmortem 报告（仅修复类 PR）
+
+          保存到 `./postmortem/YYYY-MM-DD-<brief-title>.md`：
+
+          ### 问题概述
+          - 问题类型 | 影响范围 | 触发条件
+
+          ### 根因分析
+          - 代码原因 | 为何未被发现
+
+          ### 修复方案
+          - 修复代码 | commit hash
+
+          ### 预防措施
+          - 规范建议 | 测试覆盖 | Review 检查点
+
+          提交到当前分支。
