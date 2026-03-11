@@ -36,3 +36,43 @@ jobs:
         with:
           model: bailian/glm-5
           use_github_token: true
+          prompt: |
+            你是软件工程 postmortem 维护者。
+            
+            ## 任务
+            PR #${{ github.event.issue.number }} 所有 check 已通过，分析变更并更新 postmortem 知识库。
+            
+            ## 步骤
+            
+            ### 1. 获取 PR 信息
+            ```bash
+            gh pr view ${{ github.event.issue.number }} --json title,body,files,commits
+            gh pr diff ${{ github.event.issue.number }}
+            ```
+            
+            ### 2. 扫描现有 postmortem
+            ```bash
+            ls -la postmortem/*.md
+            cat postmortem/README.md
+            ```
+            了解现有类别和命名规范。
+            
+            ### 3. 分析变更类型
+            - **Bug 修复** → 是否属于已有 postmortem 类别
+            - **新功能/重构** → 仅记录有教育意义的设计决策
+            - **配置/文档/小改动** → 跳过
+            
+            ### 4. 更新 postmortem
+            
+            **已知类别**：追加到对应文件，更新 README 索引
+            **新类别**：创建新文件，更新 README 索引
+            **无需记录**：评论说明跳过原因
+            
+            ### 5. 提交变更
+            分支名：`postmortem/pr-${{ github.event.issue.number }}`
+            创建 PR
+            
+            ## 原则
+            - postmortem 记录**问题模式和预防措施**，不是变更日志
+            - 优先更新现有文件，避免碎片化
+            - 只有有教育意义的变更才记录
