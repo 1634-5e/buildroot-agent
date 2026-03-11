@@ -24,6 +24,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
         env:
@@ -42,7 +47,7 @@ jobs:
             
             ## 任务2: 如果发现问题，自动修复
             如果检测到问题：
-            1. 直接修改代码修复问题
+            1. 直接修改代码修复问题（但不要修改 .github/workflows/ 目录下的文件）
             2. 运行测试验证修复
             3. 提交修复到当前分支
             
@@ -52,9 +57,14 @@ jobs:
             - 问题详情和位置
             - 修复状态（已自动修复 / 需要人工处理）
             
-            如果需要人工处理，明确说明问题和建议的修复方案。
+            如果需要修改 workflow 文件，或者无法自动修复，明确说明问题和建议的修复方案。
             
-            关键原则：优先自动修复，如果无法自动修复则清晰说明。
+            **重要**：如果存在需要人工处理的问题，在评论末尾添加一行：
+            > 🔔 @${{ github.event.pull_request.user.login }} 请处理上述问题
+            
+            关键原则：
+            - 优先自动修复业务代码
+            - .github/workflows/ 文件禁止自动修改，需要时提示人工介入
 
       - name: Create Fix PR if needed
         if: failure()
