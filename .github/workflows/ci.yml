@@ -142,8 +142,8 @@ jobs:
         chmod +x scripts/test.sh
         ./scripts/test.sh --list
 
-  # Postmortem 检查 - 作为 CI 的一部分
-  postmortem-check:
+  # PR 审查：安全检查 + Postmortem 管理
+  pr-review:
     needs: [test-server, test-agent, test-web, test-unified]
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -156,15 +156,15 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        ref: main
         fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Configure git
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Run Postmortem Check
+    - name: Run PR Review
       uses: anomalyco/opencode/github@latest
       env:
         BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
@@ -173,54 +173,111 @@ jobs:
         model: bailian/glm-5
         use_github_token: true
         prompt: |
-          你是软件工程 postmortem 检查者。
+          你是 PR 审查助手，负责：安全审查 + Postmortem 管理。只发一条评论。
+
+          ## 前置检查（必须先执行）
+
+          1. 获取 PR 已有评论:
+             ```bash
+             gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json comments
+             ```
           
-          ## 任务
-          分析 PR #${{ github.event.pull_request.number }} 的变更，判断是否需要更新 postmortem 知识库。
+          2. 获取当前 commit SHA:
+             ```bash
+             git rev-parse HEAD
+             ```
           
-          ## 步骤
+          3. 在评论中搜索 `<!-- CHECK_META: {...} -->`，解析 JSON：
+             - `commit`: 对应的 commit SHA
+             - `files_hash`: 变更文件的 hash
           
-          ### 1. 获取 PR 信息
-          ```bash
-          gh pr view ${{ github.event.pull_request.number }} --json title,body,files,commits
-          gh pr diff ${{ github.event.pull_request.number }}
+          4. 去重：同 commit 已存在检查结果 → 输出一行并退出 0:
+             `✅ 已审查 (commit abc123)`
+
+          ## 变更感知路由
+
+          1. 获取变更文件:
+             ```bash
+             git diff origin/${{ github.base_ref }}...HEAD --name-only
+             ```
+          
+          2. 根据变更类型决定检查:
+
+             | 变更类型 | 安全检查 | Postmortem |
+             |---------|---------|-----------|
+             | 纯 .md 文件 | 跳过 | 跳过 |
+             | 纯 workflow | 跳过 | 跳过 |
+             | C 代码 | 内存安全+并发 | 修复类检查 |
+             | Python | 类型+并发 | 修复类检查 |
+             | JS/TS | XSS+前端安全 | 修复类检查 |
+             | 混合 | 按类型组合 | 修复类检查 |
+
+          ## 安全审查（仅当需要时）
+
+          1. 读取 `./postmortem/*.md` 中的历史问题模式
+          2. 只检查变更文件，不扫描全项目
+          3. 发现问题 → 自动修复并提交（不修改 .github/workflows/）
+
+          ## Postmortem 管理
+
+          **需要生成报告的情况：**
+          - Bug 修复类 PR
+          - 安全漏洞修复
+          - 性能问题修复
+
+          **不需要的情况：**
+          - 功能开发
+          - 文档变更
+          - 配置调整
+          - 重构（无行为变更）
+
+          如需生成，创建 `./postmortem/YYYY-MM-DD-<title>.md`，包含：
+          - 问题概述（类型/影响/触发条件）
+          - 根因分析
+          - 修复方案 + commit hash
+          - 预防措施
+
+          ## 输出格式（一条评论）
+
+          **纯文档/配置变更：**
           ```
-          
-          ### 2. 扫描现有 postmortem
-          ```bash
-          ls -la postmortem/*.md 2>/dev/null || echo "No postmortem files"
-          cat postmortem/README.md 2>/dev/null || echo "No README"
+          ✅ 已审查 — 纯文档变更，无需深入检查
+
+          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:..."} -->
           ```
-          
-          ### 3. 判断是否需要更新 postmortem
-          
-          **需要更新的情况：**
-          - Bug 修复 → 追加到相关类别
-          - 有教育意义的架构决策 → 记录设计模式
-          - 性能问题修复 → 记录优化经验
-          - 安全相关修复 → 记录安全模式
-          
-          **不需要更新的情况：**
-          - 纯文档变更
-          - 小型配置调整
-          - 依赖版本更新
-          - 测试用例添加
-          - 代码格式/风格调整
-          
-          ### 4. 执行操作
-          
-          **如果需要更新：**
-          1. 更新对应的 postmortem 文件
-          2. 更新 README 索引（如有）
-          3. 创建分支并提交：`git checkout -b postmortem/pr-${{ github.event.pull_request.number }}`
-          4. 推送并创建 PR 到 main
-          5. 评论原 PR 说明已创建 postmortem PR
-          
-          **如果不需要更新：**
-          评论说明原因，例如：
-          "✅ Postmortem 检查完成。本次变更属于 [文档/配置/测试] 更新，无需更新 postmortem 知识库。"
-          
-          ## 原则
-          - postmortem 记录**问题模式和预防措施**，不是变更日志
-          - 只有有教育意义的变更才记录
-          - 优先更新现有文件，避免碎片化
+
+          **代码变更，无问题：**
+          ```
+          ✅ 已审查 — 变更文件已检查，未触发历史问题模式
+
+          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:..."} -->
+          ```
+
+          **发现安全问题：**
+          ```
+          ⚠️ 发现问题：[问题类型]
+
+          - 文件: xxx
+          - 问题: xxx  
+          - 建议: xxx
+
+          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:...","issues":1} -->
+          ```
+
+          **修复类 PR（生成 postmortem）：**
+          ```
+          ✅ 已审查 — 安全检查通过，已生成 postmortem 报告
+
+          <!-- CHECK_META: {"commit":"abc123","files_hash":"sha256:...","postmortem":"2026-03-11-xxx.md"} -->
+          ```
+
+          ## 禁止
+
+          - ❌ 通过时列废话清单（"无 C 代码变更"、"无 Python 变更"...）
+          - ❌ 每次重复历史问题表格
+          - ❌ 分多条评论输出
+
+          ## 退出码
+
+          - 无问题或已修复 → exit 0
+          - 需人工处理 → exit 1（阻止合并）
