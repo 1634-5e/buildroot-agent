@@ -1,19 +1,16 @@
-# Postmortem Generator - 使用 OpenCode 自动生成复盘报告
-# 在 Release 发布后自动运行
+# Postmortem Generator - PR 合并后自动生成复盘报告
 
 name: Postmortem Generator
 
 on:
-  release:
-    types: [published]
+  pull_request:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
     inputs:
-      from_tag:
-        description: 'From tag (previous release)'
-        required: false
-      to_tag:
-        description: 'To tag (current release)'
-        required: false
+      pr_number:
+        description: 'PR number to analyze'
+        required: true
 
 permissions:
   contents: write
@@ -21,10 +18,11 @@ permissions:
   id-token: write
 
 jobs:
-  # Release 后自动生成
-  generate-on-release:
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+  # PR 合并后自动生成
+  generate-on-pr-merged:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    environment: ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,59 +30,43 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure OpenCode for Z.AI
-        env:
-          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
-        run: |
-          mkdir -p ~/.config/opencode
-          echo '{
-            "provider": {
-              "zai": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "Z.AI",
-                "options": {
-                  "baseURL": "https://api.z.ai/api/coding/paas/v4",
-                  "apiKey": "'"$ZAI_API_KEY"'"
-                },
-                "models": {
-                  "glm-4.7": {
-                    "name": "GLM-4.7"
-                  }
-                }
-              }
-            },
-            "model": "zai/glm-4.7"
-          }' > ~/.config/opencode/opencode.json
-          echo "Config file created"
-          cat ~/.config/opencode/opencode.json
-
       - name: Run OpenCode Postmortem Generator
         uses: anomalyco/opencode/github@latest
+        env:
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: zai/glm-4.7
+          model: bailian/glm-5
+          use_github_token: true
           prompt: |
             你是软件工程 postmortem 分析专家。
             
             ## 任务
-            分析本次 Release 中的所有 fix commits，生成一份详尽的 postmortem 报告。
+            分析本次 PR 的变更，生成一份详尽的 postmortem 报告。
+            
+            ## 获取 PR 信息
+            PR Number: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
             
             ## 步骤
-            1. 获取本次 Release 的版本号和范围
-               - 运行: `git describe --tags --abbrev=0` 获取当前 tag
-               - 运行: `git tag --sort=-version:refname | head -2` 获取上一个 tag
-               - 运行: `git log <prev-tag>..<curr-tag> --oneline --grep="fix"` 获取 fix commits
+            1. 获取 PR 详情
+               - 运行: `gh pr view <pr-number> --json title,body,commits,files`
+               - 运行: `git diff origin/main~1..origin/main` 查看合并后的变更
             
-            2. 分析每个 fix commit
-               - 运行: `git show <commit-hash>` 查看详细变更
-               - 提取问题类型、根因、修复方案
+            2. 分析变更内容
+               - 识别修复的问题类型
+               - 分析根因和解决方案
+               - 检测是否涉及安全、性能、并发等典型问题模式
             
             3. 生成 postmortem 报告
-               - 文件名: `postmortem/YYYY-MM-DD-release-<tag>.md`
+               - 文件名: `postmortem/YYYY-MM-DD-pr-<pr-number>.md`
                - 包含: 问题概述、根因分析、修复方案、预防措施、检测模式
+               - 如果 PR 只是功能添加而非修复，生成变更影响分析报告
             
             4. 更新索引
                - 更新 `postmortem/README.md` 中的报告列表
             
             5. 创建 PR
-               - 分支名: `postmortem/<tag>`
-               - 提交变更
+               - 分支名: `postmortem/pr-<pr-number>`
+               - 提交变更并创建 PR 到 main
+            
+            注意：由于 main 分支有 ruleset 保护，你需要创建新分支并提交 PR，而不是直接 push 到 main。
