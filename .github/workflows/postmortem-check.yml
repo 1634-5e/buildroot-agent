@@ -16,6 +16,7 @@ permissions:
 jobs:
   check-postmortem-triggers:
     runs-on: ubuntu-latest
+    environment: ci
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,10 +27,11 @@ jobs:
       - name: Run OpenCode Analysis & Auto-Fix
         uses: anomalyco/opencode/github@latest
         env:
-          OPENAI_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-          OPENAI_BASE_URL: https://dashscope.aliyuncs.com/compatible-mode/v1
-          OPENCODE_MODEL: ${{ secrets.BAILIAN_MODEL || 'qwen-coder-plus' }}
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          model: bailian/glm-5
+          use_github_token: true
           prompt: |
             你是代码安全审查专家。请执行以下任务：
             

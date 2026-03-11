@@ -2,6 +2,12 @@
 // Main Entry Point - Vite + ES Modules
 // ============================================
 
+// Import Mock API (开发环境启用)
+import { startMockAPI } from './mocks/browser.js'
+
+// 启动 Mock API（如果配置了 VITE_USE_MOCK=true）
+startMockAPI().catch(console.error)
+
 // Import xterm.js, addons and CSS
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'

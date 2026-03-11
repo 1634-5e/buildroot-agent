@@ -1,0 +1,34 @@
+# Render 部署配置
+# 部署后端 + Agent 到 Render
+
+services:
+  # 1. 后端 Web Service
+  - type: web
+    name: buildroot-server
+    runtime: python
+    plan: free
+    rootDir: buildroot-server
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: |
+      uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: AGENT_MODE
+        value: cloud  # 标记为云端部署模式
+
+  # 2. Agent Background Service (x86)
+  - type: worker
+    name: buildroot-agent-x86
+    runtime: docker
+    plan: free
+    rootDir: buildroot-agent
+    dockerfilePath: ./Dockerfile.x86
+    envVars:
+      - key: SERVER_URL
+        value: wss://buildroot-server.onrender.com
+      - key: DEVICE_ID
+        value: render-demo-agent
+      - key: DEVICE_NAME
+        value: Render x86 Demo
