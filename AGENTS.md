@@ -1,466 +1,195 @@
-# AGENTS.md
+# AGENTS.md - AI 编码助手指南
 
-Guidelines for agentic coding assistants working on this buildroot-agent repository.
-
-## Project Overview
-
-```
-/root/Projects/buildroot-agent/
-├── buildroot-agent/     # C Agent (嵌入式设备端)
-│   ├── include/         # Headers (agent.h)
-│   ├── src/             # Sources (agent_*.c)
-│   └── tests/           # Integration tests
-├── buildroot-server/    # Python Server (中央服务器)
-│   ├── config/          # Settings (settings.py)
-│   ├── handlers/        # Message handlers
-│   ├── protocol/        # Message types, codec
-│   ├── server/          # WebSocket/Socket servers
-│   └── tests/           # Python tests
-├── buildroot-web/       # Web Console
-│   ├── tests/           # Web tests
-│   └── ...
-├── scripts/
-│   └── test.sh          # Unified test runner
-└── PROTOCOL.md          # 通信协议规范
-```
-
-**Runtime:** buildroot2015.08.1, gcc 4.9, cmake 2.8.12.2, openssl 1.1.1
+> **目标：** 让不太可靠的模型也能稳定完成任务
 
 ---
 
-## Build Commands
+## 当前任务
 
-### C/CMake (buildroot-agent)
-```bash
-cd buildroot-agent && mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DSTATIC_LINK=ON
-make                                                    # Output: bin/buildroot-agent
+<!--
+模型可以在这里记录当前任务的进度。
+开始新任务时，先清理旧内容。
+-->
 
-./scripts/build.sh                                    # 本地编译 (x86_64)
-./scripts/build.sh --cross                            # 交叉编译 (arm)
-./scripts/release.sh                                  # 发布构建+打包
-rm -rf build                                          # 清理
 ```
-
-**Note:** cmake 2.8.12 不支持 `-B` 参数，需使用 `mkdir -p build && cd build && cmake ..` 方式
-
-**Options:** `-DCMAKE_BUILD_TYPE=Debug`, `-DSTATIC_LINK=ON`, `-DCMAKE_TOOLCHAIN_FILE=cmake/arm-buildroot.cmake`
-
-### Python (buildroot-server)
-
-**项目管理工具:** [uv](https://docs.astral.sh/uv/) - 现代 Python 包管理器
-
-```bash
-cd buildroot-server
-
-# 安装依赖
-uv sync                                              # 同步依赖（根据 pyproject.toml）
-uv add <package>                                     # 添加新依赖
-uv remove <package>                                  # 移除依赖
-
-# 运行服务器
-uv run python main.py                                # 使用 uv 运行（自动激活虚拟环境）
-
-# 代码检查与格式化
-uv run ruff check . && uv run ruff format .          # 检查+格式化
-uv run mypy .                                        # 类型检查（如需要）
-
-# 其他常用命令
-uv lock                                              # 更新 uv.lock
-uv pip list                                          # 查看已安装包
-uv venv                                              # 创建虚拟环境（如需要）
+[等待新任务]
 ```
-
-**依赖管理说明:**
-- 使用 `pyproject.toml` 声明依赖（dependencies 和 optional-dependencies）
-- `uv.lock` 锁定精确版本，确保可复现的构建
-- 无需手动管理 requirements.txt
-
-### Web (buildroot-web)
-前端 Web 控制台，已从单文件 HTML 重构为多文件结构：
-- `index.html` - 主页面
-- `js/app.js`, `js/websocket.js`, `js/terminal.js`, `js/utils.js`, `js/config.js` - JavaScript 模块
-- `css/style.css` - 样式文件
-- `public/` - 静态资源（xterm.js, Ace Editor, 字体等）
 
 ---
 
-## Testing
+## 工作流程
 
-### 测试架构
+### 第一步：检查是否需要拆解
 
-**三端全覆盖真实场景测试：**
-- **Server 端**: pytest + pytest-asyncio 进行协议和业务逻辑测试
-- **Agent 端**: Shell 脚本 + Python Mock Server 进行端到端测试
-- **Web 端**: pytest 检查静态文件和 API 集成
+**触发条件（满足任一）：**
+- 需要修改 ≥3 个文件
+- 涉及 ≥2 个组件（Agent/Server/Web）
+- 预估代码 ≥200 行
 
-### 测试用例清单
+**拆解模板：**
+```markdown
+## 任务拆解
 
-| ID | 测试模块 | 测试项 | 描述 |
-|----|---------|--------|------|
-| TC-CONN-001 | 连接 | Server 启动 | 启动 Python Server，端口监听成功 |
-| TC-CONN-002 | 连接 | Agent 连接 | Agent 成功连接到 Server |
-| TC-CONN-003 | 连接 | 设备注册 | Agent 发送 REGISTER，返回 REGISTER_RESULT |
-| TC-CONN-004 | 连接 | 心跳机制 | Agent 每 30 秒发送心跳 |
-| TC-CONN-005 | 连接 | 自动重连 | Server 重启后 Agent 自动重连 |
-| TC-STATUS-001 | 状态 | 系统状态上报 | 自动上报 CPU/内存/磁盘等信息 |
-| TC-PTY-001 | PTY | 创建会话 | Web 创建终端会话 |
-| TC-PTY-002 | PTY | 数据收发 | 终端输入命令并接收输出 |
-| TC-PTY-003 | PTY | 窗口调整 | 调整浏览器窗口大小 |
-| TC-FILE-001 | 文件 | 文件上传 | 上传文件到 Agent |
-| TC-FILE-002 | 文件 | 文件下载 | 从 Agent 下载文件 |
-| TC-FILE-003 | 文件 | 文件列表 | 获取目录文件列表 |
-| TC-CMD-001 | 命令 | 命令执行 | 执行远程命令并返回结果 |
-| TC-CMD-002 | 命令 | 错误处理 | 执行不存在命令返回错误 |
-| TC-PING-001 | Ping | 网络监控 | Ping 配置目标并上报状态 |
-| TC-UPDATE-001 | 更新 | 版本检查 | 检查更新并返回版本信息 |
+**原始任务：** [用户描述]
 
-**扩展测试（超出基础清单）：**
-| ID | 测试模块 | 测试项 | 描述 |
-|----|---------|--------|------|
-| TC-STATUS-002 | 状态 | 状态字段完整性 | 验证所有状态字段正确上报 |
-| TC-PTY-005 | PTY | 关闭会话 | 关闭终端会话 |
-| TC-CONN-007 | 连接 | 多 Agent 连接 | 多个 Agent 同时连接 Server |
+**子任务：**
+1. [名称] - [文件] - ~[N]行
+2. [名称] - [文件] - ~[N]行
 
-### 运行测试
+**执行顺序：** 1 → 2 → 3
+
+**是否开始？**
+```
+
+### 第二步：实现前输出计划
+
+```markdown
+## 实现计划
+
+- **修改文件：** [具体路径]
+- **改动内容：** [简要描述]
+- **测试方法：** [TC-XXX 或手动测试]
+```
+
+### 第三步：完成后自检
+
+```
+□ 函数长度 < 50行
+□ 无重复代码
+□ 边界情况已处理
+□ 运行测试通过
+```
+
+---
+
+## 硬约束
+
+### CMake
+```bash
+# 禁止
+cmake -B build
+
+# 正确
+mkdir -p build && cd build && cmake ..
+```
+
+### 协议同步
+新增消息类型必须同步三处：
+1. `buildroot-agent/include/agent.h`
+2. `buildroot-server/protocol/constants.py`
+3. `PROTOCOL.md`
+
+### 响应类型
+```
+Web 查询状态时：
+  禁止：Agent 返回 SYSTEM_STATUS (0x02)
+  正确：Agent 返回 CMD_RESPONSE (0x31)
+```
+
+---
+
+## 禁止
+
+| 禁止 | 原因 |
+|------|------|
+| `cmake -B build` | cmake 2.8.12 不支持 |
+| `strcpy(dest, src)` | 缓冲区溢出 |
+| `except: pass` | 吞掉错误 |
+| `var x = 1` | JavaScript 作用域问题 |
+| 跳过测试 | CI 不通过 |
+| 合并失败的 PR | 违反仓库规则 |
+
+---
+
+## 常见错误对照
+
+| 错误 | 正确 | 原因 |
+|------|------|------|
+| `cmake -B build` | `mkdir -p build && cd build && cmake ..` | 版本限制 |
+| Agent 返回 `SYSTEM_STATUS` | 返回 `CMD_RESPONSE` | 需要 request_id |
+| `strcpy` | `safe_strncpy` | 缓冲区溢出 |
+| `except: pass` | `except ValueError as e:` | 吞掉错误 |
+| `sessionId` | `session_id` | 统一 snake_case |
+
+---
+
+## 架构速览
+
+```
+┌─────────────┐   TCP:8766   ┌─────────────┐   WS:8765   ┌─────────────┐
+│   Agent     │◄────────────►│   Server    │◄───────────►│    Web      │
+│  (C语言)    │              │  (Python)   │             │  (JS/Vue)   │
+└─────────────┘              └─────────────┘             └─────────────┘
+```
+
+**运行环境：** buildroot 2015.08.1, gcc 4.9, cmake 2.8.12.2
+
+**版本号：** `buildroot-agent/VERSION`（格式：主版本.次版本.修订版本）
+
+**CI 要求：** Server 66个测试、Agent 2个测试、覆盖率 ≥40%
+
+---
+
+## 项目目录
+
+```
+buildroot-agent/
+├── buildroot-agent/     # C Agent（嵌入式设备端）
+│   ├── include/         # 头文件 (agent.h)
+│   └── src/             # 源代码 (agent_*.c)
+├── buildroot-server/    # Python Server（中央服务器）
+│   ├── handlers/        # 消息处理器
+│   └── protocol/        # 协议定义
+├── buildroot-web/       # Web 控制台
+└── scripts/             # 构建/测试脚本
+```
+
+---
+
+## 构建命令
 
 ```bash
-# 运行全部测试
+# Agent
+cd buildroot-agent && mkdir -p build && cd build && cmake .. && make
+
+# Server
+cd buildroot-server && uv run python main.py
+
+# 测试
 ./scripts/test.sh
-
-# 运行特定端测试
-./scripts/test.sh --server       # 仅 Server 端
-./scripts/test.sh --agent        # 仅 Agent 端
-./scripts/test.sh --web          # 仅 Web 端
-
-# 运行特定测试
-./scripts/test.sh --test TC-CONN-003
-
-# 生成报告
-./scripts/test.sh --report
-
-# 调试模式（保留测试环境）
-./scripts/test.sh --debug
-```
-
-### Server 端测试
-
-```bash
-cd buildroot-server
-
-# 安装测试依赖
-uv add --dev pytest pytest-asyncio pytest-html
-
-# 运行测试
-uv run pytest tests/ -v
-uv run pytest tests/test_integration.py -v -k "test_register"
-uv run pytest tests/ -v --html=report.html
-```
-
-### Agent 端测试
-
-**注意**: Agent 端测试框架待完善，目前仅提供基础结构。
-
-```bash
-cd buildroot-agent/tests
-
-# 运行集成测试（待实现）
-# ./test_integration.sh
-
-# 使用 Mock Server 测试
-python mock_server.py &
-../build/bin/buildroot-agent -c test_agent.cfg
-```
-
-### Web 端测试
-
-**注意**: Web 端测试框架待完善，目前仅提供基础结构。
-
-```bash
-cd buildroot-web
-
-# 检查静态文件
-python -m pytest tests/test_static.py -v
-
-# 完整测试（需 Server 运行）
-python -m pytest tests/ -v
-```
-
-### 添加新测试
-
-**Server 端（Python）:**
-```python
-# tests/handlers/test_new_feature.py
-import pytest
-from fixtures.mock_agent import MockAgent
-
-@pytest.mark.asyncio
-async def test_new_feature(mock_server):
-    """TC-NEW-001: 新功能测试"""
-    agent = MockAgent()
-    await agent.connect("127.0.0.1", 8766)
-    
-    # 执行测试
-    result = await agent.send_message(MSG_TYPE_NEW, data)
-    
-    # 验证结果
-    assert result["status"] == "success"
-```
-
-**Agent 端（Shell）:**
-```bash
-# tests/test_cases/test_new_feature.sh
-#!/bin/bash
-source ../utils.sh
-
-test_new_feature() {
-    log "TC-NEW-001: 测试新功能"
-    
-    # 启动 Mock Server
-    start_mock_server
-    
-    # 启动 Agent
-    start_agent
-    
-    # 验证结果
-    assert_contains "$LOG_FILE" "新功能初始化成功"
-    
-    cleanup
-}
-
-run_test test_new_feature
 ```
 
 ---
 
-## C Code Style (buildroot-agent)
-
-| Type | Style | Example |
-|------|-------|---------|
-| Types/Structs | `snake_case_t` | `agent_context_t` |
-| Enum/Macros | `UPPER_CASE` | `MSG_TYPE_HEARTBEAT` |
-| Functions | `snake_case()` | `agent_init()` |
-| Globals | `g_prefix_` | `g_agent_ctx` |
-
-**Headers:** `include/agent.h` | **Sources:** `src/agent_*.c`
-
-```c
-LOG_DEBUG("调试: %d", value);
-LOG_ERROR("错误: %s", strerror(errno));
-// Return: 0=success, -1=error
-// Memory: calloc() + free(), check NULL
-// Thread safety: pthread_mutex_t for shared data
-```
-
----
-
-## Python Code Style (buildroot-server)
-
-```python
-# Import order: stdlib → third-party → local
-import logging
-from typing import Optional
-from pydantic import BaseModel, Field
-from config.settings import settings
-```
-
-| Type | Style | Example |
-|------|-------|---------|
-| Classes | `PascalCase` | `CloudServer` |
-| Functions/Variables | `snake_case` | `handle_connection` |
-| Constants | `UPPER_CASE` | `MESSAGE_HEADER_SIZE` |
-| Private | `_prefix` | `_get_remote_address()` |
-
-```python
-# Type annotations
-name: str | None = None
-def get_device(self, device_id: str) -> dict[str, Any] | None: ...
-
-# Logging
-logger = logging.getLogger(__name__)
-logger.info(f"设备连接: {device_id}")
-```
-
----
-
-## Code Quality Standards
-
-> Senior Engineer 编码原则：简洁、可读、可维护、生产级质量
-
-### 1. 先思考再写代码
-
-**实现计划（Plan）必须先输出并确认：**
-- 模块/函数拆分建议
-- 关键数据结构设计
-- 错误处理策略
-- 测试要点
-
-### 2. 代码规范（严格遵守）
+## 代码规范（精简）
 
 | 规则 | 要求 |
 |------|------|
-| 函数长度 | 尽量 < 30行，最大不超过50行 |
-| 命名 | 描述「做什么」而不是「怎么做」 |
-| 魔法数字/字符串 | 抽成常量并命名 |
-| 嵌套深度 | 最多2层（if/循环/回调） |
-| 单一职责 | 每个函数只做一件事 |
-| 语言习惯 | 优先使用 idiomatic 写法 |
-
-### 3. 错误处理（按语言区分）
-
-- **C** → 必须检查所有可能失败的函数返回值，goto error模式或显式返回码
-  - 所有分配内存的地方都要配对释放（RAII-like思维）
-  - 优先使用 `goto error;` 模式做资源清理
-  - 禁止隐式类型转换
-  - 函数参数要 const 就加 const
-  - 用 enum 而不是 #define 做状态/标志
-- **Python** → 优先使用 Exception + context manager，raise 自定义异常
-  - 优先使用 list/dict comprehension
-  - 善用 `@contextmanager`、`dataclasses`、`pydantic`
-  - 禁止 `import *`
-  - 异常使用 Exception 子类，**禁止** `except: pass`
-- **JS/TS** → 尽量用 Result/Error union 或 throw + async/await error handling
-  - 优先使用 const/let，极少用 var
-  - 异步代码一律 async/await，不要 then chaining
-  - 优先使用 object destructuring 和 rest/spread
-  - 禁止 for-in，优先 for-of / .forEach / map/filter
-
-### 4. 类型安全
-
-- **TypeScript** → 必须全面使用类型，禁止 any，尽可能使用 infer / typeof / keyof
-- **Python** → 必须添加 typing 注解（尤其是公开API）
-- **C** → 使用 const、enum、限制性指针
-  - 优先使用 restrict 限定符减少歧义
-  - 避免 void* 强制转换
-  - 结构体成员用 const 保护只读数据
-
-### 5. 自我审查清单
-
-写完代码后执行：
-- [ ] 能否把某个函数再拆小？
-- [ ] 有没有重复代码？
-- [ ] 命名是否足够清晰？
-- [ ] 注释是否只解释「为什么」而不是「是什么」？
-- [ ] 是否缺少边界case处理？
-
-### 6. 文档规范
-
-每个公开函数/类必须写清晰文档：
-- **Python** → Google/Numpy 风格 docstring
-- **JS/TS** → 完整 JSDoc
+| 函数长度 | < 50 行 |
+| 命名 | snake_case（C/Python），camelCase（JS） |
+| 错误处理 | C: 返回码；Python: 异常；JS: async/await |
 
 ---
 
-## CI/CD 门槛与代码质量
+## 按需参考
 
-### 自动化检查（必须全部通过）
-
-| 检查项 | 工具 | 要求 |
-|--------|------|------|
-| **C 代码编译** | gcc/cmake | 零警告，静态链接通过 |
-| **C 单元测试** | CMocka | 所有测试通过 |
-| **Python 代码检查** | ruff | 无 F401/F841 等错误 |
-| **Python 单元测试** | pytest | 覆盖率 ≥40%，全部通过 |
-| **Web 代码检查** | npm test | vitest 全部通过 |
-| **统一测试** | test.sh | Server/Agent/Web 三端通过 |
-
-### 代码提交前必做
-
-```bash
-# 1. 本地完整测试
-./scripts/test.sh
-
-# 2. C 代码静态分析（可选但推荐）
-cppcheck --enable=all buildroot-agent/src/*.c
-
-# 3. Python 代码检查
-cd buildroot-server && uv run ruff check . && uv run ruff format --check .
-```
-
-### 分支策略
-
-- **main**: 保护分支，只能通过 PR 合并
-- **feature/***: 功能分支
-- **fix/***: 修复分支
-- **PR 要求**: 必须通过所有 CI 检查才能合并
-
-### 版本管理
-
-- 版本号记录在 `buildroot-agent/VERSION`
-- 格式: `主版本.次版本.修订版本` (如 1.1.1)
-- 修订版本: bug 修复
-- 次版本: 功能添加
-- 主版本: 重大变更
+| 文档 | 内容 | 何时读取 |
+|------|------|----------|
+| [STYLE.md](STYLE.md) | 详细代码规范 | 不确定编码风格时 |
+| [BUILD.md](BUILD.md) | 详细构建命令 | 编译/运行问题时 |
+| [TESTING.md](TESTING.md) | 测试详情 | 添加测试时 |
+| [PROTOCOL.md](PROTOCOL.md) | 通信协议 | 涉及消息类型时 |
 
 ---
 
-## 常见陷阱与注意事项
+## 学习记录
 
-### C 代码
+<!--
+记录用户反馈的错误和教训，避免重复犯错。
+-->
 
-1. **内存管理**
-   - 禁止重复释放（double free）
-   - malloc 后必须检查返回值
-   - 使用 `safe_strncpy` 替代 `strcpy`
+### 用户指定
+- [等待用户补充]
 
-2. **文件操作**
-   - 追加模式 (`"ab"`) 中 `fseek` 无效，需用 `"r+b"`
-   - 始终检查文件打开是否成功
-
-3. **多线程安全**
-   - 共享变量访问必须加锁
-   - 条件检查在循环内外都要做（防御性编程）
-
-4. **静态分析误报**
-   - cppcheck 可能误报 "条件永远为 true"
-   - 这些通常是防御性编程，添加 `// cppcheck-suppress` 注释
-
-### Python 代码
-
-1. **导入管理**
-   - 删除未使用的导入（ruff F401）
-   - 删除未使用的变量（ruff F841）
-
-2. **类型注解**
-   - 公开 API 必须添加类型注解
-   - 使用 `const` 修饰只读参数
-
-### 测试
-
-1. **必须全部通过**
-   - Server: 66 个测试
-   - Agent: 2 个测试（CMocka）
-   - Web: 20 个测试
-
-2. **覆盖率要求**
-   - Python: ≥40%
-   - C: 核心功能覆盖
-- 修订版本: bug 修复
-- 次版本: 功能添加
-- 主版本: 重大变更
-- **C** → 块注释说明参数、返回值、错误码
-
-### 7. 交付标准
-
-最后一步：输出优化后的最终代码，并说明做了哪些清理/重构动作。
-
----
-
-## Protocol Sync
-
-Message types in two places, must stay synchronized:
-- C: `buildroot-agent/include/agent.h` (`msg_type_t` enum)
-- Python: `buildroot-server/protocol/constants.py` (`MessageType` IntEnum)
-
-Key types: `HEARTBEAT=0x01`, `PTY_CREATE=0x10`, `FILE_REQUEST=0x20`, `CMD_REQUEST=0x30`, `REGISTER=0xF0`
-
----
-
-## Key Notes
-
-- **Dual Protocol:** WebSocket (8765) for Web, TCP Socket (8766) for Agent
-- **Config:** YAML `config.yaml` + env vars with `BR_SERVER_` prefix
-- **File Transfer:** Chunked, max 64KB, Base64 encoding
-- **Update Flow:** Non-mandatory needs Web approval; mandatory auto-proceeds
-- **Database:** 
-  - SQLite: 自动建表（开发/测试环境）
-  - PostgreSQL/MySQL: 需手动建表或使用 schema.sql（生产环境）
+### AI 学习
+- [等待任务中学习]
