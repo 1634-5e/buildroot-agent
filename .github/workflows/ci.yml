@@ -276,7 +276,9 @@ jobs:
           - ❌ 通过时列废话清单（"无 C 代码变更"、"无 Python 变更"...）
           - ❌ 每次重复历史问题表格
           - ❌ 分多条评论输出
-          - ❌ 添加 opencode session 链接、github run 链接、图片卡片
+          - ❌ 添加任何链接：opencode session、github run 等
+          - ❌ 添加任何图片：social card、banner 等
+          - ❌ 使用 HTML 标签：`<a>`, `<img>` 等
 
           ## 退出码
 
