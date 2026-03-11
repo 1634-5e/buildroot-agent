@@ -4,6 +4,19 @@
 
 ---
 
+## 当前任务
+
+<!--
+模型可以在这里记录当前任务的进度。
+开始新任务时，先清理旧内容。
+-->
+
+```
+[等待新任务]
+```
+
+---
+
 ## 工作流程
 
 ### 第一步：检查是否需要拆解
@@ -13,13 +26,6 @@
 - 涉及 ≥2 个组件（Agent/Server/Web）
 - 预估代码 ≥200 行
 
-**需要拆解时：**
-```
-1. 停止！输出拆解计划
-2. 等待用户确认
-3. 逐个执行子任务
-```
-
 **拆解模板：**
 ```markdown
 ## 任务拆解
@@ -27,8 +33,8 @@
 **原始任务：** [用户描述]
 
 **子任务：**
-1. [名称] - [文件] - ~[N]行 - [依赖]
-2. [名称] - [文件] - ~[N]行 - [依赖]
+1. [名称] - [文件] - ~[N]行
+2. [名称] - [文件] - ~[N]行
 
 **执行顺序：** 1 → 2 → 3
 
@@ -45,55 +51,53 @@
 - **测试方法：** [TC-XXX 或手动测试]
 ```
 
-### 第三步：写代码后自检
+### 第三步：完成后自检
 
 ```
 □ 函数长度 < 50行
 □ 无重复代码
 □ 边界情况已处理
-□ 运行测试：./scripts/test.sh --<component>
+□ 运行测试通过
 ```
 
 ---
 
-## 硬约束（违反必失败）
+## 硬约束
 
 ### CMake
 ```bash
-# ✗ cmake 2.8.12 不支持
+# 禁止
 cmake -B build
 
-# ✓ 正确
+# 正确
 mkdir -p build && cd build && cmake ..
-```
-
-### C 代码
-```c
-// ✗ 禁止
-strcpy(dest, src);
-char *buf = malloc(size); // 未检查
-
-// ✓ 正确
-safe_strncpy(dest, src, sizeof(dest));
-char *buf = malloc(size);
-if (!buf) return -1;
-```
-
-### Python 代码
-```python
-# ✗ 禁止
-except: pass
-
-# ✓ 正确
-except ValueError as e:
-    logger.error(f"错误: {e}")
 ```
 
 ### 协议同步
 新增消息类型必须同步三处：
-1. `buildroot-agent/include/agent.h` - `msg_type_t`
-2. `buildroot-server/protocol/constants.py` - `MessageType`
-3. `PROTOCOL.md` - 消息定义
+1. `buildroot-agent/include/agent.h`
+2. `buildroot-server/protocol/constants.py`
+3. `PROTOCOL.md`
+
+### 响应类型
+```
+Web 查询状态时：
+  禁止：Agent 返回 SYSTEM_STATUS (0x02)
+  正确：Agent 返回 CMD_RESPONSE (0x31)
+```
+
+---
+
+## 禁止
+
+| 禁止 | 原因 |
+|------|------|
+| `cmake -B build` | cmake 2.8.12 不支持 |
+| `strcpy(dest, src)` | 缓冲区溢出 |
+| `except: pass` | 吞掉错误 |
+| `var x = 1` | JavaScript 作用域问题 |
+| 跳过测试 | CI 不通过 |
+| 合并失败的 PR | 违反仓库规则 |
 
 ---
 
@@ -101,9 +105,9 @@ except ValueError as e:
 
 | 错误 | 正确 | 原因 |
 |------|------|------|
-| `cmake -B build` | `mkdir -p build && cd build && cmake ..` | cmake 2.8.12 版本限制 |
-| Agent 响应 status 返回 `SYSTEM_STATUS` | 返回 `CMD_RESPONSE` | Web 需要 request_id 路由 |
-| `strcpy(dest, src)` | `safe_strncpy(dest, src, sizeof(dest))` | 缓冲区溢出风险 |
+| `cmake -B build` | `mkdir -p build && cd build && cmake ..` | 版本限制 |
+| Agent 返回 `SYSTEM_STATUS` | 返回 `CMD_RESPONSE` | 需要 request_id |
+| `strcpy` | `safe_strncpy` | 缓冲区溢出 |
 | `except: pass` | `except ValueError as e:` | 吞掉错误 |
 | `sessionId` | `session_id` | 统一 snake_case |
 
@@ -137,31 +141,35 @@ cd buildroot-server && uv run python main.py
 
 ---
 
-## 代码规范
+## 代码规范（精简）
 
-### 函数长度
-- 目标：< 30 行
-- 上限：50 行
-
-### 命名
-| 语言 | 类型 | 风格 | 示例 |
-|------|------|------|------|
-| C | 函数/变量 | snake_case | `agent_init` |
-| C | 宏/枚举 | UPPER_CASE | `MSG_TYPE_HEARTBEAT` |
-| Python | 函数/变量 | snake_case | `handle_connection` |
-| Python | 类 | PascalCase | `CloudServer` |
-| JS | 函数/变量 | camelCase | `sendMessage` |
-
-### 错误处理
-- C：返回 0=成功，-1=错误
-- Python：抛出明确异常类型
-- JS：async/await + try/catch
+| 规则 | 要求 |
+|------|------|
+| 函数长度 | < 50 行 |
+| 命名 | snake_case（C/Python），camelCase（JS） |
+| 错误处理 | C: 返回码；Python: 异常；JS: async/await |
 
 ---
 
-## 更多细节
+## 按需参考
 
-- [STYLE.md](STYLE.md) - 完整代码规范
-- [BUILD.md](BUILD.md) - 详细构建命令
-- [TESTING.md](TESTING.md) - 测试用例清单
-- [PROTOCOL.md](PROTOCOL.md) - 通信协议规范
+| 文档 | 内容 | 何时读取 |
+|------|------|----------|
+| [STYLE.md](STYLE.md) | 详细代码规范 | 不确定编码风格时 |
+| [BUILD.md](BUILD.md) | 详细构建命令 | 编译/运行问题时 |
+| [TESTING.md](TESTING.md) | 测试详情 | 添加测试时 |
+| [PROTOCOL.md](PROTOCOL.md) | 通信协议 | 涉及消息类型时 |
+
+---
+
+## 学习记录
+
+<!--
+记录用户反馈的错误和教训，避免重复犯错。
+-->
+
+### 用户指定
+- [等待用户补充]
+
+### AI 学习
+- [等待任务中学习]
