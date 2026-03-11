@@ -124,6 +124,26 @@ Web 查询状态时：
 
 **运行环境：** buildroot 2015.08.1, gcc 4.9, cmake 2.8.12.2
 
+**版本号：** `buildroot-agent/VERSION`（格式：主版本.次版本.修订版本）
+
+**CI 要求：** Server 66个测试、Agent 2个测试、覆盖率 ≥40%
+
+---
+
+## 项目目录
+
+```
+buildroot-agent/
+├── buildroot-agent/     # C Agent（嵌入式设备端）
+│   ├── include/         # 头文件 (agent.h)
+│   └── src/             # 源代码 (agent_*.c)
+├── buildroot-server/    # Python Server（中央服务器）
+│   ├── handlers/        # 消息处理器
+│   └── protocol/        # 协议定义
+├── buildroot-web/       # Web 控制台
+└── scripts/             # 构建/测试脚本
+```
+
 ---
 
 ## 构建命令
