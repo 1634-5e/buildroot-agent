@@ -1,15 +1,19 @@
 # Postmortem Generator - PR 合并后自动生成复盘报告
-# 通过 repository_dispatch 触发，避免 checkout 已删除的 PR 分支
+# 通过 workflow_dispatch 触发
 
 name: Postmortem Generator
 
 on:
-  repository_dispatch:
-    types: [postmortem-generate]
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'PR number to analyze'
+        required: true
+      pr_title:
+        description: 'PR title'
+        required: true
+      pr_url:
+        description: 'PR URL'
         required: true
 
 permissions:
@@ -49,9 +53,9 @@ jobs:
             分析本次合并到 main 的 PR 变更，生成复盘报告。
             
             ## PR 信息
-            - PR Number: ${{ github.event.client_payload.pr_number || github.event.inputs.pr_number }}
-            - PR Title: ${{ github.event.client_payload.pr_title }}
-            - PR URL: ${{ github.event.client_payload.pr_url }}
+            - PR Number: ${{ github.event.inputs.pr_number }}
+            - PR Title: ${{ github.event.inputs.pr_title }}
+            - PR URL: ${{ github.event.inputs.pr_url }}
             
             ## 步骤
             1. 获取 PR 详情
