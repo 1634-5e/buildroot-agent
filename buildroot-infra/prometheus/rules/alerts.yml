@@ -1,0 +1,98 @@
+# Buildroot Agent 告警规则
+
+groups:
+  - name: buildroot-alerts
+    rules:
+      # EMQX 告警
+      - alert: EMQXDown
+        expr: up{job="emqx"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EMQX Broker 宕机"
+          description: "EMQX MQTT Broker 已停止响应超过 1 分钟"
+
+      - alert: EMQXHighConnections
+        expr: emqx_connections_count > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EMQX 连接数过高"
+          description: "EMQX 当前连接数 {{ $value }} 超过 1000"
+
+      - alert: EMQXMessageRateHigh
+        expr: rate(emqx_messages_received[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EMQX 消息速率过高"
+          description: "EMQX 消息接收速率 {{ $value }}/s 超过 1000/s"
+
+      # PostgreSQL 告警
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL 宕机"
+          description: "PostgreSQL 数据库已停止响应超过 1 分钟"
+
+      - alert: PostgresTooManyConnections
+        expr: pg_stat_activity_count / pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL 连接数过高"
+          description: "PostgreSQL 连接使用率 {{ $value }}% 超过 80%"
+
+      - alert: PostgresDeadlock
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL 检测到死锁"
+          description: "PostgreSQL 过去 5 分钟出现 {{ $value }} 次死锁"
+
+      # Redis 告警
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis 宕机"
+          description: "Redis 已停止响应超过 1 分钟"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 内存使用过高"
+          description: "Redis 内存使用率 {{ $value }}% 超过 80%"
+
+      - alert: RedisTooManyConnections
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 连接数过高"
+          description: "Redis 当前连接数 {{ $value }} 超过 100"
+
+      # Server 告警
+      - alert: ServerDown
+        expr: up{job="buildroot-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Server API 宕机"
+          description: "Buildroot Server API 已停止响应超过 1 分钟"

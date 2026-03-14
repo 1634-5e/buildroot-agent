@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* 自定义基础样式 */
+@layer base {
+  html {
+    background-color: #0a0a0f;
+    color: #e5e5e5;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* 自定义滚动条 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #1a1a2e;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #4a4a6a;
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #5a5a7a;
+  }
+}
+
+/* 自定义组件样式 */
+@layer components {
+  /* 状态指示灯 */
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  
+  .status-dot--online {
+    background-color: #10b981;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  }
+  
+  .status-dot--offline {
+    background-color: #6b7280;
+  }
+  
+  .status-dot--warning {
+    background-color: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  }
+  
+  /* 卡片样式 */
+  .card {
+    background-color: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  
+  /* 页面标题 */
+  .page-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #e5e5e5;
+  }
+  
+  /* 次要文字 */
+  .text-secondary {
+    color: #9ca3af;
+  }
+  
+  /* 代码/数据文字 */
+  .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+}
+
+/* PrimeVue 深色主题覆盖 */
+.p-component {
+  font-family: 'Inter', sans-serif;
+}

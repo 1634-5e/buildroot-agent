@@ -1,0 +1,183 @@
+# Buildroot Agent 基础设施
+# 用于 Device Twin 改造的开发环境
+
+version: '3.8'
+
+services:
+  # ==================== MQTT Broker ====================
+  emqx:
+    image: emqx/emqx:5.5.0
+    container_name: buildroot-emqx
+    hostname: emqx
+    environment:
+      - EMQX_NAME=buildroot-emqx
+      - EMQX_HOST=0.0.0.0
+      # Dashboard 默认账号
+      - EMQX_DASHBOARD__DEFAULT_USERNAME=admin
+      - EMQX_DASHBOARD__DEFAULT_PASSWORD=buildroot123
+    volumes:
+      - ./emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+    ports:
+      - "1883:1883"       # MQTT
+      - "8883:8883"       # MQTT/TLS
+      - "8083:8083"       # WebSocket
+      - "8084:8084"       # WSS
+      - "18083:18083"     # Dashboard
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== PostgreSQL ====================
+  postgres:
+    image: postgres:15-alpine
+    container_name: buildroot-postgres
+    environment:
+      - POSTGRES_USER=buildroot
+      - POSTGRES_PASSWORD=buildroot123
+      - POSTGRES_DB=buildroot_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buildroot -d buildroot_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7-alpine
+    container_name: buildroot-redis
+    command: redis-server --appendonly yes --requirepass buildroot123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "buildroot123", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== EMQX Exporter (Prometheus) ====================
+  emqx-exporter:
+    image: emqx/emqx-exporter:latest
+    container_name: buildroot-emqx-exporter
+    environment:
+      - EMQX_HOST=emqx
+      - EMQX_PORT=18083
+      - EMQX_USER=admin
+      - EMQX_PASSWORD=buildroot123
+    ports:
+      - "8085:8085"
+    depends_on:
+      emqx:
+        condition: service_healthy
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+# ==================== Prometheus ====================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: buildroot-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - emqx-exporter
+      - postgres-exporter
+      - redis-exporter
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== Grafana ====================
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: buildroot-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=buildroot123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== PostgreSQL Exporter ====================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.12.0
+    container_name: buildroot-postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://buildroot:buildroot123@postgres:5432/buildroot_agent?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+  # ==================== Redis Exporter ====================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: buildroot-redis-exporter
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD=buildroot123
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
+networks:
+  buildroot-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  emqx-data:
+  emqx-log:
+  prometheus-data:
+  grafana-data:
