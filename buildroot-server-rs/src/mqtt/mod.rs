@@ -3,3 +3,6 @@
 pub mod client;
 
 pub use client::MqttClient;
+
+#[cfg(test)]
+mod tests;

@@ -201,11 +201,15 @@ const connect = async () => {
   // 发送 PTY_CREATE 请求
   if (wsClient && terminal.value) {
     const { cols, rows } = terminal.value
+    // 生成 session_id (简单递增)
+    const newSessionId = Date.now()
     wsClient.send(MessageType.PTY_CREATE, {
       device_id: selectedDeviceId.value,
+      session_id: newSessionId,
       cols: cols || 80,
       rows: rows || 24,
     })
+    console.log('[Terminal] PTY_CREATE sent, session_id:', newSessionId)
   }
 }
 
@@ -239,6 +243,7 @@ const handleWebSocketMessage = (msg: unknown) => {
     const deviceList = data.devices as Device[] || []
     devices.value = deviceList.map(d => ({
       ...d,
+      name: d.name || d.device_id.slice(0, 12), // 默认显示 device_id 前12位
       is_online: true, // WebSocket 返回的都是在线设备
     }))
     console.log('[Terminal] 设备列表更新:', devices.value.length, devices.value)
@@ -351,11 +356,11 @@ watch(() => route.params.deviceId, (newDeviceId) => {
         <Select
           v-model="selectedDeviceId"
           :options="onlineDevices"
-          optionLabel="device_id"
+          optionLabel="name"
           optionValue="device_id"
           placeholder="选择设备"
           class="device-select"
-          @update:modelValue="onDeviceChange"
+          @change="onDeviceChange"
         >
           <template #option="slotProps">
             <div class="flex items-center gap-2">

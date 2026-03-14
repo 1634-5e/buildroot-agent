@@ -1,6 +1,6 @@
 pub mod service;
 
 #[cfg(test)]
-mod service_tests;
+mod tests;
 
 pub use service::TwinService;

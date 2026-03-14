@@ -39,7 +39,7 @@ class PtyHandler(BaseHandler):
             await PtySessionRepository.update_bytes_received(
                 device_id=device_id,
                 session_id=session_id,
-                bytes_received=len(pty_data),
+                bytes_received=len(pty_data.encode("utf-8")),
             )
         except Exception as e:
             logger.error(f"[DB] 更新 PTY bytes_received 失败: {e}")

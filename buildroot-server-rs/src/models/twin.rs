@@ -184,10 +184,32 @@ pub struct DeviceRegisterResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use serde_json::json;
 
+    // ============ DeviceTwin 基础测试 ============
+
     #[test]
-    fn test_compute_delta() {
+    fn test_twin_new() {
+        let twin = DeviceTwin::new("device-001");
+        assert_eq!(twin.device_id, "device-001");
+        assert_eq!(twin.desired, json!({}));
+        assert_eq!(twin.reported, json!({}));
+        assert_eq!(twin.desired_version, 0);
+        assert_eq!(twin.reported_version, 0);
+    }
+
+    #[test]
+    fn test_twin_default() {
+        let twin = DeviceTwin::default();
+        assert!(twin.device_id.is_empty());
+        assert!(twin.is_synced()); // 空 twin 应该是同步的
+    }
+
+    // ============ Delta 计算测试 ============
+
+    #[test]
+    fn test_compute_delta_basic() {
         let desired = json!({
             "firmware": {"version": "2.0.0"},
             "config": {"interval": 60, "logLevel": "debug"}
@@ -201,17 +223,275 @@ mod tests {
 
         assert_eq!(delta["firmware"]["version"], "2.0.0");
         assert_eq!(delta["config"]["logLevel"], "debug");
-        assert!(delta.get("config").unwrap().get("interval").is_none());
+        assert!(delta.get("config").unwrap().get("interval").is_none(), "相同的值不应出现在 delta 中");
     }
 
     #[test]
-    fn test_is_synced() {
+    fn test_compute_delta_synced() {
+        let desired = json!({
+            "firmware": {"version": "1.0.0"},
+            "config": {"interval": 60}
+        });
+        let reported = desired.clone();
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+        assert!(delta.as_object().unwrap().is_empty(), "完全同步时 delta 应为空");
+    }
+
+    #[test]
+    fn test_compute_delta_missing_in_reported() {
+        let desired = json!({
+            "firmware": {"version": "2.0.0"},
+            "config": {"interval": 60}
+        });
+        let reported = json!({
+            "firmware": {"version": "2.0.0"}
+        });
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+
+        // config 在 reported 中不存在，应该在 delta 中
+        assert!(delta.get("config").is_some());
+        assert_eq!(delta["config"]["interval"], 60);
+    }
+
+    #[test]
+    fn test_compute_delta_nested() {
+        let desired = json!({
+            "network": {
+                "wifi": {
+                    "ssid": "MyNetwork",
+                    "password": "secret123"
+                },
+                "ethernet": {
+                    "dhcp": true
+                }
+            }
+        });
+        let reported = json!({
+            "network": {
+                "wifi": {
+                    "ssid": "OldNetwork",
+                    "password": "secret123"
+                },
+                "ethernet": {
+                    "dhcp": false
+                }
+            }
+        });
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+
+        // wifi.ssid 不同
+        assert_eq!(delta["network"]["wifi"]["ssid"], "MyNetwork");
+        // wifi.password 相同，不应出现
+        assert!(delta["network"]["wifi"].get("password").is_none());
+        // ethernet.dhcp 不同
+        assert_eq!(delta["network"]["ethernet"]["dhcp"], true);
+    }
+
+    #[test]
+    fn test_compute_delta_empty_desired() {
+        let desired = json!({});
+        let reported = json!({"firmware": {"version": "1.0.0"}});
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+        assert!(delta.as_object().unwrap().is_empty(), "空 desired 应产生空 delta");
+    }
+
+    #[test]
+    fn test_compute_delta_empty_reported() {
+        let desired = json!({
+            "firmware": {"version": "2.0.0"},
+            "config": {"interval": 60}
+        });
+        let reported = json!({});
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+
+        // 所有 desired 内容都应该在 delta 中
+        assert_eq!(delta, desired);
+    }
+
+    #[test]
+    fn test_compute_delta_non_object_values() {
+        let desired = json!({
+            "version": "2.0.0",
+            "enabled": true,
+            "count": 42
+        });
+        let reported = json!({
+            "version": "1.0.0",
+            "enabled": true,
+            "count": 42
+        });
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+
+        // 只有 version 不同
+        assert_eq!(delta["version"], "2.0.0");
+        assert!(delta.get("enabled").is_none());
+        assert!(delta.get("count").is_none());
+    }
+
+    #[test]
+    fn test_compute_delta_array_values() {
+        let desired = json!({
+            "tags": ["production", "critical"],
+            "config": {"name": "test"}
+        });
+        let reported = json!({
+            "tags": ["staging"],
+            "config": {"name": "test"}
+        });
+
+        let delta = DeviceTwin::compute_delta(&desired, &reported);
+
+        // 数组比较是整体比较
+        assert_eq!(delta["tags"], json!(["production", "critical"]));
+    }
+
+    // ============ is_synced 测试 ============
+
+    #[test]
+    fn test_is_synced_when_equal() {
         let mut twin = DeviceTwin::new("test-001");
         twin.desired = json!({"version": "1.0.0"});
         twin.reported = json!({"version": "1.0.0"});
         assert!(twin.is_synced());
+    }
 
+    #[test]
+    fn test_is_synced_when_different() {
+        let mut twin = DeviceTwin::new("test-001");
+        twin.desired = json!({"version": "1.0.0"});
         twin.reported = json!({"version": "0.9.0"});
         assert!(!twin.is_synced());
+    }
+
+    #[test]
+    fn test_is_synced_when_reported_missing_key() {
+        let mut twin = DeviceTwin::new("test-001");
+        twin.desired = json!({"version": "1.0.0", "config": {"interval": 60}});
+        twin.reported = json!({"version": "1.0.0"});
+        assert!(!twin.is_synced(), "reported 缺少 config，应该不同步");
+    }
+
+    #[test]
+    fn test_is_synced_when_reported_has_extra_keys() {
+        let mut twin = DeviceTwin::new("test-001");
+        twin.desired = json!({"version": "1.0.0"});
+        twin.reported = json!({"version": "1.0.0", "extra": "value"});
+        assert!(twin.is_synced(), "reported 有额外的 key 不影响同步状态");
+    }
+
+    #[test]
+    fn test_is_synced_empty() {
+        let twin = DeviceTwin::new("test-001");
+        assert!(twin.is_synced(), "空 Twin 应该是同步的");
+    }
+
+    // ============ TwinOverview 测试 ============
+
+    #[test]
+    fn test_twin_overview_from_twin() {
+        let mut twin = DeviceTwin::new("device-001");
+        twin.desired = json!({"version": "2.0.0"});
+        twin.reported = json!({"version": "1.0.0"});
+        twin.tags = json!({"location": "datacenter"});
+
+        let overview = TwinOverview::from(twin.clone());
+
+        assert_eq!(overview.device_id, twin.device_id);
+        assert_eq!(overview.desired, twin.desired);
+        assert_eq!(overview.reported, twin.reported);
+        assert_eq!(overview.delta, json!({"version": "2.0.0"}));
+        assert!(!overview.is_synced);
+    }
+
+    #[test]
+    fn test_twin_overview_synced() {
+        let mut twin = DeviceTwin::new("device-001");
+        twin.desired = json!({"version": "1.0.0"});
+        twin.reported = json!({"version": "1.0.0"});
+
+        let overview = TwinOverview::from(twin);
+
+        assert!(overview.is_synced);
+        assert!(overview.delta.as_object().unwrap().is_empty());
+    }
+
+    // ============ 序列化/反序列化测试 ============
+
+    #[test]
+    fn test_twin_serialize_deserialize() {
+        let mut twin = DeviceTwin::new("device-001");
+        twin.desired = json!({"firmware": {"version": "2.0.0"}});
+        twin.reported = json!({"firmware": {"version": "1.0.0"}});
+        twin.tags = json!({"type": "sensor"});
+
+        let json = serde_json::to_string(&twin).unwrap();
+        let decoded: DeviceTwin = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded.device_id, twin.device_id);
+        assert_eq!(decoded.desired, twin.desired);
+        assert_eq!(decoded.reported, twin.reported);
+    }
+
+    #[test]
+    fn test_register_request_deserialize() {
+        let json = r#"{
+            "device_id": "custom-001",
+            "device_name": "Temperature Sensor",
+            "device_type": "sensor",
+            "tags": {"location": "room-101"}
+        }"#;
+
+        let req: DeviceRegisterRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(req.device_id, Some("custom-001".to_string()));
+        assert_eq!(req.device_name, Some("Temperature Sensor".to_string()));
+        assert_eq!(req.device_type, Some("sensor".to_string()));
+        assert_eq!(req.tags["location"], "room-101");
+    }
+
+    #[test]
+    fn test_register_request_defaults() {
+        let json = r#"{}"#;
+
+        let req: DeviceRegisterRequest = serde_json::from_str(json).unwrap();
+
+        assert!(req.device_id.is_none());
+        assert!(req.device_name.is_none());
+        assert!(req.tags.is_null() || req.tags == json!({}));
+    }
+
+    #[test]
+    fn test_batch_update_result_serialize() {
+        let result = BatchUpdateResult {
+            updated: 10,
+            failed: 2,
+            device_ids: vec!["device-001".to_string(), "device-002".to_string()],
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"updated\":10"));
+        assert!(json.contains("\"failed\":2"));
+    }
+
+    #[test]
+    fn test_change_log_serialize() {
+        let log = ChangeLog {
+            id: 1,
+            device_id: "device-001".to_string(),
+            change_type: "desired".to_string(),
+            old_value: json!({"version": "1.0.0"}),
+            new_value: json!({"version": "2.0.0"}),
+            changed_by: Some("admin".to_string()),
+            changed_at: chrono::Utc::now(),
+        };
+
+        let json = serde_json::to_string(&log).unwrap();
+        assert!(json.contains("\"change_type\":\"desired\""));
     }
 }
