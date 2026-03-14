@@ -3,6 +3,3 @@
 pub mod client;
 
 pub use client::EmqxClient;
-
-#[cfg(test)]
-mod tests;

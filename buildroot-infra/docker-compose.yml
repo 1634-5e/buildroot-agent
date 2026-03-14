@@ -170,6 +170,23 @@ services:
       - buildroot-net
     restart: unless-stopped
 
+  # ==================== Alertmanager ====================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: buildroot-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks:
+      - buildroot-net
+    restart: unless-stopped
+
 networks:
   buildroot-net:
     driver: bridge
@@ -181,3 +198,4 @@ volumes:
   emqx-log:
   prometheus-data:
   grafana-data:
+  alertmanager-data:

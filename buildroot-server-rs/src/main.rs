@@ -1,10 +1,12 @@
 //! Buildroot Agent Twin Server - 入口
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use buildroot_server::agent::run_agent_server;
 use buildroot_server::api::v1::create_router;
 use buildroot_server::config::Config;
 use buildroot_server::db::postgres::create_pool;
@@ -85,6 +87,24 @@ async fn main() -> anyhow::Result<()> {
     
     // 创建应用状态
     let state = AppState::new(config.clone(), db, redis, mqtt, emqx, cancel_token.clone());
+    
+    // 启动 Agent TCP Server
+    let agent_registry = state.agents.clone();
+    let ws_registry = Arc::new(state.websockets.clone());
+    let agent_ws_registry = ws_registry.clone();
+    let agent_cancel = cancel_token.clone();
+    tokio::spawn(async move {
+        tokio::select! {
+            result = run_agent_server(agent_registry, agent_ws_registry) => {
+                if let Err(e) = result {
+                    tracing::error!("Agent server error: {}", e);
+                }
+            }
+            _ = agent_cancel.cancelled() => {
+                tracing::info!("Agent server shutdown");
+            }
+        }
+    });
     
     // CORS 中间件
     let cors = CorsLayer::new()

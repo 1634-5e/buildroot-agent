@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 use crate::models::twin::{
-    BatchUpdate, BatchUpdateResult, ChangeLog, DeviceRegisterRequest, DeviceRegisterResponse,
+    BatchUpdate, BatchUpdateResult, ChangeLog, DeviceListItem, DeviceRegisterRequest, DeviceRegisterResponse,
     TwinOverview, TwinUpdate,
 };
 use crate::state::AppState;
@@ -146,4 +146,56 @@ pub async fn register_device(
     tracing::info!("Registering device");
     let response = state.twin.register_device(request).await?;
     Ok(Json(response))
+}
+
+/// 设备列表（前端兼容）
+pub async fn list_devices(
+    State(state): State<AppState>,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<Vec<DeviceListItem>>, AppError> {
+    tracing::info!("Listing devices, limit: {}, offset: {}", query.limit, query.offset);
+
+    let twins = state
+        .twin
+        .list_twins(query.limit, query.offset, query.is_synced)
+        .await?;
+
+    // 转换为前端期望的格式
+    let devices: Vec<DeviceListItem> = twins
+        .into_iter()
+        .map(|t| {
+            let is_online = !t.reported.is_null() && t.reported.as_object().map_or(false, |o| !o.is_empty());
+            let name = t.tags.get("device_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&t.device_id)
+                .to_string();
+            let device_type = t.tags.get("device_type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let firmware_version = t.reported.get("firmware")
+                .and_then(|f| f.get("version"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| t.tags.get("firmware_version").and_then(|v| v.as_str()).map(|s| s.to_string()));
+            let ip_addr = t.reported.get("system")
+                .and_then(|s| s.get("ip_addr"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            DeviceListItem {
+                id: t.device_id,
+                name,
+                r#type: device_type,
+                status: if is_online { "online" } else { "offline" }.to_string(),
+                is_online,
+                last_seen_at: t.updated_at.map(|dt| dt.to_rfc3339()),
+                firmware_version,
+                ip_addr,
+                tags: t.tags,
+                created_at: t.created_at.map(|dt| dt.to_rfc3339()),
+            }
+        })
+        .collect();
+
+    Ok(Json(devices))
 }

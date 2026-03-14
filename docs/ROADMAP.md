@@ -14,13 +14,13 @@
 
 | 模块 | 进度 | 状态 |
 |------|------|------|
-| 架构设计 | 75% | 需简化服务数量 |
+| 架构设计 | 100% | ✅ Python 已下线 |
 | Agent C | 100% | ✅ 完成 |
 | Rust Server | 100% | ✅ 完成，66 测试通过 |
-| Python Server | 100% | ⚠️ 待下线 |
-| 前端 Web | 75% | Terminal 有 bug |
-| 测试覆盖 | 50% | 缺集成/E2E |
-| 生产就绪 | 40% | 缺告警/日志 |
+| Python Server | - | ❌ 已移除 |
+| 前端 Web | 80% | Terminal E2E 通过 |
+| 测试覆盖 | 60% | E2E 已验证 |
+| 监控告警 | 100% | ✅ 完成 |
 
 ### 1.2 里程碑
 
@@ -29,7 +29,8 @@
 | M1 | Device Twin 核心功能 | ✅ | 2026-03-12 |
 | M2 | Rust Server 重写 | ✅ | 2026-03-13 |
 | M3 | 前端基础功能 | ✅ | 2026-03-14 |
-| M4 | 架构简化（Python 下线） | ⏳ | - |
+| M3.5 | 告警配置 | ✅ | 2026-03-14 |
+| M4 | 架构简化（Python 下线） | ✅ | 2026-03-14 |
 | M5 | 测试覆盖完善 | ⏳ | - |
 | M6 | 生产就绪 | ⏳ | - |
 
@@ -59,7 +60,7 @@
 | 设备注册 | 表单 + 凭证展示/复制/下载 | ✅ |
 | 设备详情 | 资源监控 + 信息展示 | ✅ |
 | Twin 管理 | 编辑 desired + delta 展示 + 变更历史 | ✅ |
-| Terminal | xterm.js + WebSocket | ⚠️ bug |
+| Terminal | xterm.js + WebSocket | ✅ E2E 通过 |
 | Files | 文件管理器 | ❌ |
 | Alerts | 告警中心 | ❌ |
 
@@ -71,9 +72,10 @@
 | EMQX Dashboard | 18083 | admin/buildroot123 | ✅ |
 | PostgreSQL | 5432 | buildroot/buildroot123 | ✅ |
 | Redis | 6379 | buildroot123 | ✅ |
-| Rust Server | 8001 | 无 | ✅ |
-| Python Server | 8000, 8765, 8766 | 无 | ⚠️ 待下线 |
+| Rust Server (HTTP) | 8001 | 无 | ✅ |
+| Rust Server (Agent TCP) | 8766 | 无 | ✅ |
 | Prometheus | 9090 | 无 | ✅ |
+| Alertmanager | 9093 | 无 | ✅ |
 | Grafana | 3000 | admin/buildroot123 | ✅ |
 
 ---
@@ -159,11 +161,13 @@ twin/{id}/up    # Agent → Server
 
 ### 3.3 前端问题
 
-#### 问题 6：Terminal 设备下拉框为空（高优先级）
+#### 问题 6：Terminal 设备下拉框为空（高优先级）✅ 已修复
 
-**原因**：Pinia 状态更新问题
+**原因**：前端请求 `/api/v1/devices`，Rust Server 只有 `/api/v1/twins`
 
-**工作量**：0.5 天
+**解决方案**：Rust Server 添加 `/api/v1/devices` 端点
+
+**工作量**：0.5 天 ✅ 完成
 
 ---
 
@@ -229,11 +233,11 @@ twin/{id}/up    # Agent → Server
 
 | # | 项目 | 严重程度 | 状态 |
 |---|------|----------|------|
-| 1 | Python Server 未删除 | 高 | 待处理 |
+| 1 | Python Server 未删除 | 高 | ✅ 已下线 |
 | 2 | MQTT Topic 过多 | 中 | 待处理 |
 | 3 | 缓存无 TTL | 中 | 待处理 |
-| 4 | Terminal bug | 高 | 待处理 |
-| 5 | 无告警通知 | 高 | 待处理 |
+| 4 | Terminal bug | 高 | ✅ 已修复 |
+| 5 | 无告警通知 | 高 | ✅ 已修复 |
 | 6 | 日志分散 | 中 | 待处理 |
 
 ---
@@ -267,6 +271,35 @@ cargo test
 | 协议设计 | `docs/PROTOCOL.md` | TCP + MQTT 双通道 |
 | Device Twin 设计 | `docs/device-twin-design.md` | 状态模型详细设计 |
 | API 文档 | `http://localhost:8001/docs` | OpenAPI Swagger |
+
+---
+
+## 8. 改进行动清单（锐评转化）
+
+### P0 - 必须立即解决
+
+| # | 问题 | 行动 | 状态 |
+|---|------|------|------|
+| 1 | Python Server 还活着 | Rust Server 接管 WebSocket，Python 下线 | ✅ 已完成 |
+| 2 | Terminal 设备下拉框为空 | 修 Pinia 状态管理 bug | ✅ 已修复 |
+| 3 | 告警没通知 | Alertmanager + Telegram 配置 | ✅ 已修复 |
+| 4 | E2E 测试 | Terminal → Rust → Agent 完整链路 | ✅ 已验证 |
+
+### P1 - 尽快解决
+
+| # | 问题 | 行动 | 状态 |
+|---|------|------|------|
+| 5 | MQTT Topic 过多 | 合并为 twin/{id}/down + twin/{id}/up | ⏳ |
+| 6 | 缓存无 TTL | 添加 1 小时 TTL + 写穿透失效 | ⏳ |
+| 7 | WebSocket 断线无处理 | 自动重连 + 心跳检测 | ⏳ |
+| 8 | E2E 测试空白 | 自动化脚本验证完整流程 | ⏳ |
+
+### P2 - 可以延后
+
+| # | 问题 | 行动 | 状态 |
+|---|------|------|------|
+| 9 | 日志分散 | Loki 日志聚合 | ⏳ |
+| 10 | Files 组件未开发 | 文件管理器（复杂度高，优先 Alerts） | ⏳ |
 
 ---
 

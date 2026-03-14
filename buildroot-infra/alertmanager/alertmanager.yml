@@ -1,0 +1,38 @@
+# Alertmanager 配置
+# Telegram 告警通知
+
+global:
+  resolve_timeout: 5m
+
+# 路由配置
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s        # 等待 30s 收集同组告警
+  group_interval: 5m     # 同组告警间隔 5m
+  repeat_interval: 4h    # 重复告警间隔 4h
+  receiver: 'telegram'
+
+receivers:
+  - name: 'telegram'
+    telegram_configs:
+      - bot_token: '8606290713:AAFgDV-nX_X1jtrnsLOCRsp2hWmZpaywQMs'
+        api_url: 'https://api.telegram.org'
+        chat_id: 1769042676
+        parse_mode: 'HTML'
+        # 消息模板
+        message: |
+          {{ .Status | toUpper }} {{ .CommonLabels.severity | toUpper }}
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+
+# 抑制规则
+inhibit_rules:
+  # 严重告警抑制警告告警
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ['alertname', 'instance']

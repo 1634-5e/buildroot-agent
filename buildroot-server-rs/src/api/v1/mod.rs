@@ -19,6 +19,8 @@ pub fn create_router() -> Router<AppState> {
         .route("/metrics", get(metrics_handler))
         // 测试路由
         .route("/test/:id", get(test_handler))
+        // WebSocket 端点
+        .route("/ws", get(crate::ws::ws_handler))
         // 设备注册
         .route("/api/v1/register", post(twin::register_device))
         // 获取/更新 Twin（同一路径，不同方法）
@@ -33,6 +35,8 @@ pub fn create_router() -> Router<AppState> {
         )
         // 列出所有 Twin
         .route("/api/v1/twins", get(twin::list_twins))
+        // 设备列表（前端兼容）
+        .route("/api/v1/devices", get(twin::list_devices))
         // 批量更新
         .route("/api/v1/twins/batch", post(twin::batch_update))
 }

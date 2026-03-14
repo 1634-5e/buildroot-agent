@@ -181,6 +181,26 @@ pub struct DeviceRegisterResponse {
     pub created: bool,
 }
 
+/// 设备列表项（前端兼容格式）
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceListItem {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    pub status: String,
+    pub is_online: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub firmware_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip_addr: Option<String>,
+    pub tags: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

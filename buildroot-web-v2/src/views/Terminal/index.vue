@@ -12,6 +12,7 @@ import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Tag from 'primevue/tag'
 import { getWebSocketClient, MessageType } from '@/api/websocket'
+import { twinApi } from '@/api'
 
 interface Device {
   device_id: string
@@ -64,6 +65,22 @@ const statusSeverity = computed(() => {
 let wsClient: ReturnType<typeof getWebSocketClient> | null = null
 let messageHandler: ((msg: unknown) => void) | null = null
 
+// 从 Rust API 获取设备列表
+const fetchDevices = async () => {
+  try {
+    const twins = await twinApi.listTwins({ limit: 100 })
+    devices.value = twins.map(twin => ({
+      device_id: twin.device_id,
+      name: twin.tags?.device_name || twin.device_id.slice(0, 12),
+      // 设备有 reported 数据且有 system 指标 = 在线（简化判断）
+      is_online: !!(twin.reported && Object.keys(twin.reported).length > 0),
+    }))
+    console.log('[Terminal] 设备列表从 API 获取:', devices.value.length)
+  } catch (e) {
+    console.error('[Terminal] 获取设备列表失败:', e)
+  }
+}
+
 // 初始化 WebSocket
 const initWebSocket = () => {
   console.log('[Terminal] initWebSocket called')
@@ -79,8 +96,6 @@ const initWebSocket = () => {
   client.on('connected', () => {
     console.log('[Terminal] WS connected event')
     wsConnected.value = true
-    // 请求设备列表
-    client.send(MessageType.DEVICE_LIST, { page: 0, page_size: 100 })
   })
 
   client.on('disconnected', () => {
@@ -89,14 +104,13 @@ const initWebSocket = () => {
     sessionId.value = null
   })
 
-  // 如果已连接，直接请求设备列表
-  if (client.isConnected()) {
-    console.log('[Terminal] Already connected, sending DEVICE_LIST')
-    wsConnected.value = true
-    client.send(MessageType.DEVICE_LIST, { page: 0, page_size: 100 })
-  } else {
+  // 连接 WebSocket（仅用于 PTY 会话）
+  if (!client.isConnected()) {
     console.log('[Terminal] Not connected, calling connect()')
     client.connect()
+  } else {
+    console.log('[Terminal] Already connected')
+    wsConnected.value = true
   }
 }
 
@@ -231,23 +245,12 @@ const clearTerminal = () => {
   terminal.value?.clear()
 }
 
-// 处理 WebSocket 消息
+// 处理 WebSocket 消息（仅处理 PTY 相关）
 const handleWebSocketMessage = (msg: unknown) => {
   const message = msg as { type: number; data: Record<string, unknown> }
   const { type, data } = message
   
   console.log('[Terminal] 收到消息:', type, data)
-
-  // DEVICE_LIST 响应
-  if (type === MessageType.DEVICE_LIST) {
-    const deviceList = data.devices as Device[] || []
-    devices.value = deviceList.map(d => ({
-      ...d,
-      name: d.name || d.device_id.slice(0, 12), // 默认显示 device_id 前12位
-      is_online: true, // WebSocket 返回的都是在线设备
-    }))
-    console.log('[Terminal] 设备列表更新:', devices.value.length, devices.value)
-  }
 
   // PTY_CREATE 响应
   if (type === MessageType.PTY_CREATE) {
@@ -302,7 +305,10 @@ const handleResize = () => {
 onMounted(async () => {
   initTerminal()
 
-  // 连接 WebSocket 并获取设备列表
+  // 从 Rust API 获取设备列表
+  await fetchDevices()
+
+  // 连接 WebSocket（用于 PTY 会话）
   initWebSocket()
 
   // 从路由参数获取设备 ID

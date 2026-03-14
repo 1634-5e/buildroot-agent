@@ -70,7 +70,7 @@ groups:
           description: "Redis 已停止响应超过 1 分钟"
 
       - alert: RedisHighMemoryUsage
-        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80 and redis_memory_max_bytes > 0
         for: 5m
         labels:
           severity: warning
@@ -87,12 +87,22 @@ groups:
           summary: "Redis 连接数过高"
           description: "Redis 当前连接数 {{ $value }} 超过 100"
 
-      # Server 告警
-      - alert: ServerDown
-        expr: up{job="buildroot-server"} == 0
+      # Server 告警 (Rust Server)
+      - alert: ServerRustDown
+        expr: up{job="buildroot-server-rust"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Server API 宕机"
-          description: "Buildroot Server API 已停止响应超过 1 分钟"
+          summary: "Rust Server 宕机"
+          description: "Buildroot Rust Server API 已停止响应超过 1 分钟"
+
+      # Server 告警 (Python Server - 待下线)
+      - alert: ServerPythonDown
+        expr: up{job="buildroot-server-python"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Python Server 宕机"
+          description: "Buildroot Python Server 已停止响应超过 1 分钟（待下线）"

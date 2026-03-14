@@ -18,9 +18,9 @@ export default defineConfig({
         target: 'http://localhost:8001',
         changeOrigin: true,
       },
-      // 代理 WebSocket 到 Python Server (PTY 终端)
+      // 代理 WebSocket 到 Rust Server (Phase 1: DeviceList, Phase 2: PTY)
       '/ws': {
-        target: 'ws://localhost:8765',
+        target: 'ws://localhost:8001',
         ws: true,
         changeOrigin: true,
       },
