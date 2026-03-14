@@ -1,0 +1,38 @@
+name: Cross Compile Buildroot Agent
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  cross-compile:
+    runs-on: ubuntu-22.04
+    container: ubuntu:22.04
+
+    steps:
+    - name: Install dependencies in container
+      run: |
+        apt-get update
+        apt-get install -y git gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf cmake make
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build
+      working-directory: buildroot-agent
+      run: |
+        mkdir -p build && cd build
+        cmake .. \
+          -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+          -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+          -DCMAKE_BUILD_TYPE=Release
+        make buildroot-agent -j$(nproc)
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: buildroot-agent-arm
+        path: buildroot-agent/build/bin/buildroot-agent

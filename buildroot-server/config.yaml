@@ -1,0 +1,43 @@
+# Buildroot Agent Server Configuration
+# 使用说明：
+# 1. 默认值已配置，可直接使用
+# 2. 可通过环境变量覆盖（BR_SERVER_前缀）
+# 3. 配置文件优先级: 环境变量 > config.yaml > 默认值
+
+server:
+  # 服务器监听配置
+  host: "0.0.0.0"       # 监听地址
+  ws_port: 8765         # WebSocket 端口
+  socket_port: 8766     # Socket 端口
+
+  # 心跳配置
+  ping_interval: 30     # 心跳间隔(秒)
+  ping_timeout: 10     # 心跳超时(秒)
+  session_timeout: 300 # 会话超时(秒)
+
+  # 目录配置
+  upload_dir: "./uploads"
+  updates_dir: "./updates"
+  latest_yaml: "./updates/latest.yml"
+
+# 文件传输配置
+file_transfer:
+  chunk_sizes:
+    small: 8192          # 8KB
+    medium: 32768        # 32KB
+    large: 65536         # 64KB
+    xlarge: 131072      # 128KB
+  max_retries: 5
+  retry_delay_base: 1.0
+
+# 数据库配置
+database:
+  # 支持: postgresql, mysql, sqlite
+  db_type: "sqlite"
+  
+  # SQLite 配置
+  db_name: "buildroot_agent.db"
+
+# 日志配置
+logging:
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL

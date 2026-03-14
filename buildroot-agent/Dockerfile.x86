@@ -1,0 +1,26 @@
+# Agent x86 版本 Dockerfile
+# 用于在 Render 或其他云服务器上运行
+
+FROM ubuntu:22.04
+
+# 安装编译依赖
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libconfig-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 复制源码
+COPY . .
+
+# 编译 x86 版本
+RUN mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+# 运行 Agent
+CMD ["./build/agent", "--config", "/app/config/render-agent.yaml"]

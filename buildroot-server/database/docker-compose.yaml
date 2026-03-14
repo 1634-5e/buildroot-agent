@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: buildroot_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: buildroot_agent
+      # PGDATA: /var/lib/postgresql/data/pgdata # 可选：指定数据存储子目录
+    ports:
+      - "5432:5432"            # 端口映射：主机端口:容器端口
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # 数据持久化挂载
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql # 可选：初始化脚本挂载
+    healthcheck:               # 健康检查
+      test: ["CMD-SHELL", "pg_isready -U admin -d buildroot_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

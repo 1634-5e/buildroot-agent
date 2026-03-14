@@ -1,0 +1,30 @@
+# Build
+build/
+target/
+*.o
+*.a
+*.so
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.coverage
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+
+# Coverage
+.coverage
+htmlcov/
+
+# OS
+.DS_Store

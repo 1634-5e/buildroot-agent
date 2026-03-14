@@ -1,0 +1,35 @@
+# Agent 云端部署配置
+# 用于 Render 或其他云服务器
+
+# 设备信息
+device:
+  id: "render-demo-agent"
+  name: "Render x86 Demo Agent"
+  type: "cloud-x86"
+
+# 服务器连接
+server:
+  host: "buildroot-server.onrender.com"
+  port: 443
+  ssl: true
+  # 自动重连配置
+  reconnect:
+    enabled: true
+    interval: 5
+    max_retries: 0  # 无限重试
+
+# 功能配置（云端模式简化）
+features:
+  terminal: true
+  file_manager: true
+  process_manager: true
+  system_monitor: true
+  script_executor: false  # 云端不建议开放脚本执行
+  update: false  # 云端不自动更新
+
+# 日志配置
+logging:
+  level: info
+  file: /tmp/agent.log
+  max_size: 10MB
+  max_files: 3
